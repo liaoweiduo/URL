@@ -6,7 +6,7 @@ DATASET_MODELS_RESNET18 = {
     'dtd': 'textures-net',
     'quickdraw': 'quickdraw-net',
     'fungi': 'fungi-net',
-    'vgg_flower': 'vgg_flower-net'
+    'vgg_flower': 'vgg_flower-net',
 }
 
 

@@ -1,2 +1,6 @@
 ################### Test URL Model with PA ###################
-CUDA_VISIBLE_DEVICES=<gpu-id> python test_extractor_pa.py --model.name=url --model.dir ./saved_results/url
+ulimit -n 50000
+export META_DATASET_ROOT=../meta-dataset
+export RECORDS=../datasets/tfrecords
+
+CUDA_VISIBLE_DEVICES=7 python test_extractor_pa.py --model.name=url --model.dir ../URL-experiments/saved_results/url

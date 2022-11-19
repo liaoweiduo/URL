@@ -4,11 +4,11 @@ import torch
 from functools import partial
 
 from models.model_utils import CheckPointer
-from models.models_dict import DATASET_MODELS_RESNET18
-from utils import device
+from models.models_dict import DATASET_MODELS_RESNET18, DATASET_MODELS_RESNET18_PNF
+from utils import device, devices
 
 
-def get_model(num_classes, args):
+def get_model(num_classes, args, multi_device_id=None):
     train_classifier = args['model.classifier']
     model_name = args['model.backbone']
     dropout_rate = args.get('model.dropout', 0)
@@ -44,7 +44,11 @@ def get_model(num_classes, args):
     model = model_fn(classifier=train_classifier,
                      num_classes=num_classes,
                      global_pool=False)
-    model.to(device)
+    if multi_device_id:
+        model.to(devices[multi_device_id])
+        print(f'Move model {args["model.name"]} to {devices[multi_device_id]}.')
+    else:
+        model.to(device)
     return model
 
 
@@ -119,6 +123,7 @@ def get_pnf_extractor(trainsets, dataset_models, args):
     for dataset_name in trainsets:
         if dataset_name not in dataset_models or 'ilsvrc' in dataset_name:
             continue
+        base_network_name = DATASET_MODELS_RESNET18_PNF[dataset_name]
         ckpt_path = os.path.join(args['source'], 'weights', base_network_name,
                                  'model_best.pth.tar')
 

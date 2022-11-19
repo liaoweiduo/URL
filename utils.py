@@ -3,9 +3,15 @@ import random
 import torch
 import numpy as np
 from time import time
+from config import args
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+# devices only for pool-mo training. args['model.num_clusters']: 8 GPU available.
+devices = [
+    torch.device(f"cuda:{i % torch.cuda.device_count()}" if torch.cuda.is_available() else "cpu")
+    for i in range(args['model.num_clusters'])
+]
 
 
 class ConfusionMatrix():

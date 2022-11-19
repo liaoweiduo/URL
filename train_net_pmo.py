@@ -1,9 +1,14 @@
 """
-This code allows you to train single domain learning networks.
+This code allows you to train multi learned domain learning networks with pool mo technique.
+
+Author: Weiduo Liao
+Date: 2022.11.12
 """
 
 import os
 import sys
+import pickle
+import copy
 import torch
 import numpy as np
 import tensorflow as tf
@@ -11,8 +16,8 @@ import tensorflow as tf
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from data.meta_dataset_reader import (MetaDatasetBatchReader,
-                                      MetaDatasetEpisodeReader)
+from data.meta_dataset_reader import (MetaDatasetBatchReader, MetaDatasetEpisodeReader,
+                                      TRAIN_METADATASET_NAMES)
 from models.losses import cross_entropy_loss, prototype_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
@@ -26,37 +31,68 @@ def train():
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
+
         # initialize datasets and loaders
+        trainsets = TRAIN_METADATASET_NAMES
+        valsets = TRAIN_METADATASET_NAMES
+        testsets = TRAIN_METADATASET_NAMES
         trainsets, valsets, testsets = args['data.train'], args['data.val'], args['data.test']
-        train_loader = MetaDatasetBatchReader('train', trainsets, valsets, testsets,
-                                              batch_size=args['train.batch_size'])
+        print(f'Train on: {trainsets}.')    # "ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower"
+        print(f'Val on: {valsets}.')
+        # print(f'Test on: {testsets}.')
+
+        train_loaders = []
+        num_train_classes = dict()
+        for t_indx, trainset in enumerate(trainsets):
+            train_loaders.append(MetaDatasetEpisodeReader('train', trainset, valsets, testsets,
+                                                          test_type='5shot'))
+            num_train_classes[trainset] = train_loaders[t_indx].num_classes('train')
+
         val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets)
 
         # initialize model and optimizer
-        num_train_classes = train_loader.num_classes('train')
-        model = get_model(num_train_classes, args)
-        optimizer = get_optimizer(model, args, params=model.get_parameters())
+        models = []
+        optimizers = []
+        checkpointers = []
+        start_iters, best_val_losses, best_val_accs = [], [], []
+        lr_managers = []
+        writers = []
+        # init all starting issues for M(8) models.
+        for m_indx in range(args['model.num_clusters']):        # 8
+            model_args_with_name = copy.deepcopy(args)
+            model_args_with_name['model.name'] = model_args_with_name['model.name'].format(m_indx)    # M0-net - M7-net
+            _model = get_model(None, model_args_with_name, multi_device_id=m_indx)     # distribute model to multi-devices
+            models.append(_model)
+            _optimizer = get_optimizer(_model, model_args_with_name, params=_model.get_parameters())
+            optimizers.append(_optimizer)
 
-        # restoring the last checkpoint
-        checkpointer = CheckPointer(args, model, optimizer=optimizer)
-        if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
-            start_iter, best_val_loss, best_val_acc =\
-                checkpointer.restore_model(ckpt='last')
-        else:
-            print('No checkpoint restoration')
-            best_val_loss = 999999999
-            best_val_acc = start_iter = 0
+            # restoring the last checkpoint
+            _checkpointer = CheckPointer(model_args_with_name, _model, optimizer=_optimizer)
+            checkpointers.append(_checkpointer)
 
-        # define learning rate policy
-        if args['train.lr_policy'] == "step":
-            lr_manager = UniformStepLR(optimizer, args, start_iter)
-        elif "exp_decay" in args['train.lr_policy']:
-            lr_manager = ExpDecayLR(optimizer, args, start_iter)
-        elif "cosine" in args['train.lr_policy']:
-            lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
+            if os.path.isfile(_checkpointer.last_ckpt) and args['train.resume']:
+                _start_iter, _best_val_loss, _best_val_acc =\
+                    _checkpointer.restore_model(ckpt='last')
+            else:
+                print('No checkpoint restoration')
+                _best_val_loss = 999999999
+                _best_val_acc = _start_iter = 0
+            start_iters.append(_start_iter)
+            best_val_losses.append(_best_val_loss)
+            best_val_accs.append(_best_val_acc)
 
-        # defining the summary writer
-        writer = SummaryWriter(checkpointer.out_path)
+            # define learning rate policy
+            if args['train.lr_policy'] == "step":
+                _lr_manager = UniformStepLR(_optimizer, args, _start_iter)
+            elif "exp_decay" in args['train.lr_policy']:
+                _lr_manager = ExpDecayLR(_optimizer, args, _start_iter)
+            elif "cosine" in args['train.lr_policy']:
+                _lr_manager = CosineAnnealRestartLR(_optimizer, args, _start_iter)
+            lr_managers.append(_lr_manager)
+
+            # defining the summary writer
+            _writer = SummaryWriter(_checkpointer.out_path)
+            writers.append(_writer)
 
         # Training loop
         max_iter = args['train.max_iter']
@@ -65,11 +101,23 @@ def train():
         epoch_val_loss = {name: [] for name in valsets}
         epoch_val_acc = {name: [] for name in valsets}
 
+        start_iter = np.min(start_iters)
         for i in tqdm(range(max_iter)):
             if i < start_iter:
                 continue
 
-            optimizer.zero_grad()
+            for _optimizer in optimizers:
+                _optimizer.zero_grad()
+            '''Collect samples from multiple train loaders'''
+            samples = []
+            images = []
+            num_samples = []
+            for t_indx, train_loader in enumerate(train_loaders):
+                sample = train_loader.get_train_batch(session)
+                samples.append(sample)
+                images.append(sample['images'])
+                num_samples.append(sample['images'].size(0))
+
 
             sample = train_loader.get_train_batch(session)
             logits = model.forward(sample['images'])

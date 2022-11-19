@@ -40,7 +40,6 @@ def main():
     elif args['test.mode'] == 'sdl':
         # single-domain learning setting, meta-train on ImageNet
         trainsets = ['ilsvrc_2012']
-    test_loader = MetaDatasetEpisodeReader('test', trainsets, trainsets, testsets, test_type=args['test.type'])
     model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
     checkpointer.restore_model(ckpt='best', strict=False)
@@ -53,6 +52,7 @@ def main():
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
         # go over each test domain
+        test_loader = MetaDatasetEpisodeReader('test', trainsets, trainsets, testsets, test_type=args['test.type'])
         for dataset in testsets:
             if dataset in trainsets:
                 lr = 0.1

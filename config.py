@@ -20,6 +20,7 @@ parser.add_argument('--model.backbone', default='resnet18', help="Use ResNet18 f
 parser.add_argument('--model.classifier', type=str, default='linear', choices=['none', 'linear', 'cosine'], help="Do classification using cosine similatity between activations and weights")
 parser.add_argument('--model.dropout', type=float, default=0, help="Adding dropout inside a basic block of widenet")
 parser.add_argument('--model.pretrained', action='store_true', help="Using pretrained model for learning or not")
+parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of clusters for multi-domain learning")
 # adaptor args
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
 
