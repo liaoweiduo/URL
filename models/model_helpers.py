@@ -44,7 +44,7 @@ def get_model(num_classes, args, multi_device_id=None):
     model = model_fn(classifier=train_classifier,
                      num_classes=num_classes,
                      global_pool=False)
-    if multi_device_id:
+    if multi_device_id is not None:
         model.to(devices[multi_device_id])
         print(f'Move model {args["model.name"]} to {devices[multi_device_id]}.')
     else:

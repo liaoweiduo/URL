@@ -148,7 +148,6 @@ def prototype_loss(support_embeddings, support_labels,
 
     return cross_entropy_loss(logits, query_labels)
 
-
 def compute_prototypes(embeddings, labels, n_way):
     prots = torch.zeros(n_way, embeddings.shape[-1]).type(
         embeddings.dtype).to(embeddings.device)

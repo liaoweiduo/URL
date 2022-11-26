@@ -61,6 +61,26 @@ parser.add_argument('--train.eval_size', type=int, default=300, metavar='EVAL_SI
 parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN',
                     help="Resume training starting from the last checkpoint (default: True)")
 
+# pmo training
+parser.add_argument('--train.cluster_mode', type=str, default='probability', metavar='CLUSTER_MODE',
+                    choices=['probability', 'argmax'],
+                    help='how similarity is used to do clustering.')
+parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
+                    help='number of ways to train')
+parser.add_argument('--train.n_shot', type=int, default=5, metavar='N_SHOT',
+                    help='number of shots to train')
+parser.add_argument('--train.n_query', type=int, default=5, metavar='N_QUERY',
+                    help='number of queries to train')
+parser.add_argument('--train.n_obj', type=int, default=2, metavar='N_OBJ',
+                    help='number of objs (models considered in 1 iter) to train')
+parser.add_argument('--train.mix_mode', type=str, default='cutmix', metavar='MIX_MODE',
+                    choices=['cutmix', 'mixup'],
+                    help='mix mode for mixer. ')
+parser.add_argument('--train.n_mix', type=int, default=2, metavar='N_MIX',
+                    help='number of mixed tasks generated in 1 iter')
+parser.add_argument('--train.ref', type=int, default=2, metavar='N_MIX',
+                    help='number of mixed tasks generated in 1 iter')
+
 
 # creating a database of features
 parser.add_argument('--dump.name', type=str, default='', metavar='DUMP_NAME',

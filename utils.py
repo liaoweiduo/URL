@@ -5,7 +5,7 @@ import numpy as np
 from time import time
 from config import args
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device(f"cuda:{torch.cuda.device_count()-1}" if torch.cuda.is_available() else "cpu")    # last device
 
 # devices only for pool-mo training. args['model.num_clusters']: 8 GPU available.
 devices = [

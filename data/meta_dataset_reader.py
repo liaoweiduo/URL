@@ -51,17 +51,51 @@ class MetaDatasetReader(object):
             dataset_spec = dataset_spec_lib.load_dataset_spec(dataset_records_path)
             return dataset_spec
 
-    def _to_torch(self, sample):
+    def _to_torch(self, sample, d=None):
         for key, val in sample.items():
             if isinstance(val, str):
                 continue
-            val = torch.from_numpy(val)
+            val = torch.from_numpy(np.array(val))
             if 'image' in key:
                 val = val.permute(0, 3, 1, 2)
             else:
                 val = val.long()
-            sample[key] = val.to(device)
+            if d is None:
+                sample[key] = val.to(device)
+            else:
+                sample[key] = val.to(d)
         return sample
+
+    def _to_numpy(self, sample):
+        for key, val in sample.items():
+            if isinstance(val, str):
+                continue
+
+            val = np.array(val)
+            if 'image' in key:
+                val = np.transpose(val, (0, 3, 1, 2))
+
+            sample[key] = val
+        return sample
+
+    def to_all_devices(self, sample):
+        assert isinstance(sample, torch.Tensor) or isinstance(sample, np.ndarray)
+
+        if isinstance(sample, np.ndarray):
+            sample = torch.from_numpy(sample)
+
+        if sample.dtype == torch.int32:
+            sample = sample.long()
+
+        num_devices = torch.cuda.device_count()
+        if num_devices == 0:
+            return {torch.device('cpu'): sample}
+
+        sample_dict = {}
+        for device_id in range(num_devices):
+            sample_dict[torch.device(f'cuda:{device_id}')] = sample.to(torch.device(f'cuda:{device_id}'))
+
+        return sample_dict
 
     def num_classes(self, split_name):
         split = SPLIT_NAME_TO_SPLIT[split_name]
@@ -97,6 +131,15 @@ class MetaDatasetReader(object):
 
         self.dataset_name_to_dataset_id = {v: k for k, v in
                                            self.dataset_id_to_dataset_name.items()}
+
+    def label_to_str(self, label, split_name='train'):
+        """
+        Map label to the string form (label_str, domain_str)
+        """
+        local_label, domain = label
+        domain_str = self.dataset_id_to_dataset_name[domain]
+        local_label_str = self.specs_dict[SPLIT_NAME_TO_SPLIT[split_name]][domain].class_names[local_label]
+        return local_label_str, domain_str
 
 
 class MetaDatasetEpisodeReader(MetaDatasetReader):
@@ -135,6 +178,7 @@ class MetaDatasetEpisodeReader(MetaDatasetReader):
                 train_episode_desscription = config.EpisodeDescriptionConfig(None, None, None, min_ways=5, max_ways_upper_bound=5, max_num_query=10, max_support_size_contrib_per_class=1)
                 self.train_dataset_next_task = self._init_multi_source_dataset(
                     train_set, SPLIT_NAME_TO_SPLIT['train'], train_episode_desscription)
+                self.build_class_to_identity()
 
             if mode == 'val':
                 test_episode_desscription = config.EpisodeDescriptionConfig(None, None, None, min_ways=5, max_ways_upper_bound=5, max_num_query=10, max_support_size_contrib_per_class=1)
@@ -156,6 +200,7 @@ class MetaDatasetEpisodeReader(MetaDatasetReader):
                 train_episode_desscription = config.EpisodeDescriptionConfig(None, 5, None)
                 self.train_dataset_next_task = self._init_multi_source_dataset(
                     train_set, SPLIT_NAME_TO_SPLIT['train'], train_episode_desscription)
+                self.build_class_to_identity()
 
             if mode == 'val':
                 test_episode_desscription = config.EpisodeDescriptionConfig(None, 5, None)
@@ -222,28 +267,42 @@ class MetaDatasetEpisodeReader(MetaDatasetReader):
         return iterator.get_next()
 
     def _get_task(self, next_task, session):
-        episode = session.run(next_task)[0]
+        (episode, source_id) = session.run(next_task)
         task_dict = {
             'context_images': episode[0],
             'context_labels': episode[1],
-            'context_gt': episode[2],
+            'context_gt': episode[2],       # context_source_labels (local)
             'target_images': episode[3],
             'target_labels': episode[4],
-            'target_gt': episode[5]
+            'target_gt': episode[5],        # target_source_labels (local)
+            'domain': source_id
             }
 
-        return self._to_torch(task_dict)
+        return task_dict
 
-    def get_train_task(self, session):
-        return self._get_task(self.train_dataset_next_task, session)
+    def get_train_task(self, session, d=None):
+        task_dict = self._get_task(self.train_dataset_next_task, session)
 
-    def get_validation_task(self, session, item=None):
+        if d == 'numpy':
+            return self._to_numpy(task_dict)
+        else:
+            return self._to_torch(task_dict, d)
+
+    def get_validation_task(self, session, item=None, d=None):
         item = item if item else list(self.validation_set_dict.keys())[0]
-        return self._get_task(self.validation_set_dict[item], session)
+        task_dict = self._get_task(self.validation_set_dict[item], session)
+        if d == 'numpy':
+            return self._to_numpy(task_dict)
+        else:
+            return self._to_torch(task_dict, d)
 
-    def get_test_task(self, session, item=None):
+    def get_test_task(self, session, item=None, d=None):
         item = item if item else list(self.test_set_dict.keys())[0]
-        return self._get_task(self.test_set_dict[item], session)
+        task_dict = self._get_task(self.test_set_dict[item], session)
+        if d == 'numpy':
+            return self._to_numpy(task_dict)
+        else:
+            return self._to_torch(task_dict, d)
 
 
 class MetaDatasetBatchReader(MetaDatasetReader):

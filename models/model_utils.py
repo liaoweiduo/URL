@@ -13,6 +13,7 @@ sigmoid = nn.Sigmoid()
 
 
 def cosine_sim(embeds, prots):
+    import torch.nn.functional as F
     prots = prots.unsqueeze(0)
     embeds = embeds.unsqueeze(1)
     return F.cosine_similarity(embeds, prots, dim=-1, eps=1e-30)
