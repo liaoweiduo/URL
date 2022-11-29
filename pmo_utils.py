@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
 import shutil
 import json
@@ -31,19 +31,23 @@ class Pool:
         self.capacity = capacity
         self.max_num_classes = max_num_classes
         self.max_num_images = max_num_images
+        self.emb_dim = 512
         self.out_path = os.path.join(args['out.dir'], 'weights', 'pool')
         self.out_path = check_dir(self.out_path, False)
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
+        self.centers: List[Optional[torch.Tensor]] = [None for _ in range(self.capacity)]
         # instance with key {images, label}
         self.init()
 
     def init(self):
         self.clusters = [[] for _ in range(self.capacity)]
+        self.centers = [None for _ in range(self.capacity)]
 
-    def store(self, epoch, loader, is_best, filename='pool.json'):
+    def store(self, epoch, loader, is_best, class_filename='pool.json', center_filename='pool.npy'):
         """
         Store pool to json file.
-        Only label information is stored.
+        Only label information is stored for analysis, images are not stored for saving storage.
+        Cluster centers are also stored.
         """
         pool_dict = dict(epoch=epoch + 1)
 
@@ -56,22 +60,31 @@ class Pool:
                 pool_dict[cluster_idx].append(cu_cl[cluster_idx][cls_idx][0])
                 pool_dict[f'{cluster_idx}_str'].append(str_label)
 
-        path = os.path.join(self.out_path, filename)
+        path = os.path.join(self.out_path, class_filename)
         with open(path, 'w') as f:
             json.dump(pool_dict, f)
 
         if is_best:
-            shutil.copyfile(os.path.join(self.out_path, filename),
+            shutil.copyfile(os.path.join(self.out_path, class_filename),
                             os.path.join(self.out_path, 'pool_best.json'))
 
-    def restore(self, file_path):
+        centers = torch.stack(self.centers).detach().cpu().numpy()     # may raise exception if contains None.
+        path = os.path.join(self.out_path, center_filename)
+        np.save(path, centers)
+
+        if is_best:
+            shutil.copyfile(os.path.join(self.out_path, center_filename),
+                            os.path.join(self.out_path, 'pool_best.npy'))
+
+    def restore(self, center_filename='pool.npy'):
         """
-        Restore pool from npy file.
+        Restore pool's centers from npy file.
         """
         self.init()
-        np.load(file_path)
+        centers = np.load(os.path.join(self.out_path, center_filename))
+        self.centers = torch.from_numpy(centers)
 
-    def put(self, images, label, cluster_idx):
+    def put(self, images, label, cluster_idx, class_centroid):
         """
         Put class samples (batch of numpy images) into clusters.
         Issues to handle:
@@ -79,6 +92,7 @@ class Pool:
                 just remove the earliest one.
             Already stored class in same cluster or other cluster.
                 cat images with max size: max_num_images.
+            Update cluster centers with class_centroid: [feature_size, ]
         """
         '''pop stored images and cat new images'''
         position = self.find_label(label)
@@ -95,8 +109,61 @@ class Pool:
         '''put to cluster: cluster_idx'''
         if len(self.clusters[cluster_idx]) == self.max_num_classes:
             self.clusters[cluster_idx].pop(0)   # remove the earliest cls.
-
         self.clusters[cluster_idx].append({'images': images, 'label': label})
+
+        '''update cluster centers'''
+        self.update_cluster_centers(cluster_idx, class_centroid)
+
+    def update_cluster_centers(self, cluster_idx, class_centroid):
+        """
+        Exponential Moving Average, EMA
+        Update current cluster center of index cluster_idx with class_centroid.
+        Shapes:
+            class_centroid: [vec_size, ]
+        """
+        assert isinstance(class_centroid, torch.Tensor)
+
+        '''if first, just assign'''
+        if self.centers[cluster_idx] is None:
+            self.centers[cluster_idx] = class_centroid.detach().cpu()
+            return
+
+        '''moving average update center calculation'''
+        alpha = self.args['train.mov_avg_alpha']
+        self.centers[cluster_idx] = alpha * class_centroid.detach().cpu() + (1-alpha) * self.centers[cluster_idx]
+
+    def get_distances(self, class_centroids, cluster_idx, distance):
+        """
+        Return similarities for class_centroids comparing with all centers.
+        :param class_centroids: tensor centroid of classes with shape [n_classes, vec_size]
+        :param cluster_idx: which cluster_center to compare.
+        :param distance: string of distance [cos, l2, lin, corr]
+
+        :return a tensor of distances with shape [n_classes, n_clusters]
+        """
+        if len(class_centroids.shape) == 1:     # 1 class
+            class_centroids = class_centroids.unsqueeze(0)
+
+        # class_centroids = class_centroids.unsqueeze(1)       # shape[n_classes, 1, vec_size]
+        if self.centers[cluster_idx] is None:
+            centers = torch.rand(1, class_centroids.shape[-1]) * torch.ceil(class_centroids.max()).item()
+            # uniform random from [0, ceil(class_centroids.max())]
+            centers = centers.to(class_centroids.device)
+        else:
+            centers = self.centers[cluster_idx].to(class_centroids.device).unsqueeze(0)    # shape [1, vec_size]
+
+        if distance == 'l2':
+            logits = -torch.pow(class_centroids - centers, 2).sum(-1)  # shape [n_classes, n_clusters]
+        elif distance == 'cos':
+            logits = F.cosine_similarity(class_centroids, centers, dim=-1, eps=1e-30) * 10
+        elif distance == 'lin':
+            logits = torch.einsum('izd,zjd->ij', class_centroids, centers)
+        elif distance == 'corr':
+            logits = F.normalize((class_centroids * centers).sum(-1), dim=-1, p=2) * 10
+        else:
+            raise Exception(f"Un-implemented distance {distance}.")
+
+        return logits
 
     def find_label(self, label):
         """
@@ -341,28 +408,34 @@ class Mixer:
         pass
 
 
-# return mean ncc similarity of embeddings to corresponding classes centroids.
-def prototype_similarity(embeddings, labels, distance='cos'):
+# return cos similarities for each prot (class_centroid) to cluster_centers
+def prototype_similarity(embeddings, labels, centers, distance='cos'):
+    """
+    :param embeddings: shape [task_img_size, emb_dim]
+    :param labels: relative labels shape [task_img_size,], e.g., [0, 0, 0, 1, 1, 1]
+    :param centers: shape [n_clusters, emb_dim]
+    :param distance: similarity [cos, l2, lin, corr]
+
+    :return similarities shape [n_way, n_clusters] and class_centroids shape [n_way, emb_dim]
+    """
     n_way = len(labels.unique())
 
-    prots = compute_prototypes(embeddings, labels, n_way)      # shape [n_way, emb_dim]
-    prots = prots[labels]       # shape [n_query, emb_dim]
-    embeds = embeddings         # shape [n_query, emb_dim]
+    class_centroids = compute_prototypes(embeddings, labels, n_way)
+    prots = class_centroids.unsqueeze(1)      # shape [n_way, 1, emb_dim]
+    centers = centers.unsqueeze(0)         # shape [1, n_clusters, emb_dim]
 
     if distance == 'l2':
-        logits = -torch.pow(embeds - prots, 2).sum(-1)    # shape [n_query,]
+        logits = -torch.pow(centers - prots, 2).sum(-1)    # shape [n_way, n_clusters]
     elif distance == 'cos':
-        logits = F.cosine_similarity(embeds, prots, dim=-1, eps=1e-30) * 10
+        logits = F.cosine_similarity(centers, prots, dim=-1, eps=1e-30) * 10
     elif distance == 'lin':
-        logits = torch.einsum('izd,zjd->ij', embeds, prots)
+        logits = torch.einsum('izd,zjd->ij', prots, centers)
     elif distance == 'corr':
-        logits = F.normalize((embeds * prots).sum(-1), dim=-1, p=2) * 10
+        logits = F.normalize((centers * prots).sum(-1), dim=-1, p=2) * 10
     else:
         raise Exception(f"Un-implemented distance {distance}.")
 
-    distances = torch.stack([logits[labels == i].mean() for i in range(n_way)])     # shape [n_way,]
-
-    return distances
+    return logits, class_centroids
 
 
 def cal_hv_loss(objs, ref=2):

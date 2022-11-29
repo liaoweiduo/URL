@@ -38,6 +38,9 @@ def train():
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
 
+        '''--------------------'''
+        '''Initialization Phase'''
+        '''--------------------'''
         # initialize datasets and loaders
         trainsets = TRAIN_METADATASET_NAMES
         valsets = TRAIN_METADATASET_NAMES
@@ -114,8 +117,11 @@ def train():
         '''initialize mixer'''
         mixer = Mixer(mode=args['train.mix_mode'])
 
-        # Training loop
+        '''-------------'''
+        '''Training loop'''
+        '''-------------'''
         max_iter = args['train.max_iter']
+        epoch_train_history = dict()
         epoch_loss = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
         epoch_loss.update({
             obj_idx: {
@@ -153,40 +159,36 @@ def train():
 
                 '''move images to all devices, dict {device, images}'''
                 images_all = train_loader.to_all_devices(images_numpy)
-                labels_all = train_loader.to_all_devices(re_labels_numpy)   # related labels
+                # labels_all = train_loader.to_all_devices(re_labels_numpy)   # related labels
 
-                '''obtain mean ncc similarity for all images within same class on all model'''
-                similarities = []
-                for model_id, (d, model) in enumerate(zip(devices, models)):
-                    images = images_all[d]
-                    labels = labels_all[d]
-                    features = model.embed(images)
-                    similarity = prototype_similarity(features, labels, distance=args['test.distance'])
-                    # shape [n_way,]
+                '''for each label, obtain class_centroid on all models and calculate similarities to all centers'''
+                re_label_set = np.unique(re_labels_numpy)
+                for re_label in re_label_set:
+                    similarities = []
+                    centroids = []
+                    for model_id, (d, model) in enumerate(zip(devices, models)):
+                        images = images_all[d][re_labels_numpy == re_label]
+                        features = model.embed(images)
+                        centroid = features.mean(0)     # [emb_dim, ]
+                        similarity = pool.get_distances(
+                            centroid.unsqueeze(0), model_id, distance=args['test.distance']).item()
+                        similarities.append(similarity)
+                        centroids.append(centroid)
 
-                    '''distance to cpu, then append to distances'''
-                    similarities.append(similarity.cpu())
-                similarities = torch.stack(similarities)      # shape [n_model, n_way]
+                    '''cluster_idx is obtained with probability'''
+                    similarities = F.softmax(torch.tensor(similarities), dim=0).numpy()
+                    if args['train.cluster_mode'] == 'probability':
+                        cluster_idx = np.random.choice(len(similarities), p=similarities)
+                    elif args['train.cluster_mode'] == 'argmax':
+                        cluster_idx = np.argmax(similarities)
+                    else:
+                        raise Exception(f"Un-implemented clustering mode {args['train.cluster_mode']}")
 
-                '''cluster_idxs is obtained with probability'''
-                similarities = F.softmax(similarities, dim=0).numpy()
-                if args['train.cluster_mode'] == 'probability':
-                    cluster_idxs = np.array([
-                        np.random.choice(similarities.shape[0], p=similarities[:, cls_idx])
-                        for cls_idx in range(similarities.shape[-1])
-                    ])   # shape [n_way,]
-                elif args['train.cluster_mode'] == 'argmax':
-                    cluster_idxs = np.argmax(similarities, axis=0)   # shape [n_way,]
-                else:
-                    raise Exception(f"Un-implemented clustering mode {args['train.cluster_mode']}")
-
-                '''put samples into pool with (gt_label, domain)'''
-                for re_label in range(len(cluster_idxs)):
+                    '''put samples into pool with (gt_label, domain)'''
                     images = images_numpy[re_labels_numpy == re_label]
                     gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
                     label = (gt_label, domain)
-                    cluster_idx = cluster_idxs[re_label]
-                    pool.put(images, label, cluster_idx)
+                    pool.put(images, label, cluster_idx, centroids[cluster_idx])
 
             # back to train mode
             for model in models:
@@ -272,6 +274,11 @@ def train():
                     lr_manager.step(i)
 
             if (i + 1) % 200 == 0:        # 200; 5 for DEBUG
+                print(f"\n>> Iter: {i + 1}:")
+                '''save epoch_loss and epoch_acc'''
+                epoch_train_history[i + 1] = {'loss': epoch_loss, 'acc': epoch_acc}
+                np.save(os.path.join(args['out.dir'], 'summary', 'train_log.npy'), epoch_train_history)
+
                 objs = []
                 '''log multi-objective loss and accuracy'''
                 for obj_idx in range(args['train.n_obj']):
@@ -300,6 +307,8 @@ def train():
                 writer.add_scalar('loss/hv', np.mean(epoch_loss['hv']), i)
                 writer.add_scalar('learning_rate',
                                   optimizer.param_groups[0]['lr'], i)
+                print(f"\n==>> loss/hv {np.mean(epoch_loss['hv']):.3f}.")
+
 
             '''----------'''
             '''Eval Phase'''
@@ -352,6 +361,10 @@ def train():
                         i, best_val_accs[model_id], best_val_losses[model_id],
                         is_best, optimizer=optimizer,
                         state_dict=model.get_state_dict(), extra=extra_dict)
+
+                    '''save epoch_val_loss and epoch_val_acc'''
+                    np.save(os.path.join(args['out.dir'], 'summary', 'val_log.npy'),
+                            {'loss': epoch_val_loss, 'acc': epoch_val_acc})
 
                     model.train()
                     print(f"====>> Trained and evaluated at {i}.")

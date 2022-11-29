@@ -65,6 +65,8 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
 parser.add_argument('--train.cluster_mode', type=str, default='probability', metavar='CLUSTER_MODE',
                     choices=['probability', 'argmax'],
                     help='how similarity is used to do clustering.')
+parser.add_argument('--train.mov_avg_alpha', type=float, default=0.1, metavar='MOV_AVG_ALPHA',
+                    help='alpha on current class centroid.')
 parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
                     help='number of ways to train')
 parser.add_argument('--train.n_shot', type=int, default=5, metavar='N_SHOT',
