@@ -108,7 +108,7 @@ class Pool:
 
             '''cluster_idx is obtained with probability'''
             similarities = F.softmax(torch.tensor(similarities), dim=0).numpy()
-            if args['train.cluster_mode'] == 'probability' or iter < 10:  # for cluster init
+            if args['train.cluster_mode'] == 'probability' or iter < 50:  # for cluster init
                 cluster_idx = np.random.choice(len(similarities), p=similarities)
             elif args['train.cluster_mode'] == 'argmax':
                 cluster_idx = np.argmax(similarities)
@@ -184,9 +184,10 @@ class Pool:
 
         # class_centroids = class_centroids.unsqueeze(1)       # shape[n_classes, 1, vec_size]
         if self.centers[cluster_idx] is None:
-            centers = torch.rand(1, class_centroids.shape[-1]) * torch.ceil(class_centroids.max()).item()
+            # centers = torch.rand(1, class_centroids.shape[-1]) * torch.ceil(class_centroids.max()).item()
             # uniform random from [0, ceil(class_centroids.max())]
-            centers = centers.to(class_centroids.device)
+            # centers = centers.to(class_centroids.device)
+            centers = class_centroids   # always put to empty cluster.
         else:
             centers = self.centers[cluster_idx].to(class_centroids.device).unsqueeze(0)    # shape [1, vec_size]
 
@@ -300,6 +301,7 @@ class Pool:
                 if idx not in selected_class_idxs:
                     class_items.append(self.clusters[cluster_idx][idx])
             self.clusters[cluster_idx] = class_items
+
         return task_dict
 
     def batch_sample(self, cluster_idx):

@@ -386,7 +386,7 @@ def train():
 
                 for _model in models:
                     _model.train()
-                print(f"====>> Trained and evaluated at {i + 1}.")
+                print(f"====>> Trained and evaluated at {i + 1}.\n")
 
                 # saving pool
                 pool.store(i, train_loader, is_best)
@@ -394,8 +394,9 @@ def train():
                 # write pool
                 images = pool.current_images()
                 for cluster_id, cluster in enumerate(images):
-                    img_in_cluster = np.concatenate(cluster)
-                    writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i+1)
+                    if len(cluster) > 0:
+                        img_in_cluster = np.concatenate(cluster)
+                        writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i+1)
 
                 # write pure and mixed tasks
                 for task_id, task in enumerate(numpy_tasks):
