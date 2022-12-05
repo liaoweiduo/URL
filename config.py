@@ -62,10 +62,10 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
                     help="Resume training starting from the last checkpoint (default: True)")
 
 # pmo training
-parser.add_argument('--train.cluster_mode', type=str, default='probability', metavar='CLUSTER_MODE',
+parser.add_argument('--train.cluster_mode', type=str, default='argmax', metavar='CLUSTER_MODE',
                     choices=['probability', 'argmax'],
                     help='how similarity is used to do clustering.')
-parser.add_argument('--train.mov_avg_alpha', type=float, default=0.1, metavar='MOV_AVG_ALPHA',
+parser.add_argument('--train.mov_avg_alpha', type=float, default=0.01, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid.')
 parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
                     help='number of ways to train')

@@ -14,6 +14,8 @@ import torch.nn.functional as F
 import numpy as np
 import tensorflow as tf
 
+import matplotlib.pyplot as plt
+
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -64,13 +66,13 @@ def train():
         num_train_classes = train_loader.num_classes('train')
         print(f'num_train_classes: {num_train_classes}')
 
-        val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets)
+        val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type='5shot')
 
         '''initialize model and optimizer'''
         models = []
         optimizers = []
         checkpointers = []
-        start_iters, best_val_losses, best_val_accs = [], [], []
+        start_iter, best_val_loss, best_val_acc = 0, 999999999, 0
         lr_managers = []
         # init all starting issues for M(8) models.
         model_names = [args['model.name'].format(m_indx) for m_indx in range(args['model.num_clusters'])]
@@ -89,30 +91,27 @@ def train():
             checkpointers.append(_checkpointer)
 
             if os.path.isfile(_checkpointer.last_ckpt) and args['train.resume']:
-                _start_iter, _best_val_loss, _best_val_acc =\
-                    _checkpointer.restore_model(ckpt='last')
+                start_iter, best_val_loss, best_val_acc =\
+                    _checkpointer.restore_model(ckpt='last')    # all 3 things are the same for all models
             else:
                 print('No checkpoint restoration')
-                _best_val_loss = 999999999
-                _best_val_acc = _start_iter = 0
-            start_iters.append(_start_iter)
-            best_val_losses.append(_best_val_loss)
-            best_val_accs.append(_best_val_acc)
 
             # define learning rate policy
             if args['train.lr_policy'] == "step":
-                _lr_manager = UniformStepLR(_optimizer, args, _start_iter)
+                _lr_manager = UniformStepLR(_optimizer, args, start_iter)
             elif "exp_decay" in args['train.lr_policy']:
-                _lr_manager = ExpDecayLR(_optimizer, args, _start_iter)
+                _lr_manager = ExpDecayLR(_optimizer, args, start_iter)
             elif "cosine" in args['train.lr_policy']:
-                _lr_manager = CosineAnnealRestartLR(_optimizer, args, _start_iter)
+                _lr_manager = CosineAnnealRestartLR(_optimizer, args, start_iter)
             lr_managers.append(_lr_manager)
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
 
         '''initialize pool'''
-        pool = Pool(args, capacity=args['model.num_clusters'])
+        pool = Pool(capacity=args['model.num_clusters'])
+        if start_iter > 0:
+            pool.restore()      # restore pool cluster centers.
 
         '''initialize mixer'''
         mixer = Mixer(mode=args['train.mix_mode'])
@@ -133,12 +132,13 @@ def train():
             obj_idx: {
                 pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
             } for obj_idx in range(args['train.n_obj'])})
-        epoch_val_loss = {model_name: {name: [] for name in valsets} for model_name in model_names}
-        epoch_val_acc = {model_name: {name: [] for name in valsets} for model_name in model_names}
+        # epoch_val_loss = {model_name: {name: [] for name in valsets} for model_name in model_names}
+        # epoch_val_acc = {model_name: {name: [] for name in valsets} for model_name in model_names}
+        epoch_val_loss = {model_name: [] for model_name in model_names}
+        epoch_val_acc = {model_name: [] for model_name in model_names}
 
-        start_iter = np.min(start_iters)
         print(f'>>>> Train start from {start_iter}.')
-        for i in tqdm(range(max_iter)):
+        for i in tqdm(range(max_iter), ncols=50):
             if i < start_iter:
                 continue
 
@@ -146,8 +146,8 @@ def train():
             '''Clustering Phase'''
             '''----------------'''
             # eval mode
-            for model in models:
-                model.eval()
+            for _model in models:
+                _model.eval()
 
             with torch.no_grad():
                 '''obtain 1 task from train_loader'''
@@ -157,42 +157,12 @@ def train():
                 gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                 domain = sample_numpy['domain'].item()
 
-                '''move images to all devices, dict {device, images}'''
-                images_all = train_loader.to_all_devices(images_numpy)
-                # labels_all = train_loader.to_all_devices(re_labels_numpy)   # related labels
-
-                '''for each label, obtain class_centroid on all models and calculate similarities to all centers'''
-                re_label_set = np.unique(re_labels_numpy)
-                for re_label in re_label_set:
-                    similarities = []
-                    centroids = []
-                    for model_id, (d, model) in enumerate(zip(devices, models)):
-                        images = images_all[d][re_labels_numpy == re_label]
-                        features = model.embed(images)
-                        centroid = features.mean(0)     # [emb_dim, ]
-                        similarity = pool.get_distances(
-                            centroid.unsqueeze(0), model_id, distance=args['test.distance']).item()
-                        similarities.append(similarity)
-                        centroids.append(centroid)
-
-                    '''cluster_idx is obtained with probability'''
-                    similarities = F.softmax(torch.tensor(similarities), dim=0).numpy()
-                    if args['train.cluster_mode'] == 'probability':
-                        cluster_idx = np.random.choice(len(similarities), p=similarities)
-                    elif args['train.cluster_mode'] == 'argmax':
-                        cluster_idx = np.argmax(similarities)
-                    else:
-                        raise Exception(f"Un-implemented clustering mode {args['train.cluster_mode']}")
-
-                    '''put samples into pool with (gt_label, domain)'''
-                    images = images_numpy[re_labels_numpy == re_label]
-                    gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
-                    label = (gt_label, domain)
-                    pool.put(images, label, cluster_idx, centroids[cluster_idx])
+                pool.clustering(images_numpy, re_labels_numpy, gt_labels_numpy, domain,
+                                train_loader, devices, models, i, update_cluster_centers=True)
 
             # back to train mode
-            for model in models:
-                model.train()
+            for _model in models:
+                _model.train()
 
             '''--------------'''
             '''Training Phase'''
@@ -208,7 +178,9 @@ def train():
                 num_imgs = np.array([cls[1] for cls in classes])
                 if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]) >= args['train.n_way']:
                     available_cluster_idxs.append(idx)
-            if len(available_cluster_idxs) >= args['train.n_obj']:      # enough available clusters
+            if len(available_cluster_idxs) < args['train.n_obj']:      # not enough available clusters
+                print(f'Iter: {i + 1}, not enough available clusters.')
+            else:
                 selected_cluster_idxs = sorted(np.random.choice(
                     available_cluster_idxs, args['train.n_obj'], replace=False))
                 # which is also devices idx
@@ -235,14 +207,14 @@ def train():
                 '''obtain ncc loss multi-obj matrix and put to last device'''
                 ncc_losses_multi_obj = []   # shape [num_objs, num_tasks], [2, 4]
                 for obj_idx, cluster_idx in enumerate(selected_cluster_idxs):
-                    model, d = models[cluster_idx], devices[cluster_idx]
+                    _model, d = models[cluster_idx], devices[cluster_idx]
                     tasks = [pure_tasks[idx][d] for idx in range(len(pure_tasks))]
                     tasks.extend([mix_tasks[idx][d] for idx in range(len(mix_tasks))])
 
                     losses = []
                     for task_idx, task in enumerate(tasks):
-                        context_features = model.embed(task['context_images'])
-                        target_features = model.embed(task['target_images'])
+                        context_features = _model.embed(task['context_images'])
+                        target_features = _model.embed(task['target_images'])
                         context_labels = task['context_labels']
                         target_labels = task['target_labels']
                         loss, stats_dict, _ = prototype_loss(
@@ -274,7 +246,7 @@ def train():
                     lr_manager.step(i)
 
             if (i + 1) % 200 == 0:        # 200; 5 for DEBUG
-                print(f"\n>> Iter: {i + 1}:")
+                print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
                 epoch_train_history[i + 1] = {'loss': epoch_loss, 'acc': epoch_acc}
                 np.save(os.path.join(args['out.dir'], 'summary', 'train_log.npy'), epoch_train_history)
@@ -286,88 +258,135 @@ def train():
                     for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
                         loss_values = epoch_loss[obj_idx][pop_idx]
                         writer.add_scalar(f"loss/{obj_idx}/{pop_idx}/train_loss",
-                                          np.mean(loss_values), i)
+                                          np.mean(loss_values), i+1)
                         obj.append(np.mean(loss_values))
                         acc_values = epoch_acc[obj_idx][pop_idx]
                         writer.add_scalar(f"accuracy/{obj_idx}/{pop_idx}/train_acc",
-                                          np.mean(acc_values), i)
+                                          np.mean(acc_values), i+1)
                     objs.append(obj)
-                objs = np.array(objs).T     # [4,2]
+
+                '''log objs'''
+                objs = np.array(objs)     # [2, 4]
+                figure = plt.figure()
+                plt.scatter(objs[0], objs[1])
+                writer.add_figure(f"image/train_objs", figure, i+1)
+
                 # writer.add_embedding(objs, metadata=[f'p{p_idx}' for p_idx in range(objs.shape[0])])
                 '''log loss and accuracy on all models on all clusters'''
                 for model_name in model_names:
                     for cluster_name in cluster_names:
                         loss_values = epoch_loss[model_name][cluster_name]
-                        writer.add_scalar(f"loss/{model_name}/{cluster_name}-train_loss",
-                                          np.mean(loss_values) if len(loss_values) > 0 else 0, i)
                         acc_values = epoch_acc[model_name][cluster_name]
-                        writer.add_scalar(f"accuracy/{model_name}/{cluster_name}-train_acc",
-                                          np.mean(acc_values) if len(acc_values) > 0 else 0, i)
+                        if len(loss_values) > 0:
+                            writer.add_scalar(f"loss/{model_name}/{cluster_name}-train_loss",
+                                              np.mean(loss_values), i+1)
+                            writer.add_scalar(f"accuracy/{model_name}/{cluster_name}-train_acc",
+                                              np.mean(acc_values), i+1)
                         epoch_loss[model_name][cluster_name], epoch_acc[model_name][cluster_name] = [], []
-                writer.add_scalar('loss/hv', np.mean(epoch_loss['hv']), i)
+                writer.add_scalar('loss/train_hv', np.mean(epoch_loss['hv']), i+1)
                 writer.add_scalar('learning_rate',
-                                  optimizer.param_groups[0]['lr'], i)
-                print(f"\n==>> loss/hv {np.mean(epoch_loss['hv']):.3f}.")
-
+                                  optimizer.param_groups[0]['lr'], i+1)
+                print(f"==>> loss/train_hv {np.mean(epoch_loss['hv']):.3f}.")
 
             '''----------'''
             '''Eval Phase'''
             '''----------'''
             # Evaluation inside the training loop
             if (i + 1) % args['train.eval_freq'] == 0:      # args['train.eval_freq']; 10 for DEBUG
-                for model_id, (d, model) in enumerate(zip(devices, models)):
-                    print(f"\n>> Val on {model_names[model_id]}: ")
-                    model.eval()
-                    dataset_accs, dataset_losses = [], []
-                    for valset in valsets:
-                        val_losses, val_accs = [], []
-                        for j in tqdm(range(args['train.eval_size'])):    # args['train.eval_size']; DEBUG 2
-                            with torch.no_grad():
-                                sample = val_loader.get_validation_task(session, valset, d=d)
-                                context_features = model.embed(sample['context_images'])
-                                target_features = model.embed(sample['target_images'])
-                                context_labels = sample['context_labels']
-                                target_labels = sample['target_labels']
-                                _, stats_dict, _ = prototype_loss(context_features, context_labels,
-                                                                  target_features, target_labels)
-                            val_losses.append(stats_dict['loss'])
-                            val_accs.append(stats_dict['acc'])
+                print(f"\n>> Iter: {i + 1}, evaluation:")
+                # eval mode
+                for _model in models:
+                    _model.eval()
 
-                        # write summaries per validation set
-                        dataset_acc, dataset_loss = np.mean(val_accs) * 100, np.mean(val_losses)
-                        dataset_accs.append(dataset_acc)
-                        dataset_losses.append(dataset_loss)
-                        epoch_val_loss[model_names[model_id]][valset].append(dataset_loss)
-                        epoch_val_acc[model_names[model_id]][valset].append(dataset_acc)
-                        writer.add_scalar(f"loss/{model_names[model_id]}/{valset}/val_loss", dataset_loss, i)
-                        writer.add_scalar(f"accuracy/{model_names[model_id]}/{valset}/val_acc", dataset_acc, i)
-                        print(f"\n==>> {valset}: val_acc {dataset_acc:.2f}%, val_loss {dataset_loss:.3f}")
+                val_pool = Pool(capacity=args['model.num_clusters'])
+                val_pool.centers = pool.centers     # same centers as train_pool
 
-                    # write summaries averaged over datasets
-                    avg_val_loss, avg_val_acc = np.mean(dataset_losses), np.mean(dataset_accs)
-                    writer.add_scalar(f"loss/{model_names[model_id]}/avg_val_loss", avg_val_loss, i)
-                    writer.add_scalar(f"accuracy/{model_names[model_id]}/avg_val_acc", avg_val_acc, i)
+                '''collect cluster_losses/accs for all models'''
+                cluster_accs, cluster_losses = [[] for _ in range(len(models))], [[] for _ in range(len(models))]
+                for valset in valsets:
+                    print(f"==>> collect classes from {valset}.")
+                    for j in tqdm(range(args['train.eval_size']), ncols=50):
+                        with torch.no_grad():
+                            '''obtain 1 task from val_loader'''
+                            sample_numpy = val_loader.get_validation_task(session, valset, d='numpy')
+                            images_numpy = np.concatenate(
+                                [sample_numpy['context_images'], sample_numpy['target_images']])
+                            re_labels_numpy = np.concatenate(
+                                [sample_numpy['context_labels'], sample_numpy['target_labels']])
+                            gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
+                            domain = sample_numpy['domain'].item()
 
-                    # saving checkpoints
-                    if avg_val_acc > best_val_accs[model_id]:
-                        best_val_losses[model_id], best_val_accs[model_id] = avg_val_loss, avg_val_acc
-                        is_best = True
-                        print('====>> Best model so far!')
-                    else:
-                        is_best = False
-                    extra_dict = {'epoch_loss': epoch_loss, 'epoch_acc': epoch_acc,
-                                  'epoch_val_loss': epoch_val_loss, 'epoch_val_acc': epoch_val_acc}
-                    checkpointers[model_id].save_checkpoint(
-                        i, best_val_accs[model_id], best_val_losses[model_id],
+                            val_pool.clustering(images_numpy, re_labels_numpy, gt_labels_numpy, domain,
+                                                train_loader, devices, models, i, update_cluster_centers=False)
+
+                            '''check if any cluster have sufficient class to construct 1 task'''
+                            for idx, classes in enumerate(val_pool.current_classes()):
+                                num_imgs = np.array([cls[1] for cls in classes])
+                                available_way = len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']])
+                                if available_way >= args['train.n_way']:
+                                    # enough classes to construct 1 task
+                                    # then use all available classes to construct 1 task
+                                    numpy_task = val_pool.episodic_sample(
+                                        idx, n_way=available_way, remove_sampled_classes=True)
+
+                                    '''put to device and forward model to obtain val_acc/loss'''
+                                    d = devices[idx]
+                                    model = models[idx]
+                                    torch_task = val_pool.to_torch(numpy_task, device_list=[d])
+
+                                    context_features = model.embed(torch_task[d]['context_images'])
+                                    target_features = model.embed(torch_task[d]['target_images'])
+                                    context_labels = torch_task[d]['context_labels']
+                                    target_labels = torch_task[d]['target_labels']
+                                    _, stats_dict, _ = prototype_loss(context_features, context_labels,
+                                                                      target_features, target_labels)
+
+                                    cluster_losses[idx].append(stats_dict['loss'])
+                                    cluster_accs[idx].append(stats_dict['acc'])
+
+                '''write and print'''
+                for cluster_idx, (loss_list, acc_list) in enumerate(zip(cluster_losses, cluster_accs)):
+                    if len(loss_list) > 0:
+                        cluster_acc, cluster_loss = np.mean(acc_list) * 100, np.mean(loss_list)
+
+                        epoch_val_loss[model_names[cluster_idx]].append(cluster_loss)
+                        epoch_val_acc[model_names[cluster_idx]].append(cluster_acc)
+                        writer.add_scalar(f"loss/{model_names[cluster_idx]}/val_loss", cluster_loss, i+1)
+                        writer.add_scalar(f"accuracy/{model_names[cluster_idx]}/val_acc", cluster_acc, i+1)
+                        print(f"==>> {model_names[cluster_idx]}: "
+                              f"val_acc {cluster_acc:.2f}%, val_loss {cluster_loss:.3f}")
+
+                    else:   # no class(task) is assign to this cluster
+                        print(f"==>> {model_names[cluster_idx]}: "
+                              f"val_acc No value, val_loss No value")
+
+                # write summaries averaged over clusters
+                avg_val_loss, avg_val_acc = np.mean(np.concatenate(cluster_losses)), np.mean(np.concatenate(cluster_accs))
+                writer.add_scalar(f"loss/avg_val_loss", avg_val_loss, i+1)
+                writer.add_scalar(f"accuracy/avg_val_acc", avg_val_acc, i+1)
+
+                # saving checkpoints
+                if avg_val_acc > best_val_acc:
+                    best_val_loss, best_val_acc = avg_val_loss, avg_val_acc
+                    is_best = True
+                    print('====>> Best model so far!')
+                else:
+                    is_best = False
+                extra_dict = {'epoch_loss': epoch_loss, 'epoch_acc': epoch_acc,
+                              'epoch_val_loss': epoch_val_loss, 'epoch_val_acc': epoch_val_acc}
+                for cluster_idx, (model, optimizer) in enumerate(zip(models, optimizers)):
+                    checkpointers[cluster_idx].save_checkpoint(
+                        i, best_val_acc, best_val_loss,
                         is_best, optimizer=optimizer,
                         state_dict=model.get_state_dict(), extra=extra_dict)
 
-                    '''save epoch_val_loss and epoch_val_acc'''
-                    np.save(os.path.join(args['out.dir'], 'summary', 'val_log.npy'),
-                            {'loss': epoch_val_loss, 'acc': epoch_val_acc})
+                '''save epoch_val_loss and epoch_val_acc'''
+                np.save(os.path.join(args['out.dir'], 'summary', 'val_log.npy'),
+                        {'loss': epoch_val_loss, 'acc': epoch_val_acc})
 
-                    model.train()
-                    print(f"====>> Trained and evaluated at {i}.")
+                for _model in models:
+                    _model.train()
+                print(f"====>> Trained and evaluated at {i + 1}.")
 
                 # saving pool
                 pool.store(i, train_loader, is_best)
@@ -376,19 +395,19 @@ def train():
                 images = pool.current_images()
                 for cluster_id, cluster in enumerate(images):
                     img_in_cluster = np.concatenate(cluster)
-                    writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i)
+                    writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i+1)
 
                 # write pure and mixed tasks
                 for task_id, task in enumerate(numpy_tasks):
                     imgs = np.concatenate([task['context_images'], task['target_images']])
-                    writer.add_images(f"image/task-{task_id}", imgs, i)
+                    writer.add_images(f"image/task-{task_id}", imgs, i+1)
 
     '''Close the writers'''
     writer.close()
 
     if start_iter < max_iter:
-        print(f"""Done training with best_mean_val_loss: {np.mean(best_val_losses):.3f}, 
-        best_avg_val_acc: {np.mean(best_val_accs):.2f}%""")
+        print(f"""Done training with best_mean_val_loss: {best_val_loss:.3f}, 
+        best_avg_val_acc: {best_val_acc:.2f}%""")
     else:
         print(f"""No training happened. Loaded checkpoint at {start_iter}, while max_iter was {max_iter}""")
 

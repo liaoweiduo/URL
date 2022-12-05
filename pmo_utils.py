@@ -21,13 +21,12 @@ class Pool:
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, args, capacity=8, max_num_classes=20, max_num_images=20):
+    def __init__(self, capacity=8, max_num_classes=20, max_num_images=20):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
         :param max_num_images: Maximum number of images can be stored in each class.
         """
-        self.args = args
         self.capacity = capacity
         self.max_num_classes = max_num_classes
         self.max_num_images = max_num_images
@@ -68,7 +67,7 @@ class Pool:
             shutil.copyfile(os.path.join(self.out_path, class_filename),
                             os.path.join(self.out_path, 'pool_best.json'))
 
-        centers = torch.stack(self.centers).detach().cpu().numpy()     # may raise exception if contains None.
+        centers = torch.stack(self.centers).numpy()     # may raise exception if contains None.
         path = os.path.join(self.out_path, center_filename)
         np.save(path, centers)
 
@@ -82,9 +81,47 @@ class Pool:
         """
         self.init()
         centers = np.load(os.path.join(self.out_path, center_filename))
-        self.centers = torch.from_numpy(centers)
+        self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
 
-    def put(self, images, label, cluster_idx, class_centroid):
+    def clustering(self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
+                   loader, devices, models, iter, update_cluster_centers):
+        """
+        Do clustering based on class centroid similarities with cluster centers.
+        """
+        '''move images to all devices, dict {device, images}'''
+        images_all = loader.to_all_devices(images_numpy)
+        # labels_all = train_loader.to_all_devices(re_labels_numpy)   # related labels
+        re_label_set = np.unique(re_labels_numpy)
+
+        '''for each label, obtain class_centroid on all models and calculate similarities to all centers'''
+        for re_label in re_label_set:
+            similarities = []
+            centroids = []
+            for model_id, (d, model) in enumerate(zip(devices, models)):
+                images = images_all[d][re_labels_numpy == re_label]
+                features = model.embed(images)
+                centroid = features.mean(0)  # [emb_dim, ]
+                similarity = self.get_distances(
+                    centroid.unsqueeze(0), model_id, distance=args['test.distance']).item()
+                similarities.append(similarity)
+                centroids.append(centroid)
+
+            '''cluster_idx is obtained with probability'''
+            similarities = F.softmax(torch.tensor(similarities), dim=0).numpy()
+            if args['train.cluster_mode'] == 'probability' or iter < 10:  # for cluster init
+                cluster_idx = np.random.choice(len(similarities), p=similarities)
+            elif args['train.cluster_mode'] == 'argmax':
+                cluster_idx = np.argmax(similarities)
+            else:
+                raise Exception(f"Un-implemented clustering mode {args['train.cluster_mode']}")
+
+            '''put samples into pool with (gt_label, domain)'''
+            images = images_numpy[re_labels_numpy == re_label]
+            gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
+            label = (gt_label, domain)
+            self.put(images, label, cluster_idx, centroids[cluster_idx], update_cluster_centers)
+
+    def put(self, images, label, cluster_idx, class_centroid, update_cluster_centers=True):
         """
         Put class samples (batch of numpy images) into clusters.
         Issues to handle:
@@ -109,10 +146,11 @@ class Pool:
         '''put to cluster: cluster_idx'''
         if len(self.clusters[cluster_idx]) == self.max_num_classes:
             self.clusters[cluster_idx].pop(0)   # remove the earliest cls.
-        self.clusters[cluster_idx].append({'images': images, 'label': label})
+        self.clusters[cluster_idx].append({'images': stored_images, 'label': label})
 
         '''update cluster centers'''
-        self.update_cluster_centers(cluster_idx, class_centroid)
+        if update_cluster_centers:
+            self.update_cluster_centers(cluster_idx, class_centroid)
 
     def update_cluster_centers(self, cluster_idx, class_centroid):
         """
@@ -129,7 +167,7 @@ class Pool:
             return
 
         '''moving average update center calculation'''
-        alpha = self.args['train.mov_avg_alpha']
+        alpha = args['train.mov_avg_alpha']
         self.centers[cluster_idx] = alpha * class_centroid.detach().cpu() + (1-alpha) * self.centers[cluster_idx]
 
     def get_distances(self, class_centroids, cluster_idx, distance):
@@ -211,7 +249,8 @@ class Pool:
             cluster_idx,
             n_way=args['train.n_way'],
             n_shot=args['train.n_shot'],
-            n_query=args['train.n_query']
+            n_query=args['train.n_query'],
+            remove_sampled_classes=False
     ):
         """
         Sample a task from the specific cluster_idx.
@@ -255,6 +294,12 @@ class Pool:
             'domain': cluster_idx,              # C0 - C7, num_clusters
         }
 
+        if remove_sampled_classes:
+            class_items = []
+            for idx in range(len(self.clusters[cluster_idx])):
+                if idx not in selected_class_idxs:
+                    class_items.append(self.clusters[cluster_idx][idx])
+            self.clusters[cluster_idx] = class_items
         return task_dict
 
     def batch_sample(self, cluster_idx):
@@ -268,8 +313,8 @@ class Pool:
         Put samples to a list of devices specified by device_list.
         Return a dict keying by device.
         """
-        from utils import device
         if device_list is None:
+            from utils import device
             device_list = [device]
 
         sample_dict = {}
