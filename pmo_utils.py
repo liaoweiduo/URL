@@ -85,16 +85,20 @@ class Pool:
         self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
 
     def clustering(self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                   loader, devices, models, iter, update_cluster_centers):
+                   loader, devices, models, iter, mode=args['train.cluster_mode'],
+                   update_cluster_centers=True,
+                   only_return_cluster_idx=False):
         """
         Do clustering based on class centroid similarities with cluster centers.
         """
         '''move images to all devices, dict {device, images}'''
         images_all = loader.to_all_devices(images_numpy)
         # labels_all = train_loader.to_all_devices(re_labels_numpy)   # related labels
-        re_label_set = np.unique(re_labels_numpy)
+        re_label_set = np.unique(re_labels_numpy)       # unique also do sorting
 
         '''for each label, obtain class_centroid on all models and calculate similarities to all centers'''
+        cluster_idxs = []
+        labels = []
         for re_label in re_label_set:
             similarities = []
             centroids = []
@@ -109,9 +113,9 @@ class Pool:
 
             '''cluster_idx is obtained with probability'''
             similarities = F.softmax(torch.tensor(similarities), dim=0).numpy()
-            if args['train.cluster_mode'] == 'probability' or iter < 50:  # for cluster init
+            if mode == 'probability' or iter < 50:  # for cluster init
                 cluster_idx = np.random.choice(len(similarities), p=similarities)
-            elif args['train.cluster_mode'] == 'argmax':
+            elif mode == 'argmax':
                 cluster_idx = np.argmax(similarities)
             else:
                 raise Exception(f"Un-implemented clustering mode {args['train.cluster_mode']}")
@@ -120,7 +124,12 @@ class Pool:
             images = images_numpy[re_labels_numpy == re_label]
             gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
             label = (gt_label, domain)
-            self.put(images, label, cluster_idx, centroids[cluster_idx], update_cluster_centers)
+            labels.append(label)
+            cluster_idxs.append(cluster_idx)
+            if not only_return_cluster_idx:
+                self.put(images, label, cluster_idx, centroids[cluster_idx], update_cluster_centers)
+
+        return labels, cluster_idxs
 
     def put(self, images, label, cluster_idx, class_centroid, update_cluster_centers=True):
         """

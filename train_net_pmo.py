@@ -265,13 +265,13 @@ def train():
             if (i + 1) % 200 == 0:        # 200; 5 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
-                # epoch_train_history = dict()
-                # if os.path.exists(os.path.join(args['out.dir'], 'summary', 'train_log.pickle')):
-                #     epoch_train_history = pickle.load(
-                #         open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'rb'))
-                # epoch_train_history[i + 1] = {'loss': epoch_loss.copy(), 'acc': epoch_acc.copy()}
-                # with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
-                #     pickle.dump(epoch_train_history, f)
+                epoch_train_history = dict()
+                if os.path.exists(os.path.join(args['out.dir'], 'summary', 'train_log.pickle')):
+                    epoch_train_history = pickle.load(
+                        open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'rb'))
+                epoch_train_history[i + 1] = {'loss': epoch_loss.copy(), 'acc': epoch_acc.copy()}
+                with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
+                    pickle.dump(epoch_train_history, f)
 
                 '''log multi-objective loss and accuracy'''
                 objs_loss, objs_acc = [], []
