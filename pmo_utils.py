@@ -31,6 +31,7 @@ class Pool:
         self.max_num_classes = max_num_classes
         self.max_num_images = max_num_images
         self.emb_dim = 512
+        self.load_path = os.path.join(args['model.dir'], 'weights', 'pool')
         self.out_path = os.path.join(args['out.dir'], 'weights', 'pool')
         self.out_path = check_dir(self.out_path, False)
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
@@ -80,7 +81,7 @@ class Pool:
         Restore pool's centers from npy file.
         """
         self.init()
-        centers = np.load(os.path.join(self.out_path, center_filename))
+        centers = np.load(os.path.join(self.load_path, center_filename))
         self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
 
     def clustering(self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
@@ -487,7 +488,7 @@ def prototype_similarity(embeddings, labels, centers, distance='cos'):
 
 def cal_hv_loss(objs, ref=2):
     """
-    HV calculation
+    HV loss calculation: weighted loss
     code function from HV maximization:
     https://github.com/timodeist/multi_objective_learning/tree/06217d0ce024b92d52cdeb0390b1afb29ee59819
 
@@ -524,3 +525,36 @@ def cal_hv_loss(objs, ref=2):
         weighted_loss = np.sum(objs * weights)
 
     return weighted_loss
+
+
+def cal_hv(objs, ref=2, target='loss'):
+    """
+    Calculate HV value for multi-objective losses and accs.
+
+    Args:
+        objs : Tensor/ndarry with shape(obj_size, pop_size)     e.g., (3, 6)
+        ref: 2 for loss, 0 for acc
+        target:
+
+    Returns:
+        hv value
+    """
+    from pymoo.indicators.hv import HV
+
+    num_obj, num_sol = objs.shape[0], objs.shape[1]
+    ref_point = np.array([ref for _ in range(num_obj)])
+
+    # obtain np objs
+    if type(objs) is torch.Tensor:
+        objs_np = objs.detach().cpu().numpy()
+    else:
+        objs_np = objs
+
+    # for acc reverse objs
+    if target == 'acc':
+        objs_np = -objs_np
+
+    ind = HV(ref_point=ref_point)
+    hv = ind(objs_np.T)
+
+    return hv

@@ -28,7 +28,7 @@ from models.model_helpers import get_model, get_optimizer
 from utils import Accumulator, device, devices, set_determ, check_dir
 from config import args
 
-from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss
+from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv
 
 
 def train():
@@ -120,25 +120,30 @@ def train():
         '''Training loop'''
         '''-------------'''
         max_iter = args['train.max_iter']
-        epoch_train_history = dict()
-        epoch_loss = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
-        epoch_loss.update({
-            obj_idx: {
-                pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
-            } for obj_idx in range(args['train.n_obj'])})
-        epoch_loss['hv'] = []
-        epoch_acc = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
-        epoch_acc.update({
-            obj_idx: {
-                pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
-            } for obj_idx in range(args['train.n_obj'])})
+
+        def init_train_log():
+            epoch_loss = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
+            epoch_loss.update({
+                obj_idx: {
+                    pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
+                } for obj_idx in range(args['train.n_obj'])})
+            epoch_loss['hv_loss'], epoch_loss['hv'] = [], []
+            epoch_acc = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
+            epoch_acc.update({
+                obj_idx: {
+                    pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
+                } for obj_idx in range(args['train.n_obj'])})
+            epoch_acc['hv'] = []
+            return epoch_loss, epoch_acc
+
+        epoch_loss, epoch_acc = init_train_log()
         # epoch_val_loss = {model_name: {name: [] for name in valsets} for model_name in model_names}
         # epoch_val_acc = {model_name: {name: [] for name in valsets} for model_name in model_names}
         epoch_val_loss = {model_name: [] for model_name in model_names}
         epoch_val_acc = {model_name: [] for model_name in model_names}
 
-        print(f'>>>> Train start from {start_iter}.')
-        for i in tqdm(range(max_iter), ncols=50):
+        print(f'\n>>>> Train start from {start_iter}.')
+        for i in tqdm(range(max_iter), ncols=100):
             if i < start_iter:
                 continue
 
@@ -237,7 +242,19 @@ def train():
                 '''calculate HV loss'''
                 ref = args['train.ref']
                 hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
-                epoch_loss['hv'].append(hv_loss.item())
+                epoch_loss['hv_loss'].append(hv_loss.item())
+
+                '''calculate HV value for mutli-obj loss and acc'''
+                obj = np.array([[
+                    epoch_loss[obj_idx][task_idx][-1] for task_idx in range(len(tasks))     # this iter
+                ] for obj_idx in range(len(selected_cluster_idxs))])
+                hv = cal_hv(obj, ref, target='loss')
+                epoch_loss['hv'].append(hv.item())
+                obj = np.array([[
+                    epoch_acc[obj_idx][task_idx][-1] for task_idx in range(len(tasks))
+                ] for obj_idx in range(len(selected_cluster_idxs))])
+                hv = cal_hv(obj, 0, target='acc')
+                epoch_acc['hv'].append(hv.item())
 
                 hv_loss.backward()
                 for optimizer in optimizers:
@@ -248,28 +265,39 @@ def train():
             if (i + 1) % 200 == 0:        # 200; 5 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
-                epoch_train_history[i + 1] = {'loss': epoch_loss, 'acc': epoch_acc}
-                np.save(os.path.join(args['out.dir'], 'summary', 'train_log.npy'), epoch_train_history)
+                # epoch_train_history = dict()
+                # if os.path.exists(os.path.join(args['out.dir'], 'summary', 'train_log.pickle')):
+                #     epoch_train_history = pickle.load(
+                #         open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'rb'))
+                # epoch_train_history[i + 1] = {'loss': epoch_loss.copy(), 'acc': epoch_acc.copy()}
+                # with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
+                #     pickle.dump(epoch_train_history, f)
 
-                objs = []
                 '''log multi-objective loss and accuracy'''
+                objs_loss, objs_acc = [], []
                 for obj_idx in range(args['train.n_obj']):
-                    obj = []
+                    obj_loss, obj_acc = [], []
                     for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
                         loss_values = epoch_loss[obj_idx][pop_idx]
                         writer.add_scalar(f"loss/{obj_idx}/{pop_idx}/train_loss",
                                           np.mean(loss_values), i+1)
-                        obj.append(np.mean(loss_values))
+                        obj_loss.append(np.mean(loss_values))
                         acc_values = epoch_acc[obj_idx][pop_idx]
                         writer.add_scalar(f"accuracy/{obj_idx}/{pop_idx}/train_acc",
                                           np.mean(acc_values), i+1)
-                    objs.append(obj)
+                        obj_acc.append(np.mean(acc_values))
+                    objs_loss.append(obj_loss)
+                    objs_acc.append(obj_acc)
 
                 '''log objs'''
-                objs = np.array(objs)     # [2, 4]
+                objs = np.array(objs_loss)     # [2, 4]
                 figure = plt.figure()
                 plt.scatter(objs[0], objs[1])
-                writer.add_figure(f"image/train_objs", figure, i+1)
+                writer.add_figure(f"image/train_objs_loss", figure, i+1)
+                objs = np.array(objs_acc)     # [2, 4]
+                figure = plt.figure()
+                plt.scatter(objs[0], objs[1])
+                writer.add_figure(f"image/train_objs_acc", figure, i+1)
 
                 # writer.add_embedding(objs, metadata=[f'p{p_idx}' for p_idx in range(objs.shape[0])])
                 '''log loss and accuracy on all models on all clusters'''
@@ -282,11 +310,14 @@ def train():
                                               np.mean(loss_values), i+1)
                             writer.add_scalar(f"accuracy/{model_name}/{cluster_name}-train_acc",
                                               np.mean(acc_values), i+1)
-                        epoch_loss[model_name][cluster_name], epoch_acc[model_name][cluster_name] = [], []
-                writer.add_scalar('loss/train_hv', np.mean(epoch_loss['hv']), i+1)
+                writer.add_scalar('loss/train_hv', np.mean(epoch_loss['hv_loss']), i+1)
+                writer.add_scalar('loss/hv', np.mean(epoch_loss['hv']), i+1)
+                writer.add_scalar('accuracy/hv', np.mean(epoch_acc['hv']), i+1)
                 writer.add_scalar('learning_rate',
                                   optimizer.param_groups[0]['lr'], i+1)
-                print(f"==>> loss/train_hv {np.mean(epoch_loss['hv']):.3f}.")
+                print(f"==>> loss/train_hv {np.mean(epoch_loss['hv_loss']):.3f}.")
+
+                epoch_loss, epoch_acc = init_train_log()
 
             '''----------'''
             '''Eval Phase'''
@@ -305,7 +336,7 @@ def train():
                 cluster_accs, cluster_losses = [[] for _ in range(len(models))], [[] for _ in range(len(models))]
                 for valset in valsets:
                     print(f"==>> collect classes from {valset}.")
-                    for j in tqdm(range(args['train.eval_size']), ncols=50):
+                    for j in tqdm(range(args['train.eval_size']), ncols=100):
                         with torch.no_grad():
                             '''obtain 1 task from val_loader'''
                             sample_numpy = val_loader.get_validation_task(session, valset, d='numpy')
@@ -347,7 +378,7 @@ def train():
                 '''write and print'''
                 for cluster_idx, (loss_list, acc_list) in enumerate(zip(cluster_losses, cluster_accs)):
                     if len(loss_list) > 0:
-                        cluster_acc, cluster_loss = np.mean(acc_list) * 100, np.mean(loss_list)
+                        cluster_acc, cluster_loss = np.mean(acc_list).item() * 100, np.mean(loss_list).item()
 
                         epoch_val_loss[model_names[cluster_idx]].append(cluster_loss)
                         epoch_val_acc[model_names[cluster_idx]].append(cluster_acc)
@@ -381,8 +412,8 @@ def train():
                         state_dict=model.get_state_dict(), extra=extra_dict)
 
                 '''save epoch_val_loss and epoch_val_acc'''
-                np.save(os.path.join(args['out.dir'], 'summary', 'val_log.npy'),
-                        {'loss': epoch_val_loss, 'acc': epoch_val_acc})
+                with open(os.path.join(args['out.dir'], 'summary', 'val_log.pickle'), 'wb') as f:
+                    pickle.dump({'loss': epoch_val_loss, 'acc': epoch_val_acc}, f)
 
                 for _model in models:
                     _model.train()

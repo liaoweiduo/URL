@@ -80,8 +80,8 @@ parser.add_argument('--train.mix_mode', type=str, default='cutmix', metavar='MIX
                     help='mix mode for mixer. ')
 parser.add_argument('--train.n_mix', type=int, default=2, metavar='N_MIX',
                     help='number of mixed tasks generated in 1 iter')
-parser.add_argument('--train.ref', type=int, default=2, metavar='N_MIX',
-                    help='number of mixed tasks generated in 1 iter')
+parser.add_argument('--train.ref', type=int, default=2, metavar='REF',
+                    help='absolute reference point localtion for calculate hv.')
 
 
 # creating a database of features
