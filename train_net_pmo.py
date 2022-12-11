@@ -14,8 +14,6 @@ import torch.nn.functional as F
 import numpy as np
 import tensorflow as tf
 
-import matplotlib.pyplot as plt
-
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -28,7 +26,7 @@ from models.model_helpers import get_model, get_optimizer
 from utils import Accumulator, device, devices, cluster_device, set_determ, check_dir
 from config import args
 
-from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv
+from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs
 
 
 def train():
@@ -53,7 +51,8 @@ def train():
         # print(f'Test on: {testsets}.')
 
         print(f'Devices: {devices}.')
-        print(f'Cluster network device: {device}.')
+        print(f'Cluster network device: {cluster_device}.')
+        print(f'Mult-obj NCC loss calculation device: {device}.')
 
         train_loaders = dict()
         num_train_classes = dict()
@@ -175,7 +174,6 @@ def train():
             cluster_model.eval()
             pool.eval()
 
-
         def zero_grad():
             for optimizer in optimizers:
                 optimizer.zero_grad()
@@ -208,8 +206,6 @@ def train():
             if i < start_iter:
                 continue
 
-            pool.clear_clusters()      # init pool's images
-
             zero_grad()
 
             '''----------------'''
@@ -219,6 +215,10 @@ def train():
             # model_eval()
 
             # with torch.no_grad():
+
+            '''re clustering the pool for the updated clustering model'''
+            pool.re_clustering(cluster_model)
+
             '''obtain tasks from train_loaders'''
             for t_indx, trainset in enumerate(trainsets):
                 num_task_per_batch = 1
@@ -234,7 +234,7 @@ def train():
 
                     pool.clustering(
                         images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                        train_loaders[trainset], cluster_model)
+                        cluster_model)
 
             '''--------------'''
             '''Training Phase'''
@@ -327,7 +327,7 @@ def train():
 
             update_step(i)
 
-            if (i + 1) % 200 == 0:        # 200; 2 for DEBUG
+            if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
                 epoch_train_history = dict()
@@ -355,13 +355,15 @@ def train():
                     objs_acc.append(obj_acc)
 
                 '''log objs'''
+                pop_labels = [
+                    f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
+                    for idx in range(args['train.n_mix'] + args['train.n_obj'])
+                ]       # ['p0', 'p1', 'm0', 'm1']
                 objs = np.array(objs_loss)     # [2, 4]
-                figure = plt.figure()
-                plt.scatter(objs[0], objs[1])
+                figure = draw_objs(objs, pop_labels)
                 writer.add_figure(f"image/train_objs_loss", figure, i+1)
                 objs = np.array(objs_acc)     # [2, 4]
-                figure = plt.figure()
-                plt.scatter(objs[0], objs[1])
+                figure = draw_objs(objs, pop_labels)
                 writer.add_figure(f"image/train_objs_acc", figure, i+1)
 
                 '''log loss and accuracy on all models on all clusters'''
@@ -389,6 +391,11 @@ def train():
                     if len(cluster) > 0:
                         img_in_cluster = np.concatenate(cluster)
                         writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i+1)
+
+                '''write pure and mixed tasks'''
+                for task_id, task in enumerate(numpy_tasks):
+                    imgs = np.concatenate([task['context_images'], task['target_images']])
+                    writer.add_images(f"image/task-{task_id}", imgs, i+1)
 
             '''----------'''
             '''Eval Phase'''
@@ -420,7 +427,7 @@ def train():
 
                             val_pool.clustering(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                                val_loader, cluster_model, softmax_mode='softmax')
+                                cluster_model, softmax_mode='softmax')
 
                             '''check if any cluster have sufficient class to construct 1 task'''
                             for idx, classes in enumerate(val_pool.current_classes()):
@@ -492,19 +499,7 @@ def train():
                 print(f"====>> Trained and evaluated at {i + 1}.\n")
 
                 # saving pool
-                pool.store(i, train_loaders, is_best)
-
-                # write pool
-                images = pool.current_images()
-                for cluster_id, cluster in enumerate(images):
-                    if len(cluster) > 0:
-                        img_in_cluster = np.concatenate(cluster)
-                        writer.add_images(f"image/pool-{cluster_id}", img_in_cluster, i+1)
-
-                # write pure and mixed tasks
-                for task_id, task in enumerate(numpy_tasks):
-                    imgs = np.concatenate([task['context_images'], task['target_images']])
-                    writer.add_images(f"image/task-{task_id}", imgs, i+1)
+                pool.store(i, train_loaders, trainsets, is_best)
 
     '''Close the writers'''
     writer.close()

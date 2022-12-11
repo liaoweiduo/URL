@@ -8,13 +8,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pymoo.util.ref_dirs import get_reference_directions
+import matplotlib.pyplot as plt
 
 from models.losses import compute_prototypes
 from models.model_helpers import get_optimizer
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from data.meta_dataset_reader import MetaDatasetReader
-from utils import cluster_device
+from utils import cluster_device, to_device
 
 from config import args
 from utils import check_dir
@@ -71,7 +72,7 @@ class Pool(nn.Module):
     def clear_clusters(self):
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
 
-    def store(self, epoch, loaders, is_best, class_filename='pool.json', center_filename='pool.npy'):
+    def store(self, epoch, loaders, trainsets, is_best, class_filename='pool.json', center_filename='pool.npy'):
         """
         Store pool to json file.
         Only label information is stored for analysis, images are not stored for saving storage.
@@ -85,7 +86,7 @@ class Pool(nn.Module):
             pool_dict[f'{cluster_idx}_str'] = []
             for cls_idx in range(len(cu_cl[cluster_idx])):
                 domain = cu_cl[cluster_idx][cls_idx][0][1]
-                str_label = loaders[domain].label_to_str(cu_cl[cluster_idx][cls_idx][0], domain=0)
+                str_label = loaders[trainsets[domain]].label_to_str(cu_cl[cluster_idx][cls_idx][0], domain=0)
                 pool_dict[cluster_idx].append(cu_cl[cluster_idx][cls_idx][0])
                 pool_dict[f'{cluster_idx}_str'].append(str_label)
 
@@ -148,7 +149,7 @@ class Pool(nn.Module):
             self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
 
     def clustering(self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                   loader, model,
+                   model,
                    update_cluster_centers=False,
                    softmax_mode='gumbel',
                    put=True):
@@ -157,7 +158,7 @@ class Pool(nn.Module):
         :param images_numpy: numpy with shape [bs, c, h, w]
         :param re_labels_numpy: related labels, numpy with shape [bs,]
         :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
-        :param domain: int domain
+        :param domain: int domain or same size numpy as labels [bs,].
         :param loader: dataset loader use to put images to device.
         :param model: clustering model to obtain img embedding and class centroid.
         :param update_cluster_centers: whether to update the cluster center.
@@ -167,8 +168,8 @@ class Pool(nn.Module):
         :param put: whether to put classes into clusters.
         """
         '''move images to device where model locates'''
-        images_torch = loader.to_device(images_numpy, cluster_device)
-        labels_torch = loader.to_device(re_labels_numpy, cluster_device)
+        images_torch = to_device(images_numpy, cluster_device)
+        labels_torch = to_device(re_labels_numpy, cluster_device)
 
         embeddings = model.embed(images_torch)
 
@@ -196,7 +197,11 @@ class Pool(nn.Module):
             embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
             gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
             similarities_numpy = similarities[re_label].detach().cpu().numpy()  # [num_cluster]
-            label = (gt_label, domain)
+            if type(domain) is np.ndarray:
+                image_domains = domain[re_labels_numpy == re_label]
+                label = (gt_label, image_domains[0].item())
+            else:
+                label = (gt_label, domain)
             labels.append(label)
 
             '''put samples into pool with (gt_label, domain)'''
@@ -205,6 +210,28 @@ class Pool(nn.Module):
                          cluster_idxs[re_label], class_centroids[re_label], update_cluster_centers)
 
         return labels, cluster_idxs
+
+    def re_clustering(self, model):
+        """
+        collect classes in the pool then clear clusters and cluster for those classes
+        """
+        images, re_labels, gt_labels, domains = [], [], [], []
+        re_idx = 0
+        for cluster_idx, (cls_list_in_cluster, img_list_in_cluster) in enumerate(
+                zip(self.current_classes(), self.current_images())):
+            for class_idx, (cls, img) in enumerate(zip(cls_list_in_cluster, img_list_in_cluster)):
+                images.append(img)                                          # [20, 3, 84, 84]
+                re_labels.append(np.repeat(re_idx, img.shape[0]))           # [20]
+                gt_labels.append(np.repeat(cls[0][0], img.shape[0]))        # [20]
+                domains.append(np.repeat(cls[0][1], img.shape[0]))          # [20]
+                re_idx += 1
+
+        if len(images) > 0:
+            self.clear_clusters()
+            self.clustering(
+                np.concatenate(images), np.concatenate(re_labels), np.concatenate(gt_labels), np.concatenate(domains),
+                model[-self.max_num_images:]
+            )
 
     def put(self, images, label, grad_one, embeddings, similarities,
             cluster_idx, class_centroid, update_cluster_centers=False):
@@ -230,9 +257,12 @@ class Pool(nn.Module):
             stored_embeddings = embeddings
 
         '''remove first several images to satisfy max_num_images'''
-        while stored_images.shape[0] > self.max_num_images:
-            stored_images = np.delete(stored_images, 0, axis=0)
-            stored_embeddings = np.delete(stored_embeddings, 0, axis=0)
+        if stored_images.shape[0] > self.max_num_images:
+            stored_images = stored_images[-self.max_num_images:]
+            stored_embeddings = stored_embeddings[-self.max_num_images:]
+        # while stored_images.shape[0] > self.max_num_images:
+        #     stored_images = np.delete(stored_images, 0, axis=0)
+        #     stored_embeddings = np.delete(stored_embeddings, 0, axis=0)
 
         '''put to cluster: cluster_idx'''
         if len(self.clusters[cluster_idx]) == self.max_num_classes:
@@ -331,6 +361,7 @@ class Pool(nn.Module):
         # pool montage => (3, 84*max_num_classes, 84*10*capacity).
 
         first return raw list, [8 * [num_class_each_cluster * numpy [10, 3, 84, 84]]]
+        with labels
         """
         images = []
         for cluster in self.clusters:
@@ -726,3 +757,19 @@ def cal_hv(objs, ref=2, target='loss'):
     hv = ind(objs_np.T)
 
     return hv
+
+
+def draw_objs(objs, labels):
+    """
+    return a figure of objs.
+    objs: numpy with shape [obj_size, pop_size]
+    labels: list of labels: ['p0', 'p1', 'm0', 'm1']
+    """
+    obj_size, pop_size = objs.shape
+    fig, ax = plt.subplots()
+    ax.grid(True)
+    c = plt.get_cmap('rainbow', pop_size)
+    for pop_idx in range(pop_size):
+        ax.scatter(objs[0, pop_idx], objs[1, pop_idx], s=200, color=c(pop_idx), label=labels[pop_idx])
+    ax.legend()
+    return fig

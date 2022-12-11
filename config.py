@@ -54,6 +54,8 @@ parser.add_argument('--train.cosine_anneal_freq', type=int, default=4000, metava
 parser.add_argument('--train.nesterov_momentum', action='store_true', help="If to augment query images in order to avearge the embeddings")
 
 # evaluation during training
+parser.add_argument('--train.summary_freq', type=int, default=200, metavar='SUMMARY_FREQ',
+                    help='How often to summary epoch acc and loss during training')
 parser.add_argument('--train.eval_freq', type=int, default=5000, metavar='EVAL_FREQ',
                     help='How often to evaluate model during training')
 parser.add_argument('--train.eval_size', type=int, default=300, metavar='EVAL_SIZE',
@@ -67,7 +69,7 @@ parser.add_argument('--train.cluster_center_mode', type=str, default='learnable'
                     help='learnable cluster centers or use mov avg to update.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=0.1, metavar='GUMBEL_TAU',
+parser.add_argument('--train.gumbel_tau', type=float, default=0.05, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. '
                          'a large tau makes probability assign and a small tau makes argmax assign.')
 parser.add_argument('--train.n_mo', type=int, default=5, metavar='N_MO',

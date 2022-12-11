@@ -97,19 +97,6 @@ class MetaDatasetReader(object):
 
         return sample_dict
 
-    def to_device(self, sample, d):
-        assert isinstance(sample, torch.Tensor) or isinstance(sample, np.ndarray)
-
-        if isinstance(sample, np.ndarray):
-            sample = torch.from_numpy(sample)
-
-        if sample.dtype == torch.int32:
-            sample = sample.long()
-
-        sample = sample.to(d)
-
-        return sample
-
     def num_classes(self, split_name):
         split = SPLIT_NAME_TO_SPLIT[split_name]
         all_split_specs = self.specs_dict[SPLIT_NAME_TO_SPLIT['train']]

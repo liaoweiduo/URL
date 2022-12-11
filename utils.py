@@ -15,6 +15,20 @@ devices = [
 cluster_device = torch.device('cpu')
 
 
+def to_device(sample, d):
+    assert isinstance(sample, torch.Tensor) or isinstance(sample, np.ndarray)
+
+    if isinstance(sample, np.ndarray):
+        sample = torch.from_numpy(sample)
+
+    if sample.dtype == torch.int32:
+        sample = sample.long()
+
+    sample = sample.to(d)
+
+    return sample
+
+
 class ConfusionMatrix():
     def __init__(self, n_classes):
         self.n_classes = n_classes
