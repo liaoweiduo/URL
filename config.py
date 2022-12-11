@@ -62,11 +62,17 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
                     help="Resume training starting from the last checkpoint (default: True)")
 
 # pmo training
-parser.add_argument('--train.cluster_mode', type=str, default='argmax', metavar='CLUSTER_MODE',
-                    choices=['probability', 'argmax'],
-                    help='how similarity is used to do clustering.')
-parser.add_argument('--train.mov_avg_alpha', type=float, default=0.01, metavar='MOV_AVG_ALPHA',
-                    help='alpha on current class centroid.')
+parser.add_argument('--train.cluster_center_mode', type=str, default='learnable', metavar='CLUSTER_CENTER_MODE',
+                    choices=['learnable', 'mov_avg'],
+                    help='learnable cluster centers or use mov avg to update.')
+parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
+                    help='alpha on current class centroid. only activate if use mov_avg. ')
+parser.add_argument('--train.gumbel_tau', type=float, default=0.1, metavar='GUMBEL_TAU',
+                    help='temperature for gumbel softmax. '
+                         'a large tau makes probability assign and a small tau makes argmax assign.')
+parser.add_argument('--train.n_mo', type=int, default=5, metavar='N_MO',
+                    help='number of MO sampling to train. '
+                         'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')
 parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
                     help='number of ways to train')
 parser.add_argument('--train.n_shot', type=int, default=5, metavar='N_SHOT',

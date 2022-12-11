@@ -12,6 +12,7 @@ devices = [
     torch.device(f"cuda:{i % torch.cuda.device_count()}" if torch.cuda.is_available() else "cpu")
     for i in range(args['model.num_clusters'])
 ]
+cluster_device = torch.device('cpu')
 
 
 class ConfusionMatrix():

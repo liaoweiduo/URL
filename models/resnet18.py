@@ -68,7 +68,7 @@ class ResNet(nn.Module):
         self.outplanes = 512
 
         # handle classifier creation
-        if num_classes is not None:
+        if num_classes is not None and num_classes != 0:
             if classifier == 'linear':
                 self.cls_fn = nn.Linear(self.outplanes, num_classes)
             elif classifier == 'cosine':

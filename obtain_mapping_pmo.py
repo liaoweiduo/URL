@@ -145,15 +145,15 @@ def obtain():
 
         '''assign relative label for each cluster'''
         '''collect labels for each cluster'''
-        classes_in_cluster = {cluster_idx: [] for cluster_idx in range(args['model.num_clusters'])}
+        classes_in_cluster = {cluster_names[cluster_idx]: [] for cluster_idx in range(args['model.num_clusters'])}
         for t_idx, (trainset, class_map_dict) in enumerate(class_mapping.items()):
             for gt_label, cluster_idx in class_map_dict.items():
-                classes_in_cluster[cluster_idx].append(
+                classes_in_cluster[cluster_names[cluster_idx]].append(
                     (
                         gt_label,
                         train_loaders[t_idx].label_to_str((gt_label, 0))[0],   # domain is always 0 for single domain
                         trainset,
-                        len(classes_in_cluster[cluster_idx])
+                        len(classes_in_cluster[cluster_names[cluster_idx]])
                     )
                 )
 

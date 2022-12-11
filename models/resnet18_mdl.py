@@ -71,11 +71,11 @@ class ResNet(nn.Module):
             cls_fn = []
             if classifier == 'linear':
                 for num_class in num_classes:
-                    cls_fn.append(nn.Linear(self.outplanes, num_class))
+                    cls_fn.append(nn.Linear(self.outplanes, num_class) if num_class != 0 else 1)    # no output
                 self.cls_fn = nn.ModuleList(cls_fn)
             elif classifier == 'cosine':
                 for num_class in num_classes:
-                    cls_fn.append(CosineClassifier(self.outplanes, num_class))
+                    cls_fn.append(CosineClassifier(self.outplanes, num_class) if num_class != 0 else 1)    # no output
                 self.cls_fn = nn.ModuleList(cls_fn)
 
         for m in self.modules():

@@ -5,10 +5,10 @@ from functools import partial
 
 from models.model_utils import CheckPointer
 from models.models_dict import DATASET_MODELS_RESNET18, DATASET_MODELS_RESNET18_PNF
-from utils import device, devices
+from utils import device
 
 
-def get_model(num_classes, args, multi_device_id=None):
+def get_model(num_classes, args, d=None, freeze_fe=False):
     train_classifier = args['model.classifier']
     model_name = args['model.backbone']
     dropout_rate = args.get('model.dropout', 0)
@@ -44,11 +44,18 @@ def get_model(num_classes, args, multi_device_id=None):
     model = model_fn(classifier=train_classifier,
                      num_classes=num_classes,
                      global_pool=False)
-    if multi_device_id is not None:
-        model.to(devices[multi_device_id])
-        print(f'Move model {args["model.name"]} to {devices[multi_device_id]}.')
+
+    if d is not None:
+        model.to(d)
+        print(f'Move model {args["model.name"]} to {d}.')
     else:
         model.to(device)
+
+    if freeze_fe:
+        for name, param in model.named_parameters():
+            if 'cls' not in name:       # cls_fn
+                param.requires_grad = False
+
     return model
 
 

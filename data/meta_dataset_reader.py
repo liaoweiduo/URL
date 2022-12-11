@@ -97,6 +97,19 @@ class MetaDatasetReader(object):
 
         return sample_dict
 
+    def to_device(self, sample, d):
+        assert isinstance(sample, torch.Tensor) or isinstance(sample, np.ndarray)
+
+        if isinstance(sample, np.ndarray):
+            sample = torch.from_numpy(sample)
+
+        if sample.dtype == torch.int32:
+            sample = sample.long()
+
+        sample = sample.to(d)
+
+        return sample
+
     def num_classes(self, split_name):
         split = SPLIT_NAME_TO_SPLIT[split_name]
         all_split_specs = self.specs_dict[SPLIT_NAME_TO_SPLIT['train']]
@@ -132,11 +145,14 @@ class MetaDatasetReader(object):
         self.dataset_name_to_dataset_id = {v: k for k, v in
                                            self.dataset_id_to_dataset_name.items()}
 
-    def label_to_str(self, label, split_name='train'):
+    def label_to_str(self, label, domain=None, split_name='train'):
         """
         Map label to the string form (label_str, domain_str)
+        Note that we give domain = 0 for single loader, do not use label's true domain
         """
-        local_label, domain = label
+        local_label, label_domain = label
+        if domain is None:
+            domain = label_domain
         domain_str = self.dataset_id_to_dataset_name[domain]
         local_label_str = self.specs_dict[SPLIT_NAME_TO_SPLIT[split_name]][domain].class_names[local_label]
         return local_label_str, domain_str
