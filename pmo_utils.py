@@ -209,7 +209,13 @@ class Pool(nn.Module):
                 self.put(images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
                          cluster_idxs[re_label], class_centroids[re_label], update_cluster_centers)
 
-        return labels, cluster_idxs
+        '''return 1 image, label(gt, domain), cluster_idx, class_centroid, similarity for each re_label'''
+        TBD
+
+        return {
+            'labels': labels,
+            'cluster_idxs': cluster_idxs,
+        }
 
     def re_clustering(self, model):
         """
@@ -230,7 +236,7 @@ class Pool(nn.Module):
             self.clear_clusters()
             self.clustering(
                 np.concatenate(images), np.concatenate(re_labels), np.concatenate(gt_labels), np.concatenate(domains),
-                model[-self.max_num_images:]
+                model
             )
 
     def put(self, images, label, grad_one, embeddings, similarities,

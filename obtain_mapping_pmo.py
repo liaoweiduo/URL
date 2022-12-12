@@ -27,7 +27,7 @@ from models.losses import cross_entropy_loss, prototype_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from models.model_helpers import get_model, get_optimizer
-from utils import Accumulator, device, devices, set_determ, check_dir
+from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
 from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv
@@ -54,58 +54,44 @@ def obtain():
         # print(f'Val on: {valsets}.')
         # print(f'Test on: {testsets}.')
 
-        print(f'Devices: {devices}')
+        print(f'Cluster network device: {device}.')
 
         train_loaders = []
         num_train_classes = dict()
         for t_indx, trainset in enumerate(trainsets):
-            train_loaders.append(MetaDatasetEpisodeReader('train', [trainset], valsets, testsets, test_type='5shot'))
+            train_loaders[trainset] = MetaDatasetEpisodeReader(
+                'train', [trainset], valsets, testsets, test_type='5shot')
             num_train_classes[trainset] = train_loaders[t_indx].num_classes('train')
         print(f'num_train_classes: {num_train_classes}')
         # {'ilsvrc_2012': 712, 'omniglot': 883, 'aircraft': 70, 'cu_birds': 140, 'dtd': 33, 'quickdraw': 241,
         #  'fungi': 994, 'vgg_flower': 71}
 
-        # val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type='5shot')
-
         '''initialize and load model'''
-        models = []
-        optimizers = []
-        checkpointers = []
         start_iter, best_val_loss, best_val_acc = 0, 999999999, 0
-        # init all starting issues for M(8) models.
-        model_names = [args['model.name'].format(m_indx) for m_indx in range(args['model.num_clusters'])]
         cluster_names = [f'C{idx}' for idx in range(args['model.num_clusters'])]
-        # M0-net - M7-net
-        for m_indx in range(args['model.num_clusters']):        # 8
-            model_args_with_name = copy.deepcopy(args)
-            model_args_with_name['model.name'] = model_names[m_indx]
-            _model = get_model(None, model_args_with_name, multi_device_id=m_indx)  # distribute model to multi-devices
-            _model.eval()   # eval mode
-            models.append(_model)
 
-            _optimizer = get_optimizer(_model, model_args_with_name, params=_model.get_parameters())
-            optimizers.append(_optimizer)
-
-            # restoring the best checkpoint
-            _checkpointer = CheckPointer(model_args_with_name, _model, optimizer=_optimizer)
-            checkpointers.append(_checkpointer)
-
-            if os.path.isfile(_checkpointer.best_ckpt):
-                start_iter, best_val_loss, best_val_acc =\
-                    _checkpointer.restore_model(ckpt='best')    # all 3 things are the same for all models
-            else:
-                raise Exception('No checkpoint restoration')
+        cluster_model = get_model(None, args, d=device)
+        cluster_optimizer = get_optimizer(cluster_model, args, params=cluster_model.get_parameters())
+        # restoring the last checkpoint
+        cluster_checkpointer = CheckPointer(args, cluster_model, optimizer=cluster_optimizer)
+        if os.path.isfile(cluster_checkpointer.best_ckpt):
+            start_iter, best_val_loss, best_val_acc = \
+                cluster_checkpointer.restore_model(ckpt='best')
+        else:
+            raise Exception('No checkpoint restoration')
 
         '''initialize pool'''
         pool = Pool(capacity=args['model.num_clusters'])
-        pool.restore()      # restore pool cluster centers.
+        pool.restore(start_iter, center_filename='pool_best.npy')      # restore best pool cluster centers.
+        pool.to(device)
 
         '''--------------'''
         '''Obtain mapping'''
         '''--------------'''
         class_mapping = dict()      # {trainset: {gt_label: cluster_idx}}
-        for t_indx, (trainset, loader) in enumerate(zip(trainsets, train_loaders)):
+        for t_indx, trainset in enumerate(trainsets):
             print(f"\n>> Obtain classes for {trainset}.")
+            loader = train_loaders[trainset]
             class_mapping[trainset] = dict()
             num_classes = num_train_classes[trainset]
             with tqdm(total=num_classes, ncols=100) as pbar:
@@ -117,7 +103,7 @@ def obtain():
                         images_numpy = np.concatenate([sample_numpy['context_images'], sample_numpy['target_images']])
                         re_labels_numpy = np.concatenate([sample_numpy['context_labels'], sample_numpy['target_labels']])
                         gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
-                        domain = sample_numpy['domain'].item()
+                        domain = t_indx
 
                         gt_label_set = np.unique(gt_labels_numpy)
                         unseen_labels = gt_label_set[classes[gt_label_set] == 0]      # e.g., [3]
@@ -129,17 +115,23 @@ def obtain():
                             re_labels_numpy = re_labels_numpy[unseen_mask]
                             gt_labels_numpy = gt_labels_numpy[unseen_mask]
 
-                            labels, cluster_idxs = pool.clustering(
+                            cluster_info = pool.clustering(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                                loader, devices, models, iter=1e5, mode='argmax',  # use argmax
-                                update_cluster_centers=False,
-                                only_return_cluster_idx=True)
+                                cluster_model,
+                                softmax_mode='argmax',  # use argmax
+                                update_cluster_centers=False, put=False)
+
+                            labels = cluster_info['labels']
+                            cluster_idxs = cluster_info['cluster_idxs']
 
                             '''add mapping'''
                             class_mapping[trainset].update(
                                 {label[0]: cluster_idx for label, cluster_idx in zip(labels, cluster_idxs)})
 
-                            ''''''
+                            '''collect information for tsne'''
+
+                            TBD
+
                             classes[unseen_labels] = 1      # mark as seen
                             pbar.update(len(unseen_labels))
 
