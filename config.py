@@ -64,12 +64,14 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
                     help="Resume training starting from the last checkpoint (default: True)")
 
 # pmo training
+parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'], default='5shot', metavar='TRAIN_TYPE',
+                    help="standard varying number of ways and shots as in Meta-Dataset, 1shot for five-way-one-shot and 5shot for varying-way-five-shot evaluation.")
 parser.add_argument('--train.cluster_center_mode', type=str, default='learnable', metavar='CLUSTER_CENTER_MODE',
                     choices=['learnable', 'mov_avg'],
                     help='learnable cluster centers or use mov avg to update.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=0.05, metavar='GUMBEL_TAU',
+parser.add_argument('--train.gumbel_tau', type=float, default=0.2, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. '
                          'a large tau makes probability assign and a small tau makes argmax assign.')
 parser.add_argument('--train.n_mo', type=int, default=5, metavar='N_MO',
@@ -90,6 +92,10 @@ parser.add_argument('--train.n_mix', type=int, default=2, metavar='N_MIX',
                     help='number of mixed tasks generated in 1 iter')
 parser.add_argument('--train.ref', type=int, default=2, metavar='REF',
                     help='absolute reference point localtion for calculate hv.')
+
+# pmo clustering to obtain class mapping
+parser.add_argument('--map.target', type=str, choices=['train', 'val', 'test'], default='train', metavar='MAP_TARGET',
+                    help="which set to obtain class mapping.")
 
 
 # creating a database of features

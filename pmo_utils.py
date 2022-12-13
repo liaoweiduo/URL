@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 import os
 import shutil
 import json
+import copy
 
 import numpy as np
 import torch
@@ -53,7 +54,13 @@ class Pool(nn.Module):
         if self.mode == 'learnable':
             self.centers: torch.Tensor = nn.Parameter(torch.randn((self.capacity, self.emb_dim)))
             nn.init.xavier_uniform_(self.centers)
-            self.optimizer = get_optimizer(self, args, params=self.get_parameters())
+            args_with_lr = copy.deepcopy(args)
+            args_with_lr['train.learning_rate'] = 3e-2
+            self.optimizer = get_optimizer(self, args_with_lr, params=self.get_parameters())
+            if start_iter > 0:
+                ckpt_path = os.path.join(self.load_path, 'optimizer.pth.tar')
+                ch = torch.load(ckpt_path, map_location=cluster_device)
+                self.optimizer.load_state_dict(ch['optimizer'])
             if args['train.lr_policy'] == "step":
                 self.lr_manager = UniformStepLR(self.optimizer, args, start_iter)
             elif "exp_decay" in args['train.lr_policy']:
@@ -112,29 +119,10 @@ class Pool(nn.Module):
             shutil.copyfile(os.path.join(self.out_path, center_filename),
                             os.path.join(self.out_path, 'pool_best.npy'))
 
-        # '''tsne embedding save'''
-        # images = self.current_images()
-        # embeddings = self.current_embeddings()
-        # similarities = self.current_similarities()
-        # imgs, embs, sims = [], [], []
-        # for cluster_id, (
-        #         images_cluster, embeddings_cluster, similarities_cluster
-        # ) in enumerate(zip(images, embeddings, similarities)):
-        #     if len(images_cluster) > 0:
-        #         imgs.append(np.concatenate(images_cluster))
-        #         embs.append(np.concatenate(embeddings_cluster))
-        #         for cls_idx, images_cls in enumerate(images_cluster):
-        #             num_imgs = images_cls.shape[0]
-        #             sims.append(np.stack([similarities_cluster[cls_idx] for _ in range(num_imgs)]))
-        # imgs = np.concatenate(imgs)
-        # embs = np.concatenate(embs)
-        # sims = np.concatenate(sims)
-        #
-        # # cluster centers
-        # centers = pool.centers.detach().cpu().numpy()
-        # embs = np.concatenate([embs, centers])
-        # imgs = np.concatenate([imgs, np.ones((centers.shape[0], *imgs.shape[1:]))])
-        # sims = np.concatenate([sims, np.eye(centers.shape[0], sims.shape[1])])
+        if self.mode == 'learnable':
+            '''store optimizer'''
+            state = {'epoch': epoch + 1, 'optimizer': self.optimizer.state_dict()}
+            torch.save(state, os.path.join(self.out_path, 'optimizer.pth.tar'))
 
     def restore(self, start_iter, center_filename='pool.npy'):
         """
@@ -144,7 +132,7 @@ class Pool(nn.Module):
         centers = np.load(os.path.join(self.load_path, center_filename))
 
         if self.mode == 'learnable':
-            self.centers = torch.from_numpy(centers)    # tensor: 8*512
+            self.centers.data = torch.from_numpy(centers)    # tensor: 8*512
         elif self.mode == 'mov_avg':
             self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
 
@@ -192,6 +180,8 @@ class Pool(nn.Module):
             raise Exception(f'Un implemented softmax_mode: {softmax_mode} for Pool to do clustering.')
 
         labels = []
+        sample_images = []
+        sims = []
         for re_label in range(len(cluster_idxs)):
             images = images_numpy[re_labels_numpy == re_label]
             embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
@@ -203,18 +193,21 @@ class Pool(nn.Module):
             else:
                 label = (gt_label, domain)
             labels.append(label)
+            sample_images.append(images[0])
+            sims.append(similarities_numpy)
 
             '''put samples into pool with (gt_label, domain)'''
             if put:
                 self.put(images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
                          cluster_idxs[re_label], class_centroids[re_label], update_cluster_centers)
 
-        '''return 1 image, label(gt, domain), cluster_idx, class_centroid, similarity for each re_label'''
-        TBD
-
+        '''return info for tsne'''
         return {
-            'labels': labels,
-            'cluster_idxs': cluster_idxs,
+            'labels': np.array(labels),                                     # [n_way, gt, domain]
+            'cluster_idxs': cluster_idxs,                                   # [n_way,]
+            'class_centroids': class_centroids.detach().cpu().numpy(),      # [n_way, emb_dim]
+            'sample_images': np.stack(sample_images),                       # [n_way, c, h, w]
+            'similarities': np.stack(sims)                                  # [n_way, num_cluster]
         }
 
     def re_clustering(self, model):
@@ -276,7 +269,8 @@ class Pool(nn.Module):
         self.clusters[cluster_idx].append({'images': stored_images, 'label': label,
                                            'grad_one': grad_one.repeat(*images.shape[-3:]),     # c,h,w
                                            'embeddings': stored_embeddings,
-                                           'similarities': similarities})
+                                           'similarities': similarities,
+                                           'class_centroid': class_centroid})
 
         '''update cluster centers: mov avg'''
         if self.mode == 'mov_avg' and update_cluster_centers:
@@ -779,3 +773,16 @@ def draw_objs(objs, labels):
         ax.scatter(objs[0, pop_idx], objs[1, pop_idx], s=200, color=c(pop_idx), label=labels[pop_idx])
     ax.legend()
     return fig
+
+
+def map_re_label(re_labels):
+    """
+    For masked re_label, it can be [1,1,1,3,3,3,7,7,7]
+    As a valid episodic task, re_label should be in the form [0,0,0,1,1,1,2,2,2]
+    Return valid re_label
+    """
+    label_set = np.unique(re_labels)
+    re_label_map = {
+        origin_label: correct_label for origin_label, correct_label in zip(label_set, np.arange(len(label_set)))}
+    correct_labels = np.array(list(map(lambda x: re_label_map[x], re_labels)))
+    return correct_labels

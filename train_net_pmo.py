@@ -58,7 +58,7 @@ def train():
         num_train_classes = dict()
         for t_indx, trainset in enumerate(trainsets):
             train_loaders[trainset] = MetaDatasetEpisodeReader(
-                'train', [trainset], valsets, testsets, test_type='5shot')
+                'train', [trainset], valsets, testsets, test_type=args['train.type'])
             num_train_classes[trainset] = train_loaders[trainset].num_classes('train')
         print(f'num_train_classes: {num_train_classes}')
         # {'ilsvrc_2012': 712, 'omniglot': 883, 'aircraft': 70, 'cu_birds': 140, 'dtd': 33, 'quickdraw': 241,
@@ -68,7 +68,7 @@ def train():
         # num_train_classes = train_loader.num_classes('train')
         # print(f'num_train_classes: {num_train_classes}')
 
-        val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type='5shot')
+        val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type=args['train.type'])
 
         '''initialize models and optimizer'''
         models = []
@@ -344,11 +344,11 @@ def train():
                     obj_loss, obj_acc = [], []
                     for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
                         loss_values = epoch_loss[obj_idx][pop_idx]
-                        writer.add_scalar(f"loss/{obj_idx}/{pop_idx}/train_loss",
+                        writer.add_scalar(f"loss/train/{obj_idx}/{pop_idx}",
                                           np.mean(loss_values), i+1)
                         obj_loss.append(np.mean(loss_values))
                         acc_values = epoch_acc[obj_idx][pop_idx]
-                        writer.add_scalar(f"accuracy/{obj_idx}/{pop_idx}/train_acc",
+                        writer.add_scalar(f"accuracy/train/{obj_idx}/{pop_idx}",
                                           np.mean(acc_values), i+1)
                         obj_acc.append(np.mean(acc_values))
                     objs_loss.append(obj_loss)
@@ -372,16 +372,17 @@ def train():
                         loss_values = epoch_loss[model_name][cluster_name]
                         acc_values = epoch_acc[model_name][cluster_name]
                         if len(loss_values) > 0:
-                            writer.add_scalar(f"loss/{model_name}/{cluster_name}-train_loss",
+                            writer.add_scalar(f"loss/train/{model_name}/{cluster_name}",
                                               np.mean(loss_values), i+1)
-                            writer.add_scalar(f"accuracy/{model_name}/{cluster_name}-train_acc",
+                            writer.add_scalar(f"accuracy/train/{model_name}/{cluster_name}",
                                               np.mean(acc_values), i+1)
-                writer.add_scalar('loss/train_hv', np.mean(epoch_loss['hv_loss']), i+1)
-                writer.add_scalar('loss/hv', np.mean(epoch_loss['hv']), i+1)
-                writer.add_scalar('accuracy/hv', np.mean(epoch_acc['hv']), i+1)
+                writer.add_scalar('loss/train/train_hv', np.mean(epoch_loss['hv_loss']), i+1)
+                writer.add_scalar('loss/train/hv', np.mean(epoch_loss['hv']), i+1)
+                writer.add_scalar('accuracy/train/hv', np.mean(epoch_acc['hv']), i+1)
                 writer.add_scalar('learning_rate',
                                   optimizers[0].param_groups[0]['lr'], i+1)
-                print(f"==>> loss/hv {np.mean(epoch_loss['hv']):.3f}, accuracy/hv {np.mean(epoch_acc['hv']):.3f}.")
+                print(f"==>> loss/train/hv {np.mean(epoch_loss['hv']):.3f}, "
+                      f"accuracy/train/hv {np.mean(epoch_acc['hv']):.3f}.")
 
                 epoch_loss, epoch_acc = init_train_log()
 
@@ -461,8 +462,8 @@ def train():
 
                         epoch_val_loss[model_names[cluster_idx]].append(cluster_loss)
                         epoch_val_acc[model_names[cluster_idx]].append(cluster_acc)
-                        writer.add_scalar(f"loss/{model_names[cluster_idx]}/val_loss", cluster_loss, i+1)
-                        writer.add_scalar(f"accuracy/{model_names[cluster_idx]}/val_acc", cluster_acc, i+1)
+                        writer.add_scalar(f"loss/val/{model_names[cluster_idx]}", cluster_loss, i+1)
+                        writer.add_scalar(f"accuracy/val/{model_names[cluster_idx]}", cluster_acc, i+1)
                         print(f"==>> {model_names[cluster_idx]}: "
                               f"val_acc {cluster_acc:.2f}%, val_loss {cluster_loss:.3f}")
 
@@ -472,8 +473,8 @@ def train():
 
                 # write summaries averaged over clusters
                 avg_val_loss, avg_val_acc = np.mean(np.concatenate(cluster_losses)), np.mean(np.concatenate(cluster_accs))
-                writer.add_scalar(f"loss/avg_val_loss", avg_val_loss, i+1)
-                writer.add_scalar(f"accuracy/avg_val_acc", avg_val_acc, i+1)
+                writer.add_scalar(f"loss/val/avg_val_loss", avg_val_loss, i+1)
+                writer.add_scalar(f"accuracy/val/avg_val_acc", avg_val_acc, i+1)
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
@@ -489,13 +490,15 @@ def train():
                         i, best_val_acc, best_val_loss,
                         is_best, optimizer=optimizer,
                         state_dict=model.get_state_dict(), extra=extra_dict)
+                cluster_checkpointer.save_checkpoint(
+                    i, best_val_acc, best_val_loss,
+                    is_best, optimizer=cluster_optimizer,
+                    state_dict=cluster_model.get_state_dict(), extra=extra_dict)
 
                 '''save epoch_val_loss and epoch_val_acc'''
                 with open(os.path.join(args['out.dir'], 'summary', 'val_log.pickle'), 'wb') as f:
-                    pickle.dump({'loss': epoch_val_loss, 'acc': epoch_val_acc}, f)
+                    pickle.dump({'epoch': start_iter + 1, 'loss': epoch_val_loss, 'acc': epoch_val_acc}, f)
 
-                for _model in models:
-                    _model.train()
                 print(f"====>> Trained and evaluated at {i + 1}.\n")
 
                 # saving pool
