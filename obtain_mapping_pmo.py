@@ -119,7 +119,7 @@ def obtain():
                             '''map re_label in the form [0,0,0,1,1,1,2,2,2]'''
                             re_labels_numpy = map_re_label(re_labels_numpy)
 
-                            cluster_info = pool.clustering(
+                            cluster_info = pool.cluster_and_assign(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
                                 cluster_model,
                                 softmax_mode='softmax',

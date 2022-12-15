@@ -207,17 +207,17 @@ def train():
                 continue
 
             zero_grad()
-            model_train()
 
             '''----------------'''
             '''Clustering Phase'''
             '''----------------'''
-            if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
-                '''re clustering the pool for the updated clustering model'''
-                pool.re_clustering(cluster_model)
-            elif args['train.cluster_center_mode'] == 'kmeans':
-                '''put the classes in the clusters to the buffer'''
-                pool.cluster_put_into_buffer()
+            model_train()
+            # model_eval()
+
+            # with torch.no_grad():
+
+            '''re clustering the pool for the updated clustering model'''
+            pool.re_clustering(cluster_model)
 
             '''obtain tasks from train_loaders'''
             for t_indx, trainset in enumerate(trainsets):
@@ -232,16 +232,9 @@ def train():
                     gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                     domain = t_indx
 
-                    if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
-                        pool.cluster_and_assign(
-                            images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                            cluster_model)
-                    elif args['train.cluster_center_mode'] == 'kmeans':
-                        pool.task_put_into_buffer(images_numpy, re_labels_numpy, gt_labels_numpy, domain)
-
-            if args['train.cluster_center_mode'] == 'kmeans':
-                '''perform clustering on buffer'''
-                pool.cluster_and_assign_from_buffer(cluster_model)
+                    pool.clustering(
+                        images_numpy, re_labels_numpy, gt_labels_numpy, domain,
+                        cluster_model)
 
             '''--------------'''
             '''Training Phase'''
@@ -433,7 +426,7 @@ def train():
                             gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                             domain = v_indx
 
-                            val_pool.cluster_and_assign(
+                            val_pool.clustering(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
                                 cluster_model, softmax_mode='softmax')
 

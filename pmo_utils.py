@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.cluster import KMeans
 from pymoo.util.ref_dirs import get_reference_directions
 import matplotlib.pyplot as plt
 
@@ -28,12 +29,12 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=50, max_num_images=20, mode='learnable'):
+    def __init__(self, capacity=8, max_num_classes=50, max_num_images=20, mode='kmeans'):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
         :param max_num_images: Maximum number of images can be stored in each class.
-        :param mode: mode for cluster centers, choice=[learnable, mov_avg].
+        :param mode: mode for cluster centers, choice=[learnable, mov_avg, kmeans].
         """
         super(Pool, self).__init__()
         self.capacity = capacity
@@ -46,11 +47,11 @@ class Pool(nn.Module):
         self.out_path = check_dir(self.out_path, False)
         self.clusters = None
         self.centers = None
+        self.buffer = []
         self.init(0)
 
     def init(self, start_iter):
         self.clear_clusters()
-        # instance with key {images, label, grad_one}
         if self.mode == 'learnable':
             self.centers: torch.Tensor = nn.Parameter(torch.randn((self.capacity, self.emb_dim)))
             nn.init.xavier_uniform_(self.centers)
@@ -69,6 +70,9 @@ class Pool(nn.Module):
                 self.lr_manager = CosineAnnealRestartLR(self.optimizer, args, start_iter)
         elif self.mode == 'mov_avg':
             self.centers: List[Optional[torch.Tensor]] = [None for _ in range(self.capacity)]
+        elif self.mode == 'kmeans':
+            self.centers: Optional[torch.Tensor] = None
+            self.clear_buffer()
         else:
             raise Exception(f'Un implemented mode: {self.mode} for Pool.')
 
@@ -78,6 +82,9 @@ class Pool(nn.Module):
 
     def clear_clusters(self):
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
+
+    def clear_buffer(self):
+        self.buffer = []
 
     def store(self, epoch, loaders, trainsets, is_best, class_filename='pool.json', center_filename='pool.npy'):
         """
@@ -110,6 +117,8 @@ class Pool(nn.Module):
             centers = self.centers.detach().cpu().numpy()
         elif self.mode == 'mov_avg':
             centers = torch.stack(self.centers).numpy()     # may raise exception if contains None.
+        elif self.mode == 'kmeans':
+            centers = self.centers.cpu().numpy()
         else:
             raise Exception(f'Un implemented mode: {self.mode} for Pool.')
 
@@ -135,32 +144,126 @@ class Pool(nn.Module):
             self.centers.data = torch.from_numpy(centers)    # tensor: 8*512
         elif self.mode == 'mov_avg':
             self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
+        elif self.mode == 'kmeans':
+            self.centers = torch.from_numpy(centers).to(cluster_device)
+        else:
+            raise Exception(f'Un implemented mode: {self.mode} for Pool.')
 
-    def clustering(self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                   model,
-                   update_cluster_centers=False,
-                   softmax_mode='gumbel',
-                   put=True):
+    def put_into_buffer(self, images_list, label_list):
+        """Put a list of classes to the buffer
+        :param images_list: list of numpy images with shape [bs, c, h, w]
+        :param label_list: list of int tuple: (gt_label, domain)
         """
-        Do clustering based on class centroid similarities with cluster centers.
-        :param images_numpy: numpy with shape [bs, c, h, w]
-        :param re_labels_numpy: related labels, numpy with shape [bs,]
-        :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
-        :param domain: int domain or same size numpy as labels [bs,].
-        :param loader: dataset loader use to put images to device.
-        :param model: clustering model to obtain img embedding and class centroid.
-        :param update_cluster_centers: whether to update the cluster center.
-            only activated for mov avg approach, not for trainable cluster centers.
-        :param softmax_mode: how similarity do softmax.
-            choices=[gumbel, softmax]
-        :param put: whether to put classes into clusters.
+        for images, label in zip(images_list, label_list):
+            '''pop stored images and cat new images'''
+            position = self.find_label(label, target='buffer')
+            if position != -1:      # find exist label, cat onto it and reput into buffer
+                stored = self.buffer.pop(position)
+                assert stored['label'] == label
+                stored_images = stored['images']
+                stored_images = np.concatenate([stored_images, images])
+            else:
+                stored_images = images
+
+            '''remove first several images to satisfy max_num_images'''
+            if stored_images.shape[0] > self.max_num_images:
+                stored_images = stored_images[-self.max_num_images:]
+
+            class_dict = {
+                'images': stored_images,
+                'label': label,
+            }
+
+            '''put into buffer'''
+            self.buffer.append(class_dict)
+
+    def task_put_into_buffer(self, images, re_labels, gt_labels, domain):
+        """Put the classes in the tasks to the buffer. Classes are separated by re_labels.
+        :param images: Numpy images with shape [bs, c, h, w]
+        :param re_labels: Numpy relative labels with shape [bs]
+        :param gt_labels: Numpy ground truth labels with shape [bs]
+        :param domain: Int domain
         """
+        images_list, label_list = [], []
+        for re_label in range(len(np.unique(re_labels))):
+            mask = re_labels == re_label
+            class_images, class_gt_label = images[mask], gt_labels[mask][0].item()
+            images_list.append(class_images)
+            label_list.append((class_gt_label, domain))
+
+        self.put_into_buffer(images_list, label_list)
+
+    def cluster_put_into_buffer(self):
+        """Put the classes in the clusters to the buffer."""
+        images_list, label_list = [], []
+        for cluster_idx, (cls_list_in_cluster, img_list_in_cluster) in enumerate(
+                zip(self.current_classes(), self.current_images())):
+            images_list.extend(img_list_in_cluster)
+            label_list.extend([cls_with_img_num[0] for cls_with_img_num in cls_list_in_cluster])
+
+        self.clear_clusters()
+
+        self.put_into_buffer(images_list, label_list)
+
+    def cluster_and_assign_from_buffer(self, model):
+        """Perform clustering on classes in the buffer"""
+        '''get cluster centers'''
+        centers = self.centers.cpu().numpy() if self.centers is not None else 'k-means++'
+
+        '''construct a big task for all classes in the buffer'''
+        images, re_labels, gt_labels, sampled_images = [], [], [], []
+        for re_label, class_dict in enumerate(self.buffer):
+            n_img = class_dict['images'].shape[0]
+            images.append(class_dict['images'])
+            sampled_images.append(class_dict['images'][0])
+            re_labels.append(np.repeat(re_label, n_img))
+            gt_labels.append(class_dict['label'])
+
+        images_numpy = np.concatenate(images)           # [bs, c, h, w]
+        re_labels_numpy = np.concatenate(re_labels)     # [bs]
+
         '''move images to device where model locates'''
         images_torch = to_device(images_numpy, cluster_device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
 
         embeddings = model.embed(images_torch)
+        with torch.no_grad():
+            n_cls = len(self.buffer)
+            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
 
+        '''do k-means on class_centroids init with centers'''
+        km = KMeans(n_clusters=self.capacity, init=centers, n_init=1)
+        km.fit(class_centroids)
+        # similarities = km.fit_transform(class_centroids)        # [n_cls, n_cluster]
+        updated_centers = km.cluster_centers_
+        self.centers = torch.from_numpy(updated_centers).to(cluster_device)
+
+        '''clear buffer'''
+        self.clear_buffer()
+
+        '''put into clusters'''
+        cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
+            embeddings, labels_torch)
+        for re_label in range(len(cluster_idxs)):
+            class_images = images[re_label]
+            label = gt_labels[re_label]
+            embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
+            similarities_numpy = similarities[re_label]     # [n_cluster]
+            self.put(class_images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
+                     cluster_idxs[re_label], class_centroids[re_label])
+
+        '''return info for tsne'''
+        return {
+            'labels': gt_labels,                                                # n_cls * (gt, domain)
+            'cluster_idxs': cluster_idxs,                                       # [n_cls,]
+            'class_centroids': class_centroids.detach().cpu().numpy(),          # [n_cls, emb_dim]
+            'sample_images': np.stack(sampled_images),                          # [n_cls, c, h, w]
+            'similarities': similarities,                                       # [n_cls, n_cluster]
+            'centers': updated_centers,                                         # [n_cluster, emb_dim]
+        }
+
+    def cluster_from_emb(self, embeddings, labels_torch, softmax_mode='gumbel'):
+        """Apply clustering on embeddings with specific softmax mode"""
         similarities, class_centroids = prototype_similarity(
             embeddings, labels_torch, self.centers, distance=args['test.distance'])
         # similarities shape [n_way, n_clusters] and class_centroids shape [n_way, emb_dim]
@@ -179,6 +282,36 @@ class Pool(nn.Module):
         else:
             raise Exception(f'Un implemented softmax_mode: {softmax_mode} for Pool to do clustering.')
 
+        return cluster_idxs, grad_ones, similarities.detach().cpu().numpy(), class_centroids
+
+    def cluster_and_assign(
+            self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
+            model,
+            update_cluster_centers=False,
+            softmax_mode='gumbel',
+            put=True):
+        """
+        Do clustering based on class centroid similarities with cluster centers.
+        :param images_numpy: numpy/tensor with shape [bs, c, h, w]
+        :param re_labels_numpy: related labels, numpy/tensor with shape [bs,]
+        :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
+        :param domain: int domain or same size numpy as labels [bs,].
+        :param model: clustering model to obtain img embedding and class centroid.
+        :param update_cluster_centers: whether to update the cluster center.
+            only activated for mov avg approach, not for trainable cluster centers.
+        :param softmax_mode: how similarity do softmax.
+            choices=[gumbel, softmax]
+        :param put: whether to put classes into clusters.
+        """
+        '''move images to device where model locates'''
+        images_torch = to_device(images_numpy, cluster_device)
+        labels_torch = to_device(re_labels_numpy, cluster_device)
+
+        embeddings = model.embed(images_torch)
+
+        cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
+            embeddings, labels_torch, softmax_mode)
+
         labels = []
         sample_images = []
         sims = []
@@ -186,7 +319,7 @@ class Pool(nn.Module):
             images = images_numpy[re_labels_numpy == re_label]
             embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
             gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
-            similarities_numpy = similarities[re_label].detach().cpu().numpy()  # [num_cluster]
+            similarities_numpy = similarities[re_label]  # [num_cluster]
             if type(domain) is np.ndarray:
                 image_domains = domain[re_labels_numpy == re_label]
                 label = (gt_label, image_domains[0].item())
@@ -227,7 +360,7 @@ class Pool(nn.Module):
 
         if len(images) > 0:
             self.clear_clusters()
-            self.clustering(
+            self.cluster_and_assign(
                 np.concatenate(images), np.concatenate(re_labels), np.concatenate(gt_labels), np.concatenate(domains),
                 model
             )
@@ -264,13 +397,16 @@ class Pool(nn.Module):
         #     stored_embeddings = np.delete(stored_embeddings, 0, axis=0)
 
         '''put to cluster: cluster_idx'''
-        if len(self.clusters[cluster_idx]) == self.max_num_classes:
-            self.clusters[cluster_idx].pop(0)   # remove the earliest cls.
         self.clusters[cluster_idx].append({'images': stored_images, 'label': label,
                                            'grad_one': grad_one.repeat(*images.shape[-3:]),     # c,h,w
                                            'embeddings': stored_embeddings,
                                            'similarities': similarities,
                                            'class_centroid': class_centroid})
+        '''sort according to the corresponding similarity'''
+        self.clusters[cluster_idx].sort(key=lambda x: x['similarities'][cluster_idx], reverse=True)   # descending order
+        if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
+            '''need to remove one with smallest similarity: last one'''
+            self.clusters[cluster_idx].pop(-1)
 
         '''update cluster centers: mov avg'''
         if self.mode == 'mov_avg' and update_cluster_centers:
@@ -329,15 +465,21 @@ class Pool(nn.Module):
 
         return logits
 
-    def find_label(self, label):
+    def find_label(self, label, target='clusters'):
         """
         Find label in pool, return position with (cluster_idx, cls_idx)
         If not in pool, return -1.
+        If target == 'buffer', return the position (idx) in the buffer.
         """
-        for cluster_idx, cluster in enumerate(self.clusters):
-            for cls_idx, cls in enumerate(cluster):
-                if cls['label'] == label:       # (0, str) == (0, str) ? int
-                    return cluster_idx, cls_idx
+        if target == 'clusters':
+            for cluster_idx, cluster in enumerate(self.clusters):
+                for cls_idx, cls in enumerate(cluster):
+                    if cls['label'] == label:       # (0, str) == (0, str) ? int
+                        return cluster_idx, cls_idx
+        elif target == 'buffer':
+            for buf_idx, cls in enumerate(self.buffer):
+                if cls['label'] == label:
+                    return buf_idx
         return -1
 
     def current_classes(self):
