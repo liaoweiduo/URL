@@ -28,6 +28,9 @@ from config import args
 
 from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs
 
+import warnings
+warnings.filterwarnings('ignore')
+
 
 def train():
     # Set seed

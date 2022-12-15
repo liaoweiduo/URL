@@ -33,7 +33,7 @@ parser.add_argument('--train.weight_decay', type=float, default=7e-4, metavar='W
                     help="weight decay coef")
 parser.add_argument('--train.optimizer', type=str, default='momentum', metavar='OPTIM',
                     help='optimization method (default: momentum)')
-parser.add_argument('--train.learning_rate', type=float, default=0.01, metavar='LR',
+parser.add_argument('--train.learning_rate', type=float, default=0.03, metavar='LR',
                     help='learning rate (default: 0.0001)')
 parser.add_argument('--train.sigma', type=float, default=1, metavar='SIGMA',
                     help='weight of CKA loss on features')
