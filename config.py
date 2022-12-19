@@ -71,10 +71,12 @@ parser.add_argument('--train.cluster_center_mode', type=str, default='kmeans', m
                     help='learnable cluster centers or use mov avg to update or use kmeans(average).')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=0.2, metavar='GUMBEL_TAU',
+parser.add_argument('--train.gumbel_tau', type=float, default=0.05, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. '
                          'a large tau makes probability assign and a small tau makes argmax assign.')
-parser.add_argument('--train.n_mo', type=int, default=5, metavar='N_MO',
+parser.add_argument('--train.hv_coefficient', type=float, default=0.01, metavar='HV_COEFFICIENT',
+                    help='coeffient for hv loss .')
+parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
                     help='number of MO sampling to train. '
                          'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')
 parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
@@ -138,6 +140,8 @@ parser.add_argument('--out.dir', default='', type=str, metavar='PATH',
                     help='directory to output the result and checkpoints')
 parser.add_argument('--source', default='', type=str, metavar='PATH',
                     help='path of pretrained model')
+parser.add_argument('--map.dir', default='', type=str, metavar='PATH',
+                    help='directory where class mapping file locates at')
 
 
 # log args
@@ -146,6 +150,8 @@ if not args['model.dir']:
     args['model.dir'] = PROJECT_ROOT
 if not args['out.dir']:
     args['out.dir'] = args['model.dir']
+if not args['map.dir']:
+    args['map.dir'] = args['model.dir']
 
 BATCHSIZES = {
                 "ilsvrc_2012": 448,

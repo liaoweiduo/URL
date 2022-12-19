@@ -149,13 +149,16 @@ def train():
         max_iter = args['train.max_iter']
 
         def init_train_log():
-            epoch_loss = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
+            epoch_loss = {name: [] for name in trainsets}
+            epoch_loss.update({model_name: {name: [] for name in cluster_names} for model_name in model_names})
             epoch_loss.update({
                 obj_idx: {
                     pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                 } for obj_idx in range(args['train.n_obj'])})
             epoch_loss['hv_loss'], epoch_loss['hv'] = [], []
-            epoch_acc = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
+
+            epoch_acc = {name: [] for name in trainsets}
+            epoch_acc.update({model_name: {name: [] for name in cluster_names} for model_name in model_names})
             epoch_acc.update({
                 obj_idx: {
                     pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
@@ -235,6 +238,36 @@ def train():
                     gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                     domain = t_indx
 
+                    '''cluster for task'''
+                    cluster_idx, grad_one, similarity, task_centroid = pool.cluster_for_task(
+                        images_numpy, cluster_model
+                    )
+                    grad_ones = {
+                        'context_grad_ones': grad_one,  # .repeat(sample_numpy['context_images'].shape),
+                        # shape [n_shot*n_way, 3, 84, 84]
+                        'target_grad_ones': grad_one,   # .repeat(sample_numpy['target_images'].shape),
+                        # shape [n_query*n_way, 3, 84, 84]
+                    }
+
+                    '''obtain and backward task ncc loss'''
+                    selected_model, d = models[cluster_idx], devices[cluster_idx]
+                    task = pool.to_torch(sample_numpy, grad_ones, device_list=[d])[d]
+
+                    context_features = selected_model.embed(task['context_images'])
+                    target_features = selected_model.embed(task['target_images'])
+                    context_labels = task['context_labels']
+                    target_labels = task['target_labels']
+                    task_loss, stats_dict, _ = prototype_loss(
+                        context_features, context_labels,
+                        target_features, target_labels, distance=args['test.distance'])
+
+                    task_loss.backward()
+
+                    '''log task loss and acc'''
+                    epoch_loss[trainset].append(stats_dict['loss'])     # ilsvrc_2012 has 2 times larger len than other.
+                    epoch_acc[trainset].append(stats_dict['acc'])
+
+                    '''pmo method: clustering and assign to pool or buffer'''
                     if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
                         pool.cluster_and_assign(
                             images_numpy, re_labels_numpy, gt_labels_numpy, domain,
@@ -325,14 +358,15 @@ def train():
                         epoch_loss[obj_idx][task_idx][-1] for task_idx in range(len(tasks))     # this iter
                     ] for obj_idx in range(len(selected_cluster_idxs))])
                     hv = cal_hv(obj, ref, target='loss')
-                    epoch_loss['hv'].append(hv.item())
+                    epoch_loss['hv'].append(hv)
                     obj = np.array([[
                         epoch_acc[obj_idx][task_idx][-1] for task_idx in range(len(tasks))
                     ] for obj_idx in range(len(selected_cluster_idxs))])
                     hv = cal_hv(obj, 0, target='acc')
-                    epoch_acc['hv'].append(hv.item())
+                    epoch_acc['hv'].append(hv)
 
                     retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
+                    hv_loss = hv_loss * args['train.hv_coefficient']
                     hv_loss.backward(retain_graph=retain_graph)
 
             update_step(i)
@@ -347,6 +381,13 @@ def train():
                 epoch_train_history[i + 1] = {'loss': epoch_loss.copy(), 'acc': epoch_acc.copy()}
                 with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
                     pickle.dump(epoch_train_history, f)
+
+                '''log task loss and accuracy'''
+                for dataset_name in trainsets:
+                    writer.add_scalar(f"loss/train/{dataset_name}",
+                                      np.mean(epoch_loss[dataset_name]), i+1)
+                    writer.add_scalar(f"accuracy/train/{dataset_name}",
+                                      np.mean(epoch_acc[dataset_name]), i+1)
 
                 '''log multi-objective loss and accuracy'''
                 objs_loss, objs_acc = [], []
@@ -407,6 +448,10 @@ def train():
                 for task_id, task in enumerate(numpy_tasks):
                     imgs = np.concatenate([task['context_images'], task['target_images']])
                     writer.add_images(f"image/task-{task_id}", imgs, i+1)
+
+                # saving pool
+                pool.store(i, train_loaders, trainsets, False,
+                           class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
 
             '''----------'''
             '''Eval Phase'''

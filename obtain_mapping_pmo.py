@@ -172,7 +172,7 @@ def obtain():
                 )
 
         '''save class_mapping'''
-        with open(os.path.join(args['out.dir'], 'summary',
+        with open(os.path.join(args['out.dir'], 'weights', 'pool',
                                f"class_mapping_{args['map.target']}.json"), 'w') as f:
             json.dump(
                 {'epoch': start_iter + 1,
@@ -180,7 +180,7 @@ def obtain():
                  'class_mapping': class_mapping},
                 f)
         '''save info for tsne'''
-        with open(os.path.join(args['out.dir'], 'summary',
+        with open(os.path.join(args['out.dir'], 'weights', 'pool',
                                f"class_mapping_info_{args['map.target']}.pickle"), 'wb') as f:
             pickle.dump({'info': info}, f)
 

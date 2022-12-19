@@ -99,7 +99,7 @@ class MetaDatasetReader(object):
 
     def num_classes(self, split_name):
         split = SPLIT_NAME_TO_SPLIT[split_name]
-        all_split_specs = self.specs_dict[SPLIT_NAME_TO_SPLIT['train']]
+        all_split_specs = self.specs_dict[SPLIT_NAME_TO_SPLIT[split_name]]
 
         if not isinstance(all_split_specs, list):
             all_split_specs = [all_split_specs]
