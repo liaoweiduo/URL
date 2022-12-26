@@ -23,10 +23,11 @@ from models.losses import cross_entropy_loss, prototype_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from models.model_helpers import get_model, get_optimizer
+from models.adaptors import adaptor
 from utils import Accumulator, device, devices, cluster_device, set_determ, check_dir
 from config import args
 
-from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs
+from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs, pmo_embed
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -53,9 +54,9 @@ def train():
         print(f'Val on: {valsets}.')
         # print(f'Test on: {testsets}.')
 
-        print(f'Devices: {devices}.')
+        print(f'PMO devices: {devices}.')
         print(f'Cluster network device: {cluster_device}.')
-        print(f'Mult-obj NCC loss calculation device: {device}.')
+        print(f'Mult-obj NCC loss calculation and URL device: {device}.')
 
         train_loaders = dict()
         num_train_classes = dict()
@@ -74,47 +75,42 @@ def train():
         val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type=args['train.type'])
 
         '''initialize models and optimizer'''
-        models = []
-        optimizers = []
-        checkpointers = []
         start_iter, best_val_loss, best_val_acc = 0, 999999999, 0
-        lr_managers = []
         # init all starting issues for M(8) models.
-        model_names = [args['model.name'].format(m_indx) for m_indx in range(args['model.num_clusters'])]
+        model_names = [f'M{m_indx}' for m_indx in range(args['model.num_clusters'])]    # M0-M7
         cluster_model_name = 'C-net'
-        cluster_names = [f'C{idx}' for idx in range(args['model.num_clusters'])]
-        # M0-net - M7-net
-        for m_indx in range(args['model.num_clusters']):        # 8
-            model_args_with_name = copy.deepcopy(args)
-            model_args_with_name['model.name'] = model_names[m_indx]
-            _model = get_model(None, model_args_with_name, d=devices[m_indx])  # distribute model to multi-devices
-            models.append(_model)
-            _optimizer = get_optimizer(_model, model_args_with_name, params=_model.get_parameters())
-            optimizers.append(_optimizer)
+        cluster_names = [f'C{idx}' for idx in range(args['model.num_clusters'])]        # C0-C7
 
-            # restoring the last checkpoint
-            _checkpointer = CheckPointer(model_args_with_name, _model, optimizer=_optimizer)
-            checkpointers.append(_checkpointer)
+        # load url model as the frozen feature extractor
+        url_args = copy.deepcopy(args)
+        url_args['model.pretrained'] = True
+        url = get_model(None, url_args, d=device, freeze_fe=True, base_network_name='url')
+        url.eval()
 
-            if os.path.isfile(_checkpointer.last_ckpt) and args['train.resume']:
-                start_iter, best_val_loss, best_val_acc =\
-                    _checkpointer.restore_model(ckpt='last')    # all 3 things are the same for all models
-            else:
-                print('No checkpoint restoration')
-
-            # define learning rate policy
-            if args['train.lr_policy'] == "step":
-                _lr_manager = UniformStepLR(_optimizer, args, start_iter)
-            elif "exp_decay" in args['train.lr_policy']:
-                _lr_manager = ExpDecayLR(_optimizer, args, start_iter)
-            elif "cosine" in args['train.lr_policy']:
-                _lr_manager = CosineAnnealRestartLR(_optimizer, args, start_iter)
-            lr_managers.append(_lr_manager)
+        # pmo model
+        pmo = adaptor(num_datasets=args['model.num_clusters'],
+                      dim_in=512, opt=args['pmo.opt'])
+        pmo.to_device(devices)
+        pmo_optimizer = get_optimizer(pmo, args, params=pmo.get_parameters())
+        pmo_checkpointer = CheckPointer(args, pmo, optimizer=pmo_optimizer)
+        if os.path.isfile(pmo_checkpointer.last_ckpt) and args['train.resume']:
+            start_iter, best_val_loss, best_val_acc = \
+                pmo_checkpointer.restore_model(ckpt='last')
+        else:
+            print('No checkpoint restoration for pmo.')
+        if args['train.lr_policy'] == "step":
+            pmo_lr_manager = UniformStepLR(pmo_optimizer, args, start_iter)
+        elif "exp_decay" in args['train.lr_policy']:
+            pmo_lr_manager = ExpDecayLR(pmo_optimizer, args, start_iter)
+        elif "cosine" in args['train.lr_policy']:
+            pmo_lr_manager = CosineAnnealRestartLR(pmo_optimizer, args, start_iter)
 
         '''initialize the clustering model and optimizer'''
         model_args_with_name = copy.deepcopy(args)
-        model_args_with_name['model.name'] = cluster_model_name
-        cluster_model = get_model(None, model_args_with_name, d=cluster_device)
+        model_args_with_name['model.name'] = cluster_model_name     # 'C-net'
+        cluster_model = adaptor(
+            num_datasets=1, dim_in=512, dim_out=128, opt=args['cluster.opt']).to(cluster_device)
+        # 2-layer MLP
         cluster_optimizer = get_optimizer(cluster_model, model_args_with_name, params=cluster_model.get_parameters())
         # restoring the last checkpoint
         cluster_checkpointer = CheckPointer(model_args_with_name, cluster_model, optimizer=cluster_optimizer)
@@ -122,7 +118,7 @@ def train():
             start_iter, best_val_loss, best_val_acc = \
                 cluster_checkpointer.restore_model(ckpt='last')
         else:
-            print('No checkpoint restoration')
+            print('No checkpoint restoration for cluster model.')
         # define learning rate policy
         if args['train.lr_policy'] == "step":
             cluster_lr_manager = UniformStepLR(cluster_optimizer, args, start_iter)
@@ -168,34 +164,29 @@ def train():
 
         def model_train():
             # train mode
-            for _model in models:
-                _model.train()
+            pmo.train()
             cluster_model.train()
             pool.train()
 
         def model_eval():
             # eval mode
-            for _model in models:
-                _model.eval()
+            pmo.eval()
             cluster_model.eval()
             pool.eval()
 
         def zero_grad():
-            for optimizer in optimizers:
-                optimizer.zero_grad()
+            pmo_optimizer.zero_grad()
             cluster_optimizer.zero_grad()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.zero_grad()
 
         def update_step(idx):
-            for optimizer in optimizers:
-                optimizer.step()
+            pmo_optimizer.step()
             cluster_optimizer.step()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.step()
 
-            for lr_manager in lr_managers:
-                lr_manager.step(idx)
+            pmo_lr_manager.step(idx)
             cluster_lr_manager.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.lr_manager.step(idx)
@@ -238,102 +229,105 @@ def train():
                     gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                     domain = t_indx
 
-                    '''cluster for task'''
-                    cluster_idx, grad_one, similarity, task_centroid = pool.cluster_for_task(
-                        images_numpy, cluster_model
-                    )
-                    grad_ones = {
-                        'context_grad_ones': grad_one,  # .repeat(sample_numpy['context_images'].shape),
-                        # shape [n_shot*n_way, 3, 84, 84]
-                        'target_grad_ones': grad_one,   # .repeat(sample_numpy['target_images'].shape),
-                        # shape [n_query*n_way, 3, 84, 84]
-                    }
-
-                    '''obtain and backward task ncc loss'''
-                    selected_model, d = models[cluster_idx], devices[cluster_idx]
-                    task = pool.to_torch(sample_numpy, grad_ones, device_list=[d])[d]
-
-                    context_features = selected_model.embed(task['context_images'])
-                    target_features = selected_model.embed(task['target_images'])
-                    context_labels = task['context_labels']
-                    target_labels = task['target_labels']
-                    task_loss, stats_dict, _ = prototype_loss(
-                        context_features, context_labels,
-                        target_features, target_labels, distance=args['test.distance'])
-
-                    task_loss.backward()
-
-                    '''log task loss and acc'''
-                    epoch_loss[trainset].append(stats_dict['loss'])     # ilsvrc_2012 has 2 times larger len than other.
-                    epoch_acc[trainset].append(stats_dict['acc'])
+                    # '''cluster for task'''
+                    # cluster_idx, grad_one, similarity, task_centroid = pool.cluster_for_task(
+                    #     images_numpy, cluster_model
+                    # )
+                    # grad_ones = {
+                    #     'context_grad_ones': grad_one,  # .repeat(sample_numpy['context_images'].shape),
+                    #     # shape [n_shot*n_way, 3, 84, 84]
+                    #     'target_grad_ones': grad_one,   # .repeat(sample_numpy['target_images'].shape),
+                    #     # shape [n_query*n_way, 3, 84, 84]
+                    # }
+                    #
+                    # '''obtain and backward task ncc loss'''
+                    # selected_model, d = models[cluster_idx], devices[cluster_idx]
+                    # task = pool.to_torch(sample_numpy, grad_ones, device_list=[d])[d]
+                    #
+                    # context_features = selected_model.embed(task['context_images'])
+                    # target_features = selected_model.embed(task['target_images'])
+                    # context_labels = task['context_labels']
+                    # target_labels = task['target_labels']
+                    # task_loss, stats_dict, _ = prototype_loss(
+                    #     context_features, context_labels,
+                    #     target_features, target_labels, distance=args['test.distance'])
+                    #
+                    # task_loss.backward()
+                    #
+                    # '''log task loss and acc'''
+                    # epoch_loss[trainset].append(stats_dict['loss'])     # ilsvrc_2012 has 2 times larger len than other.
+                    # epoch_acc[trainset].append(stats_dict['acc'])
 
                     '''pmo method: clustering and assign to pool or buffer'''
                     if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
                         pool.cluster_and_assign(
                             images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                            cluster_model)
+                            url, cluster_model)
                     elif args['train.cluster_center_mode'] == 'kmeans':
                         pool.task_put_into_buffer(images_numpy, re_labels_numpy, gt_labels_numpy, domain)
 
             if args['train.cluster_center_mode'] == 'kmeans':
                 '''perform clustering on buffer'''
-                pool.cluster_and_assign_from_buffer(cluster_model)
+                pool.cluster_and_assign_from_buffer(url, cluster_model)
 
             '''--------------'''
             '''Training Phase'''
             '''--------------'''
-            for mo_train_idx in range(args['train.n_mo']):         # repeat collecting MO loss
-                '''select args['train.n_obj'] clusters'''
-                # assert args['train.n_obj'] == 2
-                available_cluster_idxs = []
-                for idx, classes in enumerate(pool.current_classes()):
-                    # if len(classes) >= args['train.n_way']:
-                    num_imgs = np.array([cls[1] for cls in classes])
-                    if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]) >= args['train.n_way']:
-                        available_cluster_idxs.append(idx)
-                if len(available_cluster_idxs) < args['train.n_obj']:      # not enough available clusters
-                    print(f'Iter: {i + 1}, not enough available clusters.')
-                    continue
-                else:
+            '''select args['train.n_obj'] clusters'''
+            # assert args['train.n_obj'] == 2
+            available_cluster_idxs = []
+            for idx, classes in enumerate(pool.current_classes()):
+                # if len(classes) >= args['train.n_way']:
+                num_imgs = np.array([cls[1] for cls in classes])
+                if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]) >= args['train.n_way']:
+                    available_cluster_idxs.append(idx)
+            if len(available_cluster_idxs) < args['train.n_obj']:      # not enough available clusters
+                print(f'Iter: {i + 1}, not enough available clusters.')
+                continue
+            else:
+                for mo_train_idx in range(args['train.n_mo']):         # repeat collecting MO loss
                     selected_cluster_idxs = sorted(np.random.choice(
                         available_cluster_idxs, args['train.n_obj'], replace=False))
                     # which is also devices idx
-                    device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
+                    # device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
 
                     '''sample pure tasks from clusters in selected_cluster_idxs'''
-                    numpy_tasks = []
-                    pure_tasks = []
-                    for idx in selected_cluster_idxs:
-                        numpy_pure_task, grad_ones = pool.episodic_sample(idx)
+                    numpy_tasks, grad_ones_list = [], []
+                    for cluster_idx in selected_cluster_idxs:
+                        numpy_pure_task, grad_ones = pool.episodic_sample(cluster_idx)
                         numpy_tasks.append(numpy_pure_task)
-                        pure_tasks.append(pool.to_torch(numpy_pure_task, grad_ones, device_list=device_list))
+                        grad_ones_list.append(grad_ones)
 
                     '''sample mix tasks by mixer'''
-                    mix_tasks = []
                     for mix_id in range(args['train.n_mix']):
                         [numpy_mix_task, grad_ones], _ = mixer.mix(
                             task_list=[pool.episodic_sample(idx) for idx in selected_cluster_idxs],
                             mix_id=mix_id
                         )
                         numpy_tasks.append(numpy_mix_task)
-                        mix_tasks.append(pool.to_torch(numpy_mix_task, grad_ones, device_list=device_list))
+                        grad_ones_list.append(grad_ones)
 
                     '''obtain ncc loss multi-obj matrix and put to last device'''
-                    ncc_losses_multi_obj = []   # shape [num_objs, num_tasks], [2, 4]
-                    for obj_idx, cluster_idx in enumerate(selected_cluster_idxs):
-                        _model, d = models[cluster_idx], devices[cluster_idx]
-                        tasks = [pure_tasks[idx][d] for idx in range(len(pure_tasks))]
-                        tasks.extend([mix_tasks[idx][d] for idx in range(len(mix_tasks))])
+                    ncc_losses_multi_obj = []    # [4, 2]
+                    for task_idx, (task, grad_ones) in enumerate(zip(numpy_tasks, grad_ones_list)):
+                        context_features_list, context_labels_list = pmo_embed(
+                            task['context_images'],
+                            task['context_labels'],
+                            grad_ones['context_grad_ones'],
+                            url, pmo, selected_cluster_idxs)
+                        target_features_list, target_labels_list = pmo_embed(
+                            task['target_images'],
+                            task['target_labels'],
+                            grad_ones['target_grad_ones'],
+                            url, pmo, selected_cluster_idxs)
 
-                        losses = []
-                        for task_idx, task in enumerate(tasks):
-                            context_features = _model.embed(task['context_images'])
-                            target_features = _model.embed(task['target_images'])
-                            context_labels = task['context_labels']
-                            target_labels = task['target_labels']
+                        losses = []     # [2,]
+                        for obj_idx in range(len(selected_cluster_idxs)):
                             loss, stats_dict, _ = prototype_loss(
-                                context_features, context_labels,
-                                target_features, target_labels, distance=args['test.distance'])
+                                context_features_list[obj_idx], context_labels_list[obj_idx],
+                                target_features_list[obj_idx], target_labels_list[obj_idx],
+                                distance=args['test.distance'])
+
                             # loss for all tasks on 1 model on 1 device. to last device
                             losses.append(loss.to(device))
                             epoch_loss[obj_idx][task_idx].append(stats_dict['loss'])    # [2, 4]
@@ -346,7 +340,8 @@ def train():
                                     cluster_names[selected_cluster_idxs[task_idx]]
                                 ].append(stats_dict['acc'])
                         ncc_losses_multi_obj.append(torch.stack(losses))
-                    ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_objs, num_tasks], [2, 4]
+                    ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
+                    ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
 
                     '''calculate HV loss'''
                     ref = args['train.ref']
@@ -355,12 +350,12 @@ def train():
 
                     '''calculate HV value for mutli-obj loss and acc'''
                     obj = np.array([[
-                        epoch_loss[obj_idx][task_idx][-1] for task_idx in range(len(tasks))     # this iter
+                        epoch_loss[obj_idx][task_idx][-1] for task_idx in range(len(numpy_tasks))     # this iter
                     ] for obj_idx in range(len(selected_cluster_idxs))])
                     hv = cal_hv(obj, ref, target='loss')
                     epoch_loss['hv'].append(hv)
                     obj = np.array([[
-                        epoch_acc[obj_idx][task_idx][-1] for task_idx in range(len(tasks))
+                        epoch_acc[obj_idx][task_idx][-1] for task_idx in range(len(numpy_tasks))
                     ] for obj_idx in range(len(selected_cluster_idxs))])
                     hv = cal_hv(obj, 0, target='acc')
                     epoch_acc['hv'].append(hv)
@@ -370,6 +365,10 @@ def train():
                     hv_loss.backward(retain_graph=retain_graph)
 
             update_step(i)
+
+            # saving pool
+            pool.store(i, train_loaders, trainsets, False,
+                       class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
 
             if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
@@ -431,7 +430,7 @@ def train():
                 writer.add_scalar('loss/train/hv', np.mean(epoch_loss['hv']), i+1)
                 writer.add_scalar('accuracy/train/hv', np.mean(epoch_acc['hv']), i+1)
                 writer.add_scalar('learning_rate',
-                                  optimizers[0].param_groups[0]['lr'], i+1)
+                                  cluster_optimizer.param_groups[0]['lr'], i+1)
                 print(f"==>> loss/train/hv {np.mean(epoch_loss['hv']):.3f}, "
                       f"accuracy/train/hv {np.mean(epoch_acc['hv']):.3f}.")
 
@@ -449,10 +448,6 @@ def train():
                     imgs = np.concatenate([task['context_images'], task['target_images']])
                     writer.add_images(f"image/task-{task_id}", imgs, i+1)
 
-                # saving pool
-                pool.store(i, train_loaders, trainsets, False,
-                           class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
-
             '''----------'''
             '''Eval Phase'''
             '''----------'''
@@ -467,7 +462,8 @@ def train():
                 val_pool.eval()
 
                 '''collect cluster_losses/accs for all models'''
-                cluster_accs, cluster_losses = [[] for _ in range(len(models))], [[] for _ in range(len(models))]
+                cluster_accs, cluster_losses = [[] for _ in range(args['model.num_clusters'])], \
+                                               [[] for _ in range(args['model.num_clusters'])]
                 for v_indx, valset in enumerate(valsets):
                     print(f"==>> collect classes from {valset}.")
                     for j in tqdm(range(args['train.eval_size']), ncols=100):
@@ -483,7 +479,7 @@ def train():
 
                             val_pool.cluster_and_assign(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                                cluster_model, softmax_mode='softmax')
+                                url, cluster_model, softmax_mode='softmax')
 
                             '''check if any cluster have sufficient class to construct 1 task'''
                             for idx, classes in enumerate(val_pool.current_classes()):
@@ -495,15 +491,21 @@ def train():
                                     numpy_task, grad_ones = val_pool.episodic_sample(
                                         idx, n_way=available_way, remove_sampled_classes=True)
 
-                                    '''put to device and forward model to obtain val_acc/loss'''
-                                    d = devices[idx]
-                                    model = models[idx]
-                                    torch_task = val_pool.to_torch(numpy_task, grad_ones, device_list=[d])
+                                    context_features_list, context_labels_list = pmo_embed(
+                                        numpy_task['context_images'],
+                                        numpy_task['context_labels'],
+                                        grad_ones['context_grad_ones'],
+                                        url, pmo, [idx])
+                                    target_features_list, target_labels_list = pmo_embed(
+                                        numpy_task['target_images'],
+                                        numpy_task['target_labels'],
+                                        grad_ones['target_grad_ones'],
+                                        url, pmo, [idx])
 
-                                    context_features = model.embed(torch_task[d]['context_images'])
-                                    target_features = model.embed(torch_task[d]['target_images'])
-                                    context_labels = torch_task[d]['context_labels']
-                                    target_labels = torch_task[d]['target_labels']
+                                    context_features = context_features_list[0]
+                                    target_features = target_features_list[0]
+                                    context_labels = context_labels_list[0]
+                                    target_labels = target_labels_list[0]
                                     _, stats_dict, _ = prototype_loss(context_features, context_labels,
                                                                       target_features, target_labels)
 
@@ -540,11 +542,10 @@ def train():
                     is_best = False
                 extra_dict = {'epoch_loss': epoch_loss, 'epoch_acc': epoch_acc,
                               'epoch_val_loss': epoch_val_loss, 'epoch_val_acc': epoch_val_acc}
-                for cluster_idx, (model, optimizer) in enumerate(zip(models, optimizers)):
-                    checkpointers[cluster_idx].save_checkpoint(
+                pmo_checkpointer.save_checkpoint(
                         i, best_val_acc, best_val_loss,
-                        is_best, optimizer=optimizer,
-                        state_dict=model.get_state_dict(), extra=extra_dict)
+                        is_best, optimizer=pmo_optimizer,
+                        state_dict=pmo.get_state_dict(), extra=extra_dict)
                 cluster_checkpointer.save_checkpoint(
                     i, best_val_acc, best_val_loss,
                     is_best, optimizer=cluster_optimizer,

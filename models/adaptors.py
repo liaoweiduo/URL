@@ -9,6 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
+from typing import Optional
+
 
 class adaptor(torch.nn.Module):
     def __init__(self, num_datasets, dim_in, dim_out=None, opt='linear'):
@@ -38,10 +40,13 @@ class adaptor(torch.nn.Module):
             elif isinstance(m, nn.Linear):
                 nn.init.xavier_normal_(m.weight)
 
-    def forward(self, inputs):
+    def forward(self, inputs, idxs: Optional[list] = None):
+        if idxs is None:
+            idxs = list(range(self.num_datasets))
+        assert len(inputs) == len(idxs)
         results = []
-        for i in range(self.num_datasets):
-            ad_layer = getattr(self, 'conv{}'.format(i))
+        for i, idx in enumerate(idxs):
+            ad_layer = getattr(self, 'conv{}'.format(idx))
             if len(list(inputs[i].size())) < 4:
                 input_ = inputs[i].view(inputs[i].size(0), -1, 1, 1)
             else:
@@ -50,6 +55,18 @@ class adaptor(torch.nn.Module):
             # results.append(ad_layer(inputs[i]))
         return results
 
+    def to_device(self, device_list):
+        assert len(device_list) == self.num_datasets
+        for i in range(self.num_datasets):
+            setattr(self, 'conv{}'.format(i), getattr(self, 'conv{}'.format(i)).to(device_list[i]))
+
+    def get_state_dict(self):
+        """Outputs all the state elements"""
+        return self.state_dict()
+
+    def get_parameters(self):
+        """Outputs all the parameters"""
+        return [v for k, v in self.named_parameters()]
 
 
 

@@ -8,22 +8,21 @@ from models.models_dict import DATASET_MODELS_RESNET18, DATASET_MODELS_RESNET18_
 from utils import device
 
 
-def get_model(num_classes, args, d=None, freeze_fe=False):
+def get_model(num_classes, args, d=None, freeze_fe=False, base_network_name=None):
     train_classifier = args['model.classifier']
     model_name = args['model.backbone']
     dropout_rate = args.get('model.dropout', 0)
+    if base_network_name is None:
+        base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
 
     if 'pnf' in model_name:
         from models.resnet18_pnf import resnet18
-
-        base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
         base_network_path = os.path.join(args['source'], 'weights', base_network_name, 'model_best.pth.tar')
         model_fn = partial(resnet18, dropout=dropout_rate,
                            pretrained_model_path=base_network_path)
     elif num_classes is not None and isinstance(num_classes, list):
         from models.resnet18_mdl import resnet18
         if args['model.pretrained']:
-            base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
             base_network_path = os.path.join(args['source'], 'weights', base_network_name,
                                  'model_best.pth.tar')
             model_fn = partial(resnet18, dropout=dropout_rate,
@@ -33,7 +32,6 @@ def get_model(num_classes, args, d=None, freeze_fe=False):
     else:
         from models.resnet18 import resnet18
         if args['model.pretrained']:
-            base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
             base_network_path = os.path.join(args['source'], 'weights', base_network_name,
                                  'model_best.pth.tar')
             model_fn = partial(resnet18, dropout=dropout_rate,

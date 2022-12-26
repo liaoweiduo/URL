@@ -17,7 +17,7 @@ from models.model_helpers import get_optimizer
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from data.meta_dataset_reader import MetaDatasetReader
-from utils import cluster_device, to_device
+from utils import device, devices, cluster_device, to_device
 
 from config import args
 from utils import check_dir
@@ -226,7 +226,7 @@ class Pool(nn.Module):
                 self.buffer.append(image_dict)
 
     '''Cluster'''
-    def cluster_and_assign_from_buffer(self, model):
+    def cluster_and_assign_from_buffer(self, feature_extractor, model):
         """Perform clustering on classes in the buffer"""
         '''get cluster centers'''
         centers = self.centers.cpu().numpy() if self.centers is not None else 'k-means++'
@@ -244,10 +244,12 @@ class Pool(nn.Module):
         re_labels_numpy = np.concatenate(re_labels)     # [bs]
 
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, cluster_device)
+        images_torch = to_device(images_numpy, device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
 
-        embeddings = model.embed(images_torch)
+        # obtain embeddings and has grad
+        embeddings = model([feature_extractor.embed(images_torch).to(cluster_device)])[0]
+
         with torch.no_grad():
             n_cls = len(self.buffer)
             class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
@@ -308,7 +310,7 @@ class Pool(nn.Module):
 
     def cluster_and_assign(
             self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-            model,
+            feature_extractor, model,
             update_cluster_centers=False,
             softmax_mode='gumbel',
             put=True):
@@ -318,6 +320,7 @@ class Pool(nn.Module):
         :param re_labels_numpy: related labels, numpy/tensor with shape [bs,]
         :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
         :param domain: int domain or same size numpy as labels [bs,].
+        :param feature_extractor: feature_extractor to obtain image features.
         :param model: clustering model to obtain img embedding and class centroid.
         :param update_cluster_centers: whether to update the cluster center.
             only activated for mov avg approach, not for trainable cluster centers.
@@ -326,10 +329,10 @@ class Pool(nn.Module):
         :param put: whether to put classes into clusters.
         """
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, cluster_device)
+        images_torch = to_device(images_numpy, device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
 
-        embeddings = model.embed(images_torch)
+        embeddings = model([feature_extractor.embed(images_torch).to(cluster_device)])[0]
 
         cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
             embeddings, labels_torch, softmax_mode)
@@ -466,7 +469,7 @@ class Pool(nn.Module):
                                            'grad_one': grad_one.repeat(*images.shape[-3:]),     # c,h,w
                                            # 'embeddings': stored_embeddings,
                                            'similarities': similarities,
-                                           'class_centroid': class_centroid})
+                                           'class_centroid': class_centroid.detach().cpu().numpy()})
         '''sort according to the corresponding similarity'''
         self.clusters[cluster_idx].sort(key=lambda x: x['similarities'][cluster_idx], reverse=True)   # descending order
         if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
@@ -693,42 +696,6 @@ class Pool(nn.Module):
 
         return {'images': images, 'labels': labels}
 
-    def to_torch(self, sample, grad_ones, device_list=None):
-        """
-        Put samples to a list of devices specified by device_list.
-        :param sample:
-            {context_images, context_labels, context_gt,
-             target_images, target_labels, target_gt, domain}
-        :param grad_ones:
-            {context_grad_ones, target_grad_ones}
-        :param device_list: a list of devices.
-        Return a dict keying by device.
-        """
-        if device_list is None:
-            device_list = [cluster_device]
-
-        sample_dict = {d: dict() for d in device_list}
-
-        grad_one_device = grad_ones['context_grad_ones'].device
-
-        for key, val in sample.items():
-            if isinstance(val, str):
-                for s in sample_dict.values():
-                    s[key] = val
-                continue
-            val = torch.from_numpy(np.array(val))
-            if key == 'context_images':
-                val = val.to(grad_one_device) * grad_ones['context_grad_ones']
-            elif key == 'target_images':
-                val = val.to(grad_one_device) * grad_ones['target_grad_ones']
-            elif 'image' not in key:
-                val = val.long()
-
-            for d, s in sample_dict.items():
-                s[key] = val.to(d)
-
-        return sample_dict
-
 
 class Mixer:
     """
@@ -781,7 +748,7 @@ class Mixer:
         # identify image size
         _, c, h, w = task_list[0]['context_images'].shape
         context_size_list = [task_list[idx]['context_images'].shape[0] for idx in range(len(task_list))]
-        target_size_list = [task_list[idx]['context_images'].shape[0] for idx in range(len(task_list))]
+        target_size_list = [task_list[idx]['target_images'].shape[0] for idx in range(len(task_list))]
         assert np.min(context_size_list) == np.max(context_size_list)   # assert all contexts have same size
         assert np.min(target_size_list) == np.max(target_size_list)     # assert all targets have same size
         context_size = np.min(context_size_list)
@@ -816,7 +783,7 @@ class Mixer:
             img_idx = idx if idx < context_size else idx - context_size     # local img idx in context and target set.
             # mix img is first cloned with background.
             mix_img = task_list[lam[idx]][set_name][img_idx].copy()
-            grad_one = grad_ones_list[lam[idx]][grd_name][img_idx]
+            grad_one = grad_ones_list[lam[idx]][grd_name][img_idx].clone()
 
             # for other foreground, cut the specific [posihs: posihs+cuth, posiws: posiws+cutw] region to
             # mix_img's [posiht: posiht+cuth, posiwt: posiwt+cutw] region
@@ -861,7 +828,7 @@ class Mixer:
     def mix(self, task_list, mix_id=0):
         """
         Numpy task task_list, len(task_list) should be same with self.num_sources
-        task shape: [task_dict, grad_ones_dict]
+        task shape: (task_dict, grad_ones_dict)
         """
         assert len(task_list) == self.num_sources
         assert mix_id < self.num_mixes
@@ -1011,3 +978,62 @@ def map_re_label(re_labels):
         origin_label: correct_label for origin_label, correct_label in zip(label_set, np.arange(len(label_set)))}
     correct_labels = np.array(list(map(lambda x: re_label_map[x], re_labels)))
     return correct_labels
+
+
+def pmo_embed(images, labels, grad_ones, feature_extractor, pmo, cluster_idxs):
+    """
+    Apply grad_ones on sample and forward to feature_extractor and
+    the specific pmo branches indicated by `cluster_idxs`.
+    :param images: Numpy with shape [bs, c, h, w]
+    :param labels: Numpy with shape [bs]
+    :param grad_ones: Tensor with same shape as images.
+    :param feature_extractor: an ResNet18 feature extractor.
+    :param pmo: an adaptor with `num_clusters` branches.
+    :param cluster_idxs: a list of idxs for which pmo branches to access.
+    Return a list of embeddings .
+    """
+    grad_one_device = grad_ones.device
+    images = torch.from_numpy(images).to(grad_one_device) * grad_ones
+    labels = torch.from_numpy(labels).long()
+
+    embeddings = feature_extractor.embed(images.to(device))
+    embeddings_list = pmo([embeddings.to(devices[cluster_idx]) for cluster_idx in cluster_idxs], cluster_idxs)
+
+    return embeddings_list, [labels.to(devices[cluster_idx]) for cluster_idx in cluster_idxs]
+
+
+def to_torch(sample, grad_ones, device_list=None):
+    """
+    Put samples to a list of devices specified by device_list.
+    :param sample:
+        {context_images, context_labels, context_gt,
+         target_images, target_labels, target_gt, domain}
+    :param grad_ones:
+        {context_grad_ones, target_grad_ones}
+    :param device_list: a list of devices.
+    Return a dict keying by device.
+    """
+    if device_list is None:
+        device_list = [cluster_device]
+
+    sample_dict = {d: dict() for d in device_list}
+
+    grad_one_device = grad_ones['context_grad_ones'].device
+
+    for key, val in sample.items():
+        if isinstance(val, str):
+            for s in sample_dict.values():
+                s[key] = val
+            continue
+        val = torch.from_numpy(np.array(val))
+        if key == 'context_images':
+            val = val.to(grad_one_device) * grad_ones['context_grad_ones']
+        elif key == 'target_images':
+            val = val.to(grad_one_device) * grad_ones['target_grad_ones']
+        elif 'image' not in key:
+            val = val.long()
+
+        for d, s in sample_dict.items():
+            s[key] = val.to(d)
+
+    return sample_dict
