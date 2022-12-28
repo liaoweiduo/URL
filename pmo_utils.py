@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 
 from models.losses import compute_prototypes
 from models.model_helpers import get_optimizer
+from models.adaptors import adaptor
+from models.hierarchical_clustering import HierarchicalClustering
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from data.meta_dataset_reader import MetaDatasetReader
@@ -29,12 +31,12 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=20, max_num_images=20, mode='kmeans'):
+    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical'):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
         :param max_num_images: Maximum number of images can be stored in each class.
-        :param mode: mode for cluster centers, choice=[learnable, mov_avg, kmeans].
+        :param mode: mode for cluster centers, choice=[kmeans, hierarchical].
         """
         super(Pool, self).__init__()
         self.capacity = capacity
@@ -70,7 +72,7 @@ class Pool(nn.Module):
                 self.lr_manager = CosineAnnealRestartLR(self.optimizer, args, start_iter)
         elif self.mode == 'mov_avg':
             self.centers: List[Optional[torch.Tensor]] = [None for _ in range(self.capacity)]
-        elif self.mode == 'kmeans':
+        elif self.mode in ['kmeans', 'hierarchical']:
             self.centers: Optional[torch.Tensor] = None
             self.clear_buffer()
         else:
@@ -112,6 +114,9 @@ class Pool(nn.Module):
             shutil.copyfile(os.path.join(self.out_path, class_filename),
                             os.path.join(self.out_path, 'pool_best.json'))
 
+        if self.mode == 'hierarchical':
+            return
+
         path = os.path.join(self.out_path, center_filename)
         if self.mode == 'learnable':
             centers = self.centers.detach().cpu().numpy()
@@ -138,6 +143,10 @@ class Pool(nn.Module):
         Restore pool's centers from npy file.
         """
         self.init(start_iter)
+
+        if self.mode == 'hierarchical':
+            return
+
         centers = np.load(os.path.join(self.load_path, center_filename))
 
         if self.mode == 'learnable':
@@ -228,8 +237,6 @@ class Pool(nn.Module):
     '''Cluster'''
     def cluster_and_assign_from_buffer(self, feature_extractor, model):
         """Perform clustering on classes in the buffer"""
-        '''get cluster centers'''
-        centers = self.centers.cpu().numpy() if self.centers is not None else 'k-means++'
 
         '''construct a big task for all classes in the buffer'''
         images, re_labels, gt_labels, sampled_images = [], [], [], []
@@ -240,50 +247,83 @@ class Pool(nn.Module):
             re_labels.append(np.repeat(re_label, n_img))
             gt_labels.append(class_dict['label'])
 
+        n_cls = len(self.buffer)
         images_numpy = np.concatenate(images)           # [bs, c, h, w]
         re_labels_numpy = np.concatenate(re_labels)     # [bs]
 
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, device)
+        images_torch = to_device(images_numpy, cluster_device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
-
-        # obtain embeddings and has grad
-        embeddings = model([feature_extractor.embed(images_torch).to(cluster_device)])[0]
-
-        with torch.no_grad():
-            n_cls = len(self.buffer)
-            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
-
-        '''do k-means on class_centroids init with centers'''
-        km = KMeans(n_clusters=self.capacity, init=centers, n_init=1)
-        km.fit(class_centroids)
-        # similarities = km.fit_transform(class_centroids)        # [n_cls, n_cluster]
-        updated_centers = km.cluster_centers_
-        self.centers = torch.from_numpy(updated_centers).to(cluster_device)
 
         '''clear buffer'''
         self.clear_buffer()
 
+        # obtain embeddings after url
+        embeddings = feature_extractor.embed(images_torch)
+
+        if self.mode == 'kmeans':
+            embeddings = model([embeddings.to(cluster_device)])[0]
+
+            with torch.no_grad():
+                class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
+
+            '''get cluster centers'''
+            centers = self.centers.cpu().numpy() if self.centers is not None else 'k-means++'
+
+            '''do k-means on class_centroids init with centers'''
+            km = KMeans(n_clusters=self.capacity, init=centers, n_init=1)
+            km.fit(class_centroids)
+            # similarities = km.fit_transform(class_centroids)        # [n_cls, n_cluster]
+            updated_centers = km.cluster_centers_
+            self.centers = torch.from_numpy(updated_centers).to(cluster_device)
+
+            cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
+                embeddings, labels_torch)
+
+        elif self.mode == 'hierarchical':
+            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
+            similarities, assigns, gates = model(class_centroids)     # [n_cls, 8]
+
+            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities)
+
+            similarities = similarities.detach().cpu().numpy()
+
         '''put into clusters'''
-        cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
-            embeddings, labels_torch)
         for re_label in range(len(cluster_idxs)):
             class_images = images[re_label]
             label = gt_labels[re_label]
             embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
-            similarities_numpy = similarities[re_label]     # [n_cluster]
+            similarities_numpy = similarities[re_label]  # [n_cluster]
             self.put(class_images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
                      cluster_idxs[re_label], class_centroids[re_label])
 
         '''return info for tsne'''
         return {
-            'labels': gt_labels,                                                # n_cls * (gt, domain)
-            'cluster_idxs': cluster_idxs,                                       # [n_cls,]
-            'class_centroids': class_centroids.detach().cpu().numpy(),          # [n_cls, emb_dim]
-            'sample_images': np.stack(sampled_images),                          # [n_cls, c, h, w]
-            'similarities': similarities,                                       # [n_cls, n_cluster]
-            'centers': updated_centers,                                         # [n_cluster, emb_dim]
+            'labels': gt_labels,  # n_cls * (gt, domain)
+            'cluster_idxs': cluster_idxs,  # [n_cls,]
+            'class_centroids': class_centroids.detach().cpu().numpy(),  # [n_cls, emb_dim]
+            'sample_images': np.stack(sampled_images),  # [n_cls, c, h, w]
+            'similarities': similarities,  # [n_cls, n_cluster]
         }
+
+    def cluster_from_similarities(self, similarities, softmax_mode='gumbel'):
+        """Compute cluster_idxs and grad_ones with specific softmax mode"""
+
+        '''cluster_idx is obtained with based on similarities'''
+        if softmax_mode == 'gumbel':
+            hard_gumbel_softmax = F.gumbel_softmax(similarities, tau=args['train.gumbel_tau'], hard=True)
+            cluster_idxs = torch.argmax(hard_gumbel_softmax, dim=1).detach().cpu().numpy()    # numpy [n_way,]
+            grad_ones = torch.stack([
+                hard_gumbel_softmax[idx, cluster_idx] for idx, cluster_idx in enumerate(cluster_idxs)])
+            # Tensor [1, 1,...] shape [n_way,]
+        elif softmax_mode == 'softmax':
+            sftmx = F.softmax(similarities, dim=1).detach().cpu().numpy()
+            cluster_idxs = np.argmax(sftmx, axis=1)
+            grad_ones = torch.ones(similarities.shape[0]).to(similarities.device)
+        else:
+            raise Exception(f'Un implemented softmax_mode: {softmax_mode} for Pool to do clustering.')
+
+        return cluster_idxs, grad_ones
 
     def cluster_from_emb(self, embeddings, labels_torch, softmax_mode='gumbel'):
         """Apply clustering on embeddings with specific softmax mode"""
@@ -292,19 +332,7 @@ class Pool(nn.Module):
             embeddings, labels_torch, centers, distance=args['test.distance'])
         # similarities shape [n_way, n_clusters] and class_centroids shape [n_way, emb_dim]
 
-        '''cluster_idx is obtained with based on similarities'''
-        if softmax_mode == 'gumbel':
-            hard_gumbel_softmax = F.gumbel_softmax(similarities, tau=args['train.gumbel_tau'], hard=True)
-            cluster_idxs = torch.argmax(hard_gumbel_softmax, dim=1).detach().cpu().numpy()    # numpy [n_way,]
-            grad_ones = torch.stack([
-                hard_gumbel_softmax[idx, cluster_idx] for idx, cluster_idx in enumerate(cluster_idxs)])   # .cpu()
-            # Tensor [1, 1,...] shape [n_way,]
-        elif softmax_mode == 'softmax':
-            sftmx = F.softmax(similarities, dim=1).detach().cpu().numpy()
-            cluster_idxs = np.argmax(sftmx, axis=1)
-            grad_ones = torch.ones(similarities.shape[0])
-        else:
-            raise Exception(f'Un implemented softmax_mode: {softmax_mode} for Pool to do clustering.')
+        cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
 
         return cluster_idxs, grad_ones, similarities.detach().cpu().numpy(), class_centroids
 
@@ -329,13 +357,25 @@ class Pool(nn.Module):
         :param put: whether to put classes into clusters.
         """
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, device)
+        images_torch = to_device(images_numpy, cluster_device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
 
-        embeddings = model([feature_extractor.embed(images_torch).to(cluster_device)])[0]
+        embeddings = feature_extractor.embed(images_torch)
 
-        cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
-            embeddings, labels_torch, softmax_mode)
+        if self.mode == 'kmeans':
+            embeddings = model([embeddings.to(cluster_device)])[0]
+
+            cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
+                embeddings, labels_torch, softmax_mode)
+
+        elif self.mode == 'hierarchical':
+            n_cls = len(labels_torch.unique())
+            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
+            similarities, assigns, gates = model(class_centroids)     # [n_cls, 8]
+
+            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
+
+            similarities = similarities.detach().cpu().numpy()
 
         labels = []
         sample_images = []
@@ -697,6 +737,37 @@ class Pool(nn.Module):
         return {'images': images, 'labels': labels}
 
 
+class Clusterer(nn.Module):
+    """
+    Clusterer tasks feature vector ([512]) as input.
+    """
+    def __init__(self):
+        super(Clusterer, self).__init__()
+        self.cluster_model = adaptor(
+            num_datasets=1, dim_in=512, dim_out=128, opt=args['cluster.opt'])   # 2-layer MLP
+        self.hierarchical_net = HierarchicalClustering(args['model.num_clusters'], 128, 128)
+        self.to_similarity = nn.Linear(128, args['model.num_clusters'], bias=False)
+
+    def forward(self, inputs):
+        """
+        :param inputs: [batch_size, task_emb_dim], [bs,512]
+        :return out: [bs, 8] in simplex, assigns: [8,bs], gates [8,4,bs]
+        """
+        embedings = self.cluster_model([inputs])[0]     # [bs, 128]
+        out, assigns, gates = self.hierarchical_net(embedings)          # [bs, 128]
+        out = self.to_similarity(out)                   # [bs, 8]
+        out = F.softmax(out, dim=1)
+        return out, assigns.detach().cpu().numpy(), gates.detach().cpu().numpy()
+
+    def get_state_dict(self):
+        """Outputs all the state elements"""
+        return self.state_dict()
+
+    def get_parameters(self):
+        """Outputs all the parameters"""
+        return [v for k, v in self.named_parameters()]
+
+
 class Mixer:
     """
     Mixer used to generate mixed tasks.
@@ -1037,3 +1108,10 @@ def to_torch(sample, grad_ones, device_list=None):
             s[key] = val.to(d)
 
     return sample_dict
+
+
+if __name__ == '__main__':
+    net = Clusterer()
+
+    inputs_ = torch.randn(5, 512)
+    output_, assigns_, gates_ = net(inputs_)

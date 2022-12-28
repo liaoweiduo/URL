@@ -28,6 +28,11 @@ class adaptor(torch.nn.Module):
                     torch.nn.ReLU(True),
                     torch.nn.Conv2d(2*dim_in, dim_out, 1, bias=False),
                     )
+                # setattr(self, 'conv{}'.format(i), nn.Sequential(
+                #     torch.nn.Conv2d(dim_in, dim_in // 4, 1, bias=False),    # 512 -> 128
+                #     torch.nn.ReLU(True),
+                #     torch.nn.Conv2d(dim_in // 4, dim_out, 1, bias=False),     # 128 -> 32
+                #     )
                 )
 
         for m in self.modules():

@@ -69,9 +69,9 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
 # pmo training
 parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'], default='5shot', metavar='TRAIN_TYPE',
                     help="standard varying number of ways and shots as in Meta-Dataset, 1shot for five-way-one-shot and 5shot for varying-way-five-shot evaluation.")
-parser.add_argument('--train.cluster_center_mode', type=str, default='kmeans', metavar='CLUSTER_CENTER_MODE',
-                    choices=['learnable', 'mov_avg', 'kmeans'],
-                    help='learnable cluster centers or use mov avg to update or use kmeans(average).')
+parser.add_argument('--train.cluster_center_mode', type=str, default='hierarchical', metavar='CLUSTER_CENTER_MODE',
+                    choices=['kmeans', 'hierarchical'],
+                    help='use kmeans(average) or hierarchical clustering net.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
 parser.add_argument('--train.gumbel_tau', type=float, default=0.05, metavar='GUMBEL_TAU',

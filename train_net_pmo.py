@@ -27,7 +27,7 @@ from models.adaptors import adaptor
 from utils import Accumulator, device, devices, cluster_device, set_determ, check_dir
 from config import args
 
-from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs, pmo_embed
+from pmo_utils import Pool, Clusterer, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs, pmo_embed
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -41,7 +41,6 @@ def train():
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
-
         '''--------------------'''
         '''Initialization Phase'''
         '''--------------------'''
@@ -56,7 +55,7 @@ def train():
 
         print(f'PMO devices: {devices}.')
         print(f'Cluster network device: {cluster_device}.')
-        print(f'Mult-obj NCC loss calculation and URL device: {device}.')
+        print(f'Mult-obj NCC loss calculation: {device}.')
 
         train_loaders = dict()
         num_train_classes = dict()
@@ -84,8 +83,10 @@ def train():
         # load url model as the frozen feature extractor
         url_args = copy.deepcopy(args)
         url_args['model.pretrained'] = True
-        url = get_model(None, url_args, d=device, freeze_fe=True, base_network_name='url')
-        url.eval()
+        cluster_url = get_model(None, url_args, d=cluster_device, freeze_fe=True, base_network_name='url')
+        model_url = get_model(None, url_args, d=device, freeze_fe=True, base_network_name='url')
+        cluster_url.eval()
+        model_url.eval()
 
         # pmo model
         pmo = adaptor(num_datasets=args['model.num_clusters'],
@@ -108,12 +109,10 @@ def train():
         '''initialize the clustering model and optimizer'''
         model_args_with_name = copy.deepcopy(args)
         model_args_with_name['model.name'] = cluster_model_name     # 'C-net'
-        cluster_model = adaptor(
-            num_datasets=1, dim_in=512, dim_out=128, opt=args['cluster.opt']).to(cluster_device)
-        # 2-layer MLP
-        cluster_optimizer = get_optimizer(cluster_model, model_args_with_name, params=cluster_model.get_parameters())
+        clusterer = Clusterer().to(cluster_device)
+        cluster_optimizer = get_optimizer(clusterer, model_args_with_name, params=clusterer.get_parameters())
         # restoring the last checkpoint
-        cluster_checkpointer = CheckPointer(model_args_with_name, cluster_model, optimizer=cluster_optimizer)
+        cluster_checkpointer = CheckPointer(model_args_with_name, clusterer, optimizer=cluster_optimizer)
         if os.path.isfile(cluster_checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
                 cluster_checkpointer.restore_model(ckpt='last')
@@ -145,16 +144,14 @@ def train():
         max_iter = args['train.max_iter']
 
         def init_train_log():
-            epoch_loss = {name: [] for name in trainsets}
-            epoch_loss.update({model_name: {name: [] for name in cluster_names} for model_name in model_names})
+            epoch_loss = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
             epoch_loss.update({
                 obj_idx: {
                     pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                 } for obj_idx in range(args['train.n_obj'])})
             epoch_loss['hv_loss'], epoch_loss['hv'] = [], []
 
-            epoch_acc = {name: [] for name in trainsets}
-            epoch_acc.update({model_name: {name: [] for name in cluster_names} for model_name in model_names})
+            epoch_acc = {model_name: {name: [] for name in cluster_names} for model_name in model_names}
             epoch_acc.update({
                 obj_idx: {
                     pop_idx: [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
@@ -165,13 +162,13 @@ def train():
         def model_train():
             # train mode
             pmo.train()
-            cluster_model.train()
+            clusterer.train()
             pool.train()
 
         def model_eval():
             # eval mode
             pmo.eval()
-            cluster_model.eval()
+            clusterer.eval()
             pool.eval()
 
         def zero_grad():
@@ -209,12 +206,8 @@ def train():
             '''----------------'''
             '''Clustering Phase'''
             '''----------------'''
-            if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
-                '''re clustering the pool for the updated clustering model'''
-                pool.re_clustering(cluster_model)
-            elif args['train.cluster_center_mode'] == 'kmeans':
-                '''put the classes in the clusters to the buffer'''
-                pool.cluster_put_into_buffer()
+            '''put the classes in the clusters to the buffer'''
+            pool.cluster_put_into_buffer()
 
             '''obtain tasks from train_loaders'''
             for t_indx, trainset in enumerate(trainsets):
@@ -229,46 +222,11 @@ def train():
                     gt_labels_numpy = np.concatenate([sample_numpy['context_gt'], sample_numpy['target_gt']])
                     domain = t_indx
 
-                    # '''cluster for task'''
-                    # cluster_idx, grad_one, similarity, task_centroid = pool.cluster_for_task(
-                    #     images_numpy, cluster_model
-                    # )
-                    # grad_ones = {
-                    #     'context_grad_ones': grad_one,  # .repeat(sample_numpy['context_images'].shape),
-                    #     # shape [n_shot*n_way, 3, 84, 84]
-                    #     'target_grad_ones': grad_one,   # .repeat(sample_numpy['target_images'].shape),
-                    #     # shape [n_query*n_way, 3, 84, 84]
-                    # }
-                    #
-                    # '''obtain and backward task ncc loss'''
-                    # selected_model, d = models[cluster_idx], devices[cluster_idx]
-                    # task = pool.to_torch(sample_numpy, grad_ones, device_list=[d])[d]
-                    #
-                    # context_features = selected_model.embed(task['context_images'])
-                    # target_features = selected_model.embed(task['target_images'])
-                    # context_labels = task['context_labels']
-                    # target_labels = task['target_labels']
-                    # task_loss, stats_dict, _ = prototype_loss(
-                    #     context_features, context_labels,
-                    #     target_features, target_labels, distance=args['test.distance'])
-                    #
-                    # task_loss.backward()
-                    #
-                    # '''log task loss and acc'''
-                    # epoch_loss[trainset].append(stats_dict['loss'])     # ilsvrc_2012 has 2 times larger len than other.
-                    # epoch_acc[trainset].append(stats_dict['acc'])
+                    '''pmo method: clustering and assign buffer'''
+                    pool.task_put_into_buffer(images_numpy, re_labels_numpy, gt_labels_numpy, domain)
 
-                    '''pmo method: clustering and assign to pool or buffer'''
-                    if args['train.cluster_center_mode'] in ['learnable', 'mov_avg']:
-                        pool.cluster_and_assign(
-                            images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                            url, cluster_model)
-                    elif args['train.cluster_center_mode'] == 'kmeans':
-                        pool.task_put_into_buffer(images_numpy, re_labels_numpy, gt_labels_numpy, domain)
-
-            if args['train.cluster_center_mode'] == 'kmeans':
-                '''perform clustering on buffer'''
-                pool.cluster_and_assign_from_buffer(url, cluster_model)
+            '''perform clustering on buffer'''
+            pool.cluster_and_assign_from_buffer(cluster_url, clusterer)
 
             '''--------------'''
             '''Training Phase'''
@@ -314,15 +272,15 @@ def train():
                             task['context_images'],
                             task['context_labels'],
                             grad_ones['context_grad_ones'],
-                            url, pmo, selected_cluster_idxs)
+                            model_url, pmo, selected_cluster_idxs)
                         target_features_list, target_labels_list = pmo_embed(
                             task['target_images'],
                             task['target_labels'],
                             grad_ones['target_grad_ones'],
-                            url, pmo, selected_cluster_idxs)
+                            model_url, pmo, selected_cluster_idxs)
 
                         losses = []     # [2,]
-                        for obj_idx in range(len(selected_cluster_idxs)):
+                        for obj_idx in range(len(selected_cluster_idxs)):       # obj_idx is the selected model
                             loss, stats_dict, _ = prototype_loss(
                                 context_features_list[obj_idx], context_labels_list[obj_idx],
                                 target_features_list[obj_idx], target_labels_list[obj_idx],
@@ -333,10 +291,16 @@ def train():
                             epoch_loss[obj_idx][task_idx].append(stats_dict['loss'])    # [2, 4]
                             epoch_acc[obj_idx][task_idx].append(stats_dict['acc'])
                             if task_idx < len(selected_cluster_idxs):       # [2, 2]
-                                epoch_loss[model_names[cluster_idx]][
+
+                                if task_idx == obj_idx:
+                                    # backward pure loss on the corresponding model and cluster.
+                                    loss.backward(retain_graph=True)
+
+                                '''log model-specific pure loss'''
+                                epoch_loss[model_names[selected_cluster_idxs[obj_idx]]][
                                     cluster_names[selected_cluster_idxs[task_idx]]
                                 ].append(stats_dict['loss'])
-                                epoch_acc[model_names[cluster_idx]][
+                                epoch_acc[model_names[selected_cluster_idxs[obj_idx]]][
                                     cluster_names[selected_cluster_idxs[task_idx]]
                                 ].append(stats_dict['acc'])
                         ncc_losses_multi_obj.append(torch.stack(losses))
@@ -366,9 +330,9 @@ def train():
 
             update_step(i)
 
-            # saving pool
-            pool.store(i, train_loaders, trainsets, False,
-                       class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
+            # # saving pool
+            # pool.store(i, train_loaders, trainsets, False,
+            #            class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
 
             if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
@@ -381,12 +345,12 @@ def train():
                 with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
                     pickle.dump(epoch_train_history, f)
 
-                '''log task loss and accuracy'''
-                for dataset_name in trainsets:
-                    writer.add_scalar(f"loss/train/{dataset_name}",
-                                      np.mean(epoch_loss[dataset_name]), i+1)
-                    writer.add_scalar(f"accuracy/train/{dataset_name}",
-                                      np.mean(epoch_acc[dataset_name]), i+1)
+                # '''log task loss and accuracy'''
+                # for dataset_name in trainsets:
+                #     writer.add_scalar(f"loss/train/{dataset_name}",
+                #                       np.mean(epoch_loss[dataset_name]), i+1)
+                #     writer.add_scalar(f"accuracy/train/{dataset_name}",
+                #                       np.mean(epoch_acc[dataset_name]), i+1)
 
                 '''log multi-objective loss and accuracy'''
                 objs_loss, objs_acc = [], []
@@ -479,7 +443,7 @@ def train():
 
                             val_pool.cluster_and_assign(
                                 images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-                                url, cluster_model, softmax_mode='softmax')
+                                cluster_url, clusterer, softmax_mode='softmax')
 
                             '''check if any cluster have sufficient class to construct 1 task'''
                             for idx, classes in enumerate(val_pool.current_classes()):
@@ -495,12 +459,12 @@ def train():
                                         numpy_task['context_images'],
                                         numpy_task['context_labels'],
                                         grad_ones['context_grad_ones'],
-                                        url, pmo, [idx])
+                                        model_url, pmo, [idx])
                                     target_features_list, target_labels_list = pmo_embed(
                                         numpy_task['target_images'],
                                         numpy_task['target_labels'],
                                         grad_ones['target_grad_ones'],
-                                        url, pmo, [idx])
+                                        model_url, pmo, [idx])
 
                                     context_features = context_features_list[0]
                                     target_features = target_features_list[0]
@@ -549,7 +513,7 @@ def train():
                 cluster_checkpointer.save_checkpoint(
                     i, best_val_acc, best_val_loss,
                     is_best, optimizer=cluster_optimizer,
-                    state_dict=cluster_model.get_state_dict(), extra=extra_dict)
+                    state_dict=clusterer.get_state_dict(), extra=extra_dict)
 
                 '''save epoch_val_loss and epoch_val_acc'''
                 with open(os.path.join(args['out.dir'], 'summary', 'val_log.pickle'), 'wb') as f:
