@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from pymoo.util.ref_dirs import get_reference_directions
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from models.losses import compute_prototypes
 from models.model_helpers import get_optimizer
@@ -280,6 +281,16 @@ class Pool(nn.Module):
             cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
                 embeddings, labels_torch)
 
+            '''put into clusters'''
+            for re_label in range(len(cluster_idxs)):
+                class_images = images[re_label]
+                label = gt_labels[re_label]
+                # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
+                similarities_numpy = similarities[re_label]  # [n_cluster]
+                self.put(class_images, label, grad_ones[re_label],
+                         {'similarities': similarities_numpy},
+                         cluster_idxs[re_label], class_centroids[re_label])
+
         elif self.mode == 'hierarchical':
             class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
             similarities, assigns, gates = model(class_centroids)     # [n_cls, 8]
@@ -288,14 +299,20 @@ class Pool(nn.Module):
 
             similarities = similarities.detach().cpu().numpy()
 
-        '''put into clusters'''
-        for re_label in range(len(cluster_idxs)):
-            class_images = images[re_label]
-            label = gt_labels[re_label]
-            embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
-            similarities_numpy = similarities[re_label]  # [n_cluster]
-            self.put(class_images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
-                     cluster_idxs[re_label], class_centroids[re_label])
+            '''put into clusters'''
+            for re_label in range(len(cluster_idxs)):
+                class_images = images[re_label]
+                label = gt_labels[re_label]
+                # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
+                similarities_numpy = similarities[re_label]  # [n_cluster]
+                self.put(class_images, label, grad_ones[re_label],
+                         {'similarities': similarities[re_label],
+                          'assigns': assigns[:, re_label],
+                          'gates': gates[:, :, re_label]},
+                         cluster_idxs[re_label], class_centroids[re_label])
+
+        else:
+            raise Exception('')
 
         '''return info for tsne'''
         return {
@@ -377,12 +394,15 @@ class Pool(nn.Module):
 
             similarities = similarities.detach().cpu().numpy()
 
+        else:
+            raise Exception('')
+
         labels = []
         sample_images = []
         sims = []
         for re_label in range(len(cluster_idxs)):
             images = images_numpy[re_labels_numpy == re_label]
-            embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
+            # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
             gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
             similarities_numpy = similarities[re_label]  # [num_cluster]
             if type(domain) is np.ndarray:
@@ -396,7 +416,7 @@ class Pool(nn.Module):
 
             '''put samples into pool with (gt_label, domain)'''
             if put:
-                self.put(images, label, grad_ones[re_label], embeddings_numpy, similarities_numpy,
+                self.put(images, label, grad_ones[re_label], {'similarities': similarities_numpy},
                          cluster_idxs[re_label], class_centroids[re_label], update_cluster_centers)
 
         '''return info for tsne'''
@@ -431,10 +451,10 @@ class Pool(nn.Module):
 
                 '''put to clusters'''
                 self.put(images=images, label=tuple_label, grad_one=torch.ones(1)[0],
-                         embeddings=None, similarities=None,
+                         info_dict=None,
                          cluster_idx=cluster_idx, class_centroid=None)
 
-    def cluster_for_task(self, images_numpy, model, softmax_mode='gumbel'):
+    def cluster_for_task(self, images_numpy, feature_extractor, model, softmax_mode='gumbel'):
         """Clustering for task centroid.
         :param images_numpy: numpy/tensor with shape [bs, c, h, w]
         :param model: clustering model to obtain img embedding and class centroid.
@@ -446,11 +466,21 @@ class Pool(nn.Module):
         images_torch = to_device(images_numpy, cluster_device)
         labels_torch = to_device(re_labels_numpy, cluster_device)
 
-        embeddings = model.embed(images_torch)
+        if self.mode == 'kmeans':
+            embeddings = model.embed(images_torch)
+            cluster_idxs, grad_ones, similarities, task_centroids = self.cluster_from_emb(
+                embeddings, labels_torch, softmax_mode)
+            # [1], [1], [1, 8], [1, 512]
 
-        cluster_idxs, grad_ones, similarities, task_centroids = self.cluster_from_emb(
-            embeddings, labels_torch, softmax_mode)
-        # [1], [1], [1, 8], [1, 512]
+        elif self.mode == 'hierarchical':
+            # obtain embeddings after url
+            embeddings = feature_extractor.embed(images_torch)
+            task_centroids = compute_prototypes(embeddings, labels_torch, n_way=1)  # [1, 512]
+            similarities, assigns, gates = model(task_centroids)  # [1, 8]
+
+            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities)
+
+            similarities = similarities.detach().cpu().numpy()
 
         return cluster_idxs[0], grad_ones[0], similarities[0], task_centroids[0]
 
@@ -476,8 +506,10 @@ class Pool(nn.Module):
                 model
             )
 
-    def put(self, images, label, grad_one, embeddings, similarities,
-            cluster_idx, class_centroid, update_cluster_centers=False):
+    def put(self, images, label, grad_one,
+            info_dict,
+            cluster_idx, class_centroid,
+            update_cluster_centers=False):
         """
         Put class samples (batch of numpy images) into clusters.
         Issues to handle:
@@ -486,6 +518,7 @@ class Pool(nn.Module):
             Already stored class in same cluster or other cluster.
                 cat images with max size: max_num_images.
             Update cluster centers with class_centroid: [feature_size, ]
+            info_dict should contain `similarities`.
         """
         '''pop stored images and cat new images'''
         position = self.find_label(label)
@@ -507,9 +540,9 @@ class Pool(nn.Module):
         '''put to cluster: cluster_idx'''
         self.clusters[cluster_idx].append({'images': stored_images, 'label': label,
                                            'grad_one': grad_one.repeat(*images.shape[-3:]),     # c,h,w
-                                           # 'embeddings': stored_embeddings,
-                                           'similarities': similarities,
-                                           'class_centroid': class_centroid.detach().cpu().numpy()})
+                                           'class_centroid': class_centroid.detach().cpu().numpy() if class_centroid is not None else None,
+                                           **info_dict
+                                           })
         '''sort according to the corresponding similarity'''
         self.clusters[cluster_idx].sort(key=lambda x: x['similarities'][cluster_idx], reverse=True)   # descending order
         if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
@@ -644,6 +677,22 @@ class Pool(nn.Module):
                 similarity.append(cls['similarities'])      # cls['similarities'] shape [8,]
             similarities.append(similarity)
         return similarities
+
+    def current_assigns_gates(self):
+        """
+        first return raw list,
+        assigns: [8 * [num_class_each_cluster * numpy [8,]]]
+        gates: [8 * [num_class_each_cluster * numpy [8,4,]]]
+        """
+        assigns, gates = [], []
+        for cluster in self.clusters:
+            assign, gate = [], []
+            for cls in cluster:
+                assign.append(cls['assigns'])      # cls['assigns'] shape [8,]
+                gate.append(cls['gates'])      # cls['gates'] shape [8,4,]
+            assigns.append(assign)
+            gates.append(gate)
+        return assigns, gates
 
     def episodic_sample(
             self,
@@ -1035,6 +1084,18 @@ def draw_objs(objs, labels):
     for pop_idx in range(pop_size):
         ax.scatter(objs[0, pop_idx], objs[1, pop_idx], s=200, color=c(pop_idx), label=labels[pop_idx])
     ax.legend()
+    return fig
+
+
+def draw_heatmap(data):
+    """
+    return a figure of heatmap.
+    :param data: 2-D Numpy
+    """
+    fig, ax = plt.subplots()
+    sns.heatmap(
+        data, cmap=plt.get_cmap('Greens'), annot=True, fmt=".2f"
+    )
     return fig
 
 

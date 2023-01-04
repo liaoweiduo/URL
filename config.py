@@ -25,7 +25,7 @@ parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
 # cluster model args
 parser.add_argument('--cluster.opt', type=str, default='nonlinear', help="type of cluster model, linear or nonlinear")
-parser.add_argument('--pmo.opt', type=str, default='linear', help="type of pmo model, linear or nonlinear")
+parser.add_argument('--pmo.opt', type=str, default='nonlinear', help="type of pmo model, linear or nonlinear")
 
 # train args
 parser.add_argument('--train.batch_size', type=int, default=16, metavar='BS',
@@ -74,9 +74,15 @@ parser.add_argument('--train.cluster_center_mode', type=str, default='hierarchic
                     help='use kmeans(average) or hierarchical clustering net.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=0.05, metavar='GUMBEL_TAU',
+parser.add_argument('--train.gumbel_tau', type=float, default=0.1, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. '
-                         'a large tau makes probability assign and a small tau makes argmax assign.')
+                         'a large tau makes probability assign and a small tau makes argmax assign.???')
+parser.add_argument('--train.loss_type', type=str, default='task+pure+hv', metavar='LOSS_TYPE',
+                    choices=['task', 'task+pure', 'task+pure+hv'],
+                    help='backward losses.')
+parser.add_argument('--train.num_iters_cal_task_loss', type=int, default=100, metavar='ITERS',
+                    help='number of iteration to calculate task loss if loss_type contains `task`.'
+                         'If loss_type is just `task`, this is ignored.')
 parser.add_argument('--train.hv_coefficient', type=float, default=0.01, metavar='HV_COEFFICIENT',
                     help='coeffient for hv loss .')
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
