@@ -8,11 +8,11 @@ from config import args
 device = torch.device(f"cuda:{torch.cuda.device_count()-1}" if torch.cuda.is_available() else "cpu")    # last device
 
 # devices only for pool-mo training. args['model.num_clusters']: 8 GPU available.
-devices = [
-    torch.device(f"cuda:{i % torch.cuda.device_count()}" if torch.cuda.is_available() else "cpu")
-    for i in range(args['model.num_clusters'])
-]
-cluster_device = torch.device('cpu')
+# devices = [
+#     torch.device(f"cuda:{i % torch.cuda.device_count()}" if torch.cuda.is_available() else "cpu")
+#     for i in range(args['model.num_clusters'])
+# ]
+# cluster_device = torch.device('cpu')
 
 
 def to_device(sample, d):

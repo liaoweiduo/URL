@@ -40,7 +40,7 @@ class HierarchicalClustering(nn.Module):
         self.update_nets['update_root'] = update_block(hidden_dim, hidden_dim)
         self.assign_net = AssignNet(self.num_leaf, input_dim, mode='centers')
         if self.num_noleaf > 0:
-            self.gate_nets = AssignNet(self.num_noleaf, hidden_dim, mode='dense')
+            self.gate_nets = AssignNet(self.num_noleaf, hidden_dim, mode='dense')   # dense
 
         self.apply(self.weight_init)    # customized initialization
 
@@ -98,7 +98,6 @@ class HierarchicalClustering(nn.Module):
     def weight_init(m):
 
         if isinstance(m, nn.Linear):    # for update_blocks and gate_net
-            nn.init.xavier_uniform_(m.weight)
             nn.init.xavier_uniform_(m.weight)
 
 
@@ -158,9 +157,10 @@ class AssignNet(nn.Module):
             for node in range(self.num_node):   # 4
                 assign_batch.append(inputs - self.cluster_centers[node])
             assign_batch = torch.stack(assign_batch)   # [4,bs,128]
-            assign = torch.exp(-torch.sum(torch.square(assign_batch), dim=2) / (2.0*self.sigma))   # [4,bs]
+            assign = torch.exp(-torch.norm(assign_batch, p=2, dim=2) ** 2 / (2.0*self.sigma))   # [4,bs]
+            # assign = torch.exp(-torch.sum(torch.square(assign_batch), dim=2) / (2.0*self.sigma))   # [4,bs]
             assign_sum = torch.sum(assign, dim=0, keepdim=True)     # [1,batch_size], [1,bs]
-            assign = assign / (assign_sum + 1e-15)    # sum(assign, dim=0) == 1
+            assign = assign / assign_sum    # sum(assign, dim=0) == 1
             return assign
         elif self.mode == 'dense':
             assign = []     # num_node*[batch_size,1] 2*[bs]

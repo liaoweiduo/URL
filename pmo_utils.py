@@ -20,7 +20,7 @@ from models.hierarchical_clustering import HierarchicalClustering
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from data.meta_dataset_reader import MetaDatasetReader
-from utils import device, devices, cluster_device, to_device
+from utils import device, to_device
 
 from config import args
 from utils import check_dir
@@ -48,9 +48,11 @@ class Pool(nn.Module):
         self.load_path = os.path.join(args['model.dir'], 'weights', 'pool')
         self.out_path = os.path.join(args['out.dir'], 'weights', 'pool')
         self.out_path = check_dir(self.out_path, False)
-        self.clusters = None
+        self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
         self.centers = None
         self.buffer = []
+
+        self.cluster_device = device
         self.init(0)
 
     def init(self, start_iter):
@@ -63,7 +65,7 @@ class Pool(nn.Module):
             self.optimizer = get_optimizer(self, args_with_lr, params=self.get_parameters())
             if start_iter > 0:
                 ckpt_path = os.path.join(self.load_path, 'optimizer.pth.tar')
-                ch = torch.load(ckpt_path, map_location=cluster_device)
+                ch = torch.load(ckpt_path, map_location=self.cluster_device)
                 self.optimizer.load_state_dict(ch['optimizer'])
             if args['train.lr_policy'] == "step":
                 self.lr_manager = UniformStepLR(self.optimizer, args, start_iter)
@@ -77,7 +79,7 @@ class Pool(nn.Module):
             self.centers: Optional[torch.Tensor] = None
             self.clear_buffer()
         else:
-            raise Exception(f'Un implemented mode: {self.mode} for Pool.')
+            print(f'mode: {self.mode} does not need centers. Pool only store samples.')
 
     def get_parameters(self):
         """Outputs all the parameters"""
@@ -145,7 +147,8 @@ class Pool(nn.Module):
         """
         self.init(start_iter)
 
-        if self.mode == 'hierarchical':
+        # if self.mode == 'hierarchical':
+        if self.mode not in ['learnable', 'mov_avg', 'kmeans']:
             return
 
         centers = np.load(os.path.join(self.load_path, center_filename))
@@ -155,9 +158,73 @@ class Pool(nn.Module):
         elif self.mode == 'mov_avg':
             self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
         elif self.mode == 'kmeans':
-            self.centers = torch.from_numpy(centers).to(cluster_device)
+            self.centers = torch.from_numpy(centers).to(self.cluster_device)
         else:
             raise Exception(f'Un implemented mode: {self.mode} for Pool.')
+
+    def put_batch(self, images, cluster_idxs, info_dict):
+        """
+        Put samples (batch of torch cpu images) into clusters.
+        Issues to handle:
+            Maximum number of classes.
+                just remove the earliest one.
+            Already stored class in same cluster.
+                cat images with max size: max_num_images.
+                do not consider other cluster, since gumbel introduce randomness.
+            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
+                              #  `selection`.  # torch cuda
+        """
+        '''unpack'''
+        domain, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        similarities = info_dict['similarities']
+        # similarities, selection = info_dict['similarities'], info_dict['selection']
+
+        for sample_idx in range(len(cluster_idxs)):
+            cluster_idx = cluster_idxs[sample_idx]
+            '''pop stored images and cat new images'''
+            label = (gt_labels[sample_idx].item(), domain[sample_idx].item())
+            position = self.find_label(label, cluster_idx=cluster_idx)
+            if position != -1:      # find exist label, cat onto it and re-put
+                stored = self.clusters[position[0]].pop(position[1])
+                stored_images = stored['images']
+                stored_images = np.concatenate([stored_images, images[sample_idx:sample_idx+1].numpy()])
+                stored_similarities = stored['similarities']
+                stored_similarities = np.concatenate([stored_similarities, similarities[sample_idx:sample_idx+1]])
+                # stored_selection = stored['selection']
+                # stored_selection = torch.cat([stored_selection, selection[sample_idx:sample_idx+1]])
+            else:
+                stored_images = images[sample_idx:sample_idx+1].numpy()
+                stored_similarities = similarities[sample_idx:sample_idx+1]
+                # stored_selection = selection[sample_idx:sample_idx+1]
+
+            '''sort within class '''
+            indexs = np.argsort(stored_similarities[:, cluster_idx])[::-1]      # descending order
+            stored_images = stored_images[indexs]
+            stored_similarities = stored_similarities[indexs]
+
+            '''remove several images with smaller sim to satisfy max_num_images'''
+            if stored_images.shape[0] > self.max_num_images:
+                stored_images = stored_images[:self.max_num_images]
+                stored_similarities = stored_similarities[:self.max_num_images]
+                # stored_selection = stored_selection[:self.max_num_images]
+
+            '''put to cluster: cluster_idx'''
+            self.clusters[cluster_idx].append({
+                'images': stored_images, 'label': label,    # 'selection': stored_selection,
+                'similarities': stored_similarities,
+                'class_similarity': np.mean(stored_similarities, axis=0),       # mean over all samples [n_clusters]
+            })
+
+            '''sort class according to the corresponding similarity (mean over all samples in the class)'''
+            self.clusters[cluster_idx].sort(
+                key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
+            if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
+                '''need to remove one with smallest similarity: last one'''
+                self.clusters[cluster_idx].pop(-1)
+
+    '''
+    OLD PUT
+    '''
 
     '''Buffer'''
     def put_into_buffer(self, images_list, label_list):
@@ -253,8 +320,8 @@ class Pool(nn.Module):
         re_labels_numpy = np.concatenate(re_labels)     # [bs]
 
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, cluster_device)
-        labels_torch = to_device(re_labels_numpy, cluster_device)
+        images_torch = to_device(images_numpy, self.cluster_device)
+        labels_torch = to_device(re_labels_numpy, self.cluster_device)
 
         '''clear buffer'''
         self.clear_buffer()
@@ -263,7 +330,7 @@ class Pool(nn.Module):
         embeddings = feature_extractor.embed(images_torch)
 
         if self.mode == 'kmeans':
-            embeddings = model([embeddings.to(cluster_device)])[0]
+            embeddings = model([embeddings.to(self.cluster_device)])[0]
 
             with torch.no_grad():
                 class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
@@ -276,7 +343,7 @@ class Pool(nn.Module):
             km.fit(class_centroids)
             # similarities = km.fit_transform(class_centroids)        # [n_cls, n_cluster]
             updated_centers = km.cluster_centers_
-            self.centers = torch.from_numpy(updated_centers).to(cluster_device)
+            self.centers = torch.from_numpy(updated_centers).to(self.cluster_device)
 
             cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
                 embeddings, labels_torch)
@@ -293,7 +360,7 @@ class Pool(nn.Module):
 
         elif self.mode == 'hierarchical':
             class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
-            similarities, assigns, gates = model(class_centroids)     # [n_cls, 8]
+            similarities, loss_rec, assigns, gates = model(class_centroids)     # [n_cls, 8]
 
             cluster_idxs, grad_ones = self.cluster_from_similarities(similarities)
 
@@ -321,6 +388,7 @@ class Pool(nn.Module):
             'class_centroids': class_centroids.detach().cpu().numpy(),  # [n_cls, emb_dim]
             'sample_images': np.stack(sampled_images),  # [n_cls, c, h, w]
             'similarities': similarities,  # [n_cls, n_cluster]
+            'loss_rec': loss_rec,
         }
 
     def cluster_from_similarities(self, similarities, softmax_mode='gumbel'):
@@ -344,7 +412,7 @@ class Pool(nn.Module):
 
     def cluster_from_emb(self, embeddings, labels_torch, softmax_mode='gumbel'):
         """Apply clustering on embeddings with specific softmax mode"""
-        centers = self.centers if self.centers is not None else torch.randn(self.capacity, self.emb_dim).to(cluster_device)
+        centers = self.centers if self.centers is not None else torch.randn(self.capacity, self.emb_dim).to(self.cluster_device)
         similarities, class_centroids = prototype_similarity(
             embeddings, labels_torch, centers, distance=args['test.distance'])
         # similarities shape [n_way, n_clusters] and class_centroids shape [n_way, emb_dim]
@@ -374,13 +442,13 @@ class Pool(nn.Module):
         :param put: whether to put classes into clusters.
         """
         '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, cluster_device)
-        labels_torch = to_device(re_labels_numpy, cluster_device)
+        images_torch = to_device(images_numpy, self.cluster_device)
+        labels_torch = to_device(re_labels_numpy, self.cluster_device)
 
         embeddings = feature_extractor.embed(images_torch)
 
         if self.mode == 'kmeans':
-            embeddings = model([embeddings.to(cluster_device)])[0]
+            embeddings = model([embeddings.to(self.cluster_device)])[0]
 
             cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
                 embeddings, labels_torch, softmax_mode)
@@ -388,7 +456,7 @@ class Pool(nn.Module):
         elif self.mode == 'hierarchical':
             n_cls = len(labels_torch.unique())
             class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
-            similarities, assigns, gates = model(class_centroids)     # [n_cls, 8]
+            similarities, loss_rec, assigns, gates = model(class_centroids)     # [n_cls, 8]
 
             cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
 
@@ -463,8 +531,8 @@ class Pool(nn.Module):
         Return cluster_idx: numpy(), grad_one: tensor(), similarity: numpy(8), task_centroid: tensor(512)
         """
         re_labels_numpy = np.array([0 for _ in range(images_numpy.shape[0])])
-        images_torch = to_device(images_numpy, cluster_device)
-        labels_torch = to_device(re_labels_numpy, cluster_device)
+        images_torch = to_device(images_numpy, self.cluster_device)
+        labels_torch = to_device(re_labels_numpy, self.cluster_device)
 
         if self.mode == 'kmeans':
             embeddings = model.embed(images_torch)
@@ -476,13 +544,13 @@ class Pool(nn.Module):
             # obtain embeddings after url
             embeddings = feature_extractor.embed(images_torch)
             task_centroids = compute_prototypes(embeddings, labels_torch, n_way=1)  # [1, 512]
-            similarities, assigns, gates = model(task_centroids)  # [1, 8]
+            similarities, loss_rec, assigns, gates = model(task_centroids)  # [1, 8]
 
-            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities)
+            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
 
             similarities = similarities.detach().cpu().numpy()
 
-        return cluster_idxs[0], grad_ones[0], similarities[0], task_centroids[0]
+        return cluster_idxs[0], grad_ones[0], similarities[0], task_centroids[0], loss_rec
 
     def re_clustering(self, model):
         """
@@ -606,17 +674,22 @@ class Pool(nn.Module):
 
         return logits
 
-    def find_label(self, label, target='clusters'):
+    def find_label(self, label, target='clusters', cluster_idx=None):
         """
         Find label in pool, return position with (cluster_idx, cls_idx)
         If not in pool, return -1.
         If target == 'buffer', return the position (idx) in the buffer.
         """
         if target == 'clusters':
-            for cluster_idx, cluster in enumerate(self.clusters):
-                for cls_idx, cls in enumerate(cluster):
+            if cluster_idx is not None:
+                for cls_idx, cls in enumerate(self.clusters[cluster_idx]):
                     if cls['label'] == label:       # (0, str) == (0, str) ? int
                         return cluster_idx, cls_idx
+            else:
+                for cluster_idx, cluster in enumerate(self.clusters):
+                    for cls_idx, cls in enumerate(cluster):
+                        if cls['label'] == label:       # (0, str) == (0, str) ? int
+                            return cluster_idx, cls_idx
         elif target == 'buffer':
             for buf_idx, cls in enumerate(self.buffer):
                 if cls['label'] == label:
@@ -674,7 +747,7 @@ class Pool(nn.Module):
         for cluster in self.clusters:
             similarity = []
             for cls in cluster:
-                similarity.append(cls['similarities'])      # cls['similarities'] shape [8,]
+                similarity.append(cls['class_similarity'])      # cls['class_similarity'] shape [8,]
             similarities.append(similarity)
         return similarities
 
@@ -700,13 +773,14 @@ class Pool(nn.Module):
             n_way=args['train.n_way'],
             n_shot=args['train.n_shot'],
             n_query=args['train.n_query'],
-            remove_sampled_classes=False
+            remove_sampled_classes=False,
+            d='numpy',
     ):
         """
         Sample a task from the specific cluster_idx.
         length of this cluster needs to be guaranteed larger than n_way.
         Random issue may occur, highly recommended to use np.rng.
-        Return numpy, need to put to devices
+        Return numpy if d is `numpy`, else tensor on d
         """
         candidate_class_idxs = np.arange(len(self.clusters[cluster_idx]))
         num_imgs = np.array([cls[1] for cls in self.current_classes()[cluster_idx]])
@@ -715,21 +789,21 @@ class Pool(nn.Module):
 
         selected_class_idxs = np.random.choice(candidate_class_idxs, n_way, replace=False)
         context_images, target_images, context_labels, target_labels, context_gt, target_gt = [], [], [], [], [], []
-        context_grad_ones, target_grad_ones = [], []
+        # context_selection, target_selection = [], []
         for re_idx, idx in enumerate(selected_class_idxs):
-            images = self.clusters[cluster_idx][idx]['images']
-            tuple_label = self.clusters[cluster_idx][idx]['label']
-            grad_one = self.clusters[cluster_idx][idx]['grad_one']
+            images = self.clusters[cluster_idx][idx]['images']              # [bs, c, h, w]
+            tuple_label = self.clusters[cluster_idx][idx]['label']          # (gt_label, domain)
+            # selection = self.clusters[cluster_idx][idx]['selection']        # [bs, n_clusters]
 
             perm_idxs = np.random.permutation(np.arange(len(images)))
             context_images.append(images[perm_idxs[:n_shot]])
             target_images.append(images[perm_idxs[n_shot:n_shot+n_query]])
             context_labels.append([re_idx for _ in range(n_shot)])
             target_labels.append([re_idx for _ in range(n_query)])
-            context_gt.append([tuple_label for _ in range(n_shot)])
-            target_gt.append([tuple_label for _ in range(n_query)])
-            context_grad_ones.append(torch.stack([grad_one for _ in range(n_shot)]))
-            target_grad_ones.append(torch.stack([grad_one for _ in range(n_query)]))
+            context_gt.append([tuple_label for _ in range(n_shot)])         # [(gt_label, domain)*n_shot]
+            target_gt.append([tuple_label for _ in range(n_query)])         # [(gt_label, domain)*n_query]
+            # context_selection.append(selection[perm_idxs[:n_shot]])
+            # target_selection.append(selection[perm_idxs[n_shot:n_shot+n_query]])
 
         context_images = np.concatenate(context_images)
         target_images = np.concatenate(target_images)
@@ -737,8 +811,17 @@ class Pool(nn.Module):
         target_labels = np.concatenate(target_labels)
         context_gt = np.concatenate(context_gt)
         target_gt = np.concatenate(target_gt)
-        context_grad_ones = torch.cat(context_grad_ones)
-        target_grad_ones = torch.cat(target_grad_ones)
+        # context_selection = torch.cat(context_selection)
+        # target_selection = torch.cat(target_selection)
+
+        if d is None:
+            d = device
+        '''to tensor on divice d'''
+        if d != 'numpy':
+            context_images = torch.from_numpy(context_images).to(d)
+            target_images = torch.from_numpy(target_images).to(d)
+            context_labels = torch.from_numpy(context_labels).long().to(d)
+            target_labels = torch.from_numpy(target_labels).long().to(d)
 
         task_dict = {
             'context_images': context_images,           # shape [n_shot*n_way, 3, 84, 84]
@@ -748,11 +831,8 @@ class Pool(nn.Module):
             'target_labels': target_labels,             # shape [n_query*n_way,]
             'target_gt': target_gt,                     # shape [n_query*n_way, 2]: [local, domain]
             'domain': cluster_idx,                      # 0-7: C0-C7, num_clusters
-        }
-
-        grad_ones_dict = {
-            'context_grad_ones': context_grad_ones,     # shape [n_shot*n_way, c, h, w]
-            'target_grad_ones': target_grad_ones,       # shape [n_query*n_way, c, h, w]
+            # 'context_selection': context_selection,     # shape [n_shot*n_way, n_clusters]
+            # 'target_selection': target_selection,       # shape [n_query*n_way, n_clusters]
         }
 
         if remove_sampled_classes:
@@ -762,7 +842,7 @@ class Pool(nn.Module):
                     class_items.append(self.clusters[cluster_idx][idx])
             self.clusters[cluster_idx] = class_items
 
-        return task_dict, grad_ones_dict
+        return task_dict
 
     def batch_sample(self, cluster_idx):
         """
@@ -786,37 +866,6 @@ class Pool(nn.Module):
         return {'images': images, 'labels': labels}
 
 
-class Clusterer(nn.Module):
-    """
-    Clusterer tasks feature vector ([512]) as input.
-    """
-    def __init__(self):
-        super(Clusterer, self).__init__()
-        self.cluster_model = adaptor(
-            num_datasets=1, dim_in=512, dim_out=128, opt=args['cluster.opt'])   # 2-layer MLP
-        self.hierarchical_net = HierarchicalClustering(args['model.num_clusters'], 128, 128)
-        self.to_similarity = nn.Linear(128, args['model.num_clusters'], bias=False)
-
-    def forward(self, inputs):
-        """
-        :param inputs: [batch_size, task_emb_dim], [bs,512]
-        :return out: [bs, 8] in simplex, assigns: [8,bs], gates [8,4,bs]
-        """
-        embedings = self.cluster_model([inputs])[0]     # [bs, 128]
-        out, assigns, gates = self.hierarchical_net(embedings)          # [bs, 128]
-        out = self.to_similarity(out)                   # [bs, 8]
-        out = F.softmax(out, dim=1)
-        return out, assigns.detach().cpu().numpy(), gates.detach().cpu().numpy()
-
-    def get_state_dict(self):
-        """Outputs all the state elements"""
-        return self.state_dict()
-
-    def get_parameters(self):
-        """Outputs all the parameters"""
-        return [v for k, v in self.named_parameters()]
-
-
 class Mixer:
     """
     Mixer used to generate mixed tasks.
@@ -833,36 +882,32 @@ class Mixer:
         self.num_sources = num_sources
         self.num_mixes = num_mixes
         self.ref = get_reference_directions("energy", num_sources, num_sources+num_mixes, seed=1234)
-        # eliminate num_obj extreme cases.
+
+        '''eliminate num_obj extreme cases.'''
         check = np.sum(self.ref == 1, axis=1) == 0             # [[0,0,1]] == 1 => [[False, False, True]]
         # np.sum(weights == 1, axis=1): array([1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1])
         self.ref = self.ref[check]      # shape [num_mixes, num_sources]    e.g. [[0.334, 0.666], [0.666, 0.334]]
         # self.ref = get_reference_directions("energy", num_obj, num_mix, seed=1)  # use those [1, 0, 0]
         assert self.ref.shape[0] == num_mixes
 
-    def _cutmix(self, task_list, grad_ones_list, mix_id):
+    def _cutmix(self, task_list, mix_id):
         """
         Apply cutmix on the task_list.
         task_list contains a list of task_dicts:
-            {context_images, context_labels, context_gt, target_images, target_labels, target_gt, domain}
-        grad_ones_list contains a list of grad_ones: {context_grad_ones, target_grad_ones}.
-            shape [n_shot*n_way, c, h, w] [n_query*n_way, c, h, w]
+            {context_images, context_labels, context_gt, target_images, target_labels, target_gt, domain,
+             context_selection, target_selection}
         mix_id is used to identify which ref to use as a probability.
 
+        task sources should have same size, so that the mixed image is corresponding to the same position in sources.
+
         return:
-        [
-            task_dict = {
-                'context_images': context_images,   # shape [n_shot*n_way, 3, 84, 84]
-                'context_labels': context_labels,   # shape [n_shot*n_way,]
-                'target_images': target_images,     # shape [n_query*n_way, 3, 84, 84]
-                'target_labels': target_labels,     # shape [n_query*n_way,]
+        task_dict = {
+            'context_images': context_images,           # shape [n_shot*n_way, 3, 84, 84]
+            'context_labels': context_labels,           # shape [n_shot*n_way,]
+            'target_images': target_images,             # shape [n_query*n_way, 3, 84, 84]
+            'target_labels': target_labels,             # shape [n_query*n_way,]
             }
-            grad_ones_dict = {
-                'context_grad_ones': context_grad_ones,     # shape [n_shot*n_way, 3, 84, 84]
-                'target_grad_ones': target_grad_ones,       # shape [n_query*n_way, 3, 84, 84]
-            }
-        ]
-        {'probability': probability of chosen which background,
+        meta_info: {'probability': probability of chosen which background,
          'lam': the chosen background for each image [(n_shot+n_query)* n_way,]}
         """
         # identify image size
@@ -886,24 +931,20 @@ class Mixer:
         # lam with shape [context_size+target_size,] is the decision to use which source as background.
 
         mix_imgs = []   # mix images batch
-        grad_ones = []  # grad_ones tensor with the same shape as mix images.
         mix_labs = []   # mix relative labels batch, same [0,0,1,1,2,2,...]
         # mix_gtls = []   # mix gt labels batch, str((weighted local label, domain=-1))
         for idx in range(context_size+target_size):
             if idx < context_size:
                 set_name = 'context_images'
                 lab_name = 'context_labels'
-                grd_name = 'context_grad_ones'
             else:
                 set_name = 'target_images'
                 lab_name = 'target_labels'
-                grd_name = 'target_grad_ones'
             # gtl_name = 'context_gt' if img_idx < context_size else 'target_gt'
 
             img_idx = idx if idx < context_size else idx - context_size     # local img idx in context and target set.
             # mix img is first cloned with background.
             mix_img = task_list[lam[idx]][set_name][img_idx].copy()
-            grad_one = grad_ones_list[lam[idx]][grd_name][img_idx].clone()
 
             # for other foreground, cut the specific [posihs: posihs+cuth, posiws: posiws+cutw] region to
             # mix_img's [posiht: posiht+cuth, posiwt: posiwt+cutw] region
@@ -916,11 +957,8 @@ class Mixer:
 
                 fore = task_list[fore_img_idx][set_name][img_idx][:, posihs: posihs + cuth, posiws: posiws + cutw]
                 mix_img[:, posiht: posiht + cuth, posiwt: posiwt + cutw] = fore
-                fore_grad_one = grad_ones_list[fore_img_idx][grd_name][img_idx][:, posihs: posihs + cuth, posiws: posiws + cutw]
-                grad_one[:, posiht: posiht + cuth, posiwt: posiwt + cutw] = fore_grad_one
 
                 mix_imgs.append(mix_img)
-                grad_ones.append(grad_one)
 
             # determine mix_lab  same as the chosen img
             mix_labs.append(task_list[lam[idx]][lab_name][img_idx])
@@ -938,24 +976,19 @@ class Mixer:
             'target_images': np.stack(mix_imgs[context_size:]),     # shape [n_query*n_way, 3, 84, 84]
             'target_labels': np.array(mix_labs[context_size:]),     # shape [n_query*n_way,]
         }
-        grad_ones_dict = {
-            'context_grad_ones': torch.stack(grad_ones[:context_size]),     # shape [n_shot*n_way, 3, 84, 84]
-            'target_grad_ones': torch.stack(grad_ones[context_size:]),      # shape [n_query*n_way, 3, 84, 84]
-        }
 
-        return [task_dict, grad_ones_dict], {'probability': probability, 'lam': lam}
+        return task_dict, {'probability': probability, 'lam': lam}
 
     def mix(self, task_list, mix_id=0):
         """
         Numpy task task_list, len(task_list) should be same with self.num_sources
-        task shape: (task_dict, grad_ones_dict)
         """
         assert len(task_list) == self.num_sources
         assert mix_id < self.num_mixes
-        assert isinstance(task_list[0][0]['context_images'], np.ndarray)
+        assert isinstance(task_list[0]['context_images'], np.ndarray)
 
         if self.mode == 'cutmix':
-            return self._cutmix([task[0] for task in task_list], [task[1] for task in task_list], mix_id)
+            return self._cutmix(task_list, mix_id)
 
     def visualization(self, task_list):
         """
@@ -1094,7 +1127,7 @@ def draw_heatmap(data):
     """
     fig, ax = plt.subplots()
     sns.heatmap(
-        data, cmap=plt.get_cmap('Greens'), annot=True, fmt=".2f"
+        data, cmap=plt.get_cmap('Greens'), annot=True, fmt=".3f", cbar=False,
     )
     return fig
 
@@ -1129,9 +1162,9 @@ def pmo_embed(images, labels, grad_ones, feature_extractor, pmo, cluster_idxs):
     labels = torch.from_numpy(labels).long()
 
     embeddings = feature_extractor.embed(images.to(device))
-    embeddings_list = pmo([embeddings.to(devices[cluster_idx]) for cluster_idx in cluster_idxs], cluster_idxs)
-
-    return embeddings_list, [labels.to(devices[cluster_idx]) for cluster_idx in cluster_idxs]
+    embeddings_list = pmo([embeddings.to(device) for cluster_idx in cluster_idxs], cluster_idxs)
+    # devices[cluster_idx]
+    return embeddings_list, [labels.to(device) for cluster_idx in cluster_idxs]
 
 
 def to_torch(sample, grad_ones, device_list=None):
@@ -1146,7 +1179,7 @@ def to_torch(sample, grad_ones, device_list=None):
     Return a dict keying by device.
     """
     if device_list is None:
-        device_list = [cluster_device]
+        device_list = [device]
 
     sample_dict = {d: dict() for d in device_list}
 
@@ -1172,7 +1205,4 @@ def to_torch(sample, grad_ones, device_list=None):
 
 
 if __name__ == '__main__':
-    net = Clusterer()
-
-    inputs_ = torch.randn(5, 512)
-    output_, assigns_, gates_ = net(inputs_)
+    pass

@@ -23,11 +23,15 @@ parser.add_argument('--model.pretrained', action='store_true', help="Using pretr
 parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of clusters for multi-domain learning")
 # adaptor args
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
-# cluster model args
-parser.add_argument('--cluster.opt', type=str, default='nonlinear', help="type of cluster model, linear or nonlinear")
-parser.add_argument('--pmo.opt', type=str, default='nonlinear', help="type of pmo model, linear or nonlinear")
+# Selector model args
+parser.add_argument('--cluster.opt', type=str, default='linear', help="type of cluster model, linear or nonlinear")
 
 # train args
+parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'],
+                    default='standard', metavar='TRAIN_TYPE',
+                    help="standard varying number of ways and shots as in Meta-Dataset, "
+                         "1shot for five-way-one-shot "
+                         "and 5shot for varying-way-five-shot evaluation.")
 parser.add_argument('--train.batch_size', type=int, default=16, metavar='BS',
                     help='number of images in a batch')
 parser.add_argument('--train.max_iter', type=int, default=500000, metavar='NEPOCHS',
@@ -67,22 +71,23 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
                     help="Resume training starting from the last checkpoint (default: True)")
 
 # pmo training
-parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'], default='5shot', metavar='TRAIN_TYPE',
-                    help="standard varying number of ways and shots as in Meta-Dataset, 1shot for five-way-one-shot and 5shot for varying-way-five-shot evaluation.")
-parser.add_argument('--train.cluster_center_mode', type=str, default='hierarchical', metavar='CLUSTER_CENTER_MODE',
-                    choices=['kmeans', 'hierarchical'],
+parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze resnet18 backbone when using MOE")
+parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
+                    choices=['kmeans', 'hierarchical', 'prototypes'],
                     help='use kmeans(average) or hierarchical clustering net.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=0.1, metavar='GUMBEL_TAU',
-                    help='temperature for gumbel softmax. '
-                         'a large tau makes probability assign and a small tau makes argmax assign.???')
+parser.add_argument('--train.gumbel_tau', type=float, default=1, metavar='GUMBEL_TAU',
+                    help='temperature for gumbel softmax. ')
 parser.add_argument('--train.loss_type', type=str, default='task+pure+hv', metavar='LOSS_TYPE',
-                    choices=['task', 'task+pure', 'task+pure+hv'],
-                    help='backward losses.')
-parser.add_argument('--train.num_iters_cal_task_loss', type=int, default=100, metavar='ITERS',
-                    help='number of iteration to calculate task loss if loss_type contains `task`.'
-                         'If loss_type is just `task`, this is ignored.')
+                    help='backward losses.'
+                         'can be any combination of task, hv, task+pure+hv, pure, pure+hv')
+parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ',
+                    help='How often to apply mo train phase. '
+                         'Usually equals to train.summary_freq, that do mo train at the last iter before summary'
+                         'If train.loss_type does not contain `hv`, just ignore.')
+parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
+                    help='coeffient for reconstruction loss.')
 parser.add_argument('--train.hv_coefficient', type=float, default=0.01, metavar='HV_COEFFICIENT',
                     help='coeffient for hv loss .')
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
@@ -101,13 +106,10 @@ parser.add_argument('--train.mix_mode', type=str, default='cutmix', metavar='MIX
                     help='mix mode for mixer. ')
 parser.add_argument('--train.n_mix', type=int, default=2, metavar='N_MIX',
                     help='number of mixed tasks generated in 1 iter')
+parser.add_argument('--train.n_mix_source', type=int, default=2, metavar='N_MIX_SOURCE',
+                    help='number of tasks used to generate 1 mixed task')
 parser.add_argument('--train.ref', type=int, default=2, metavar='REF',
                     help='absolute reference point localtion for calculate hv.')
-
-# pmo clustering to obtain class mapping
-parser.add_argument('--map.target', type=str, choices=['train', 'val', 'test'], default='train', metavar='MAP_TARGET',
-                    help="which set to obtain class mapping.")
-
 
 # creating a database of features
 parser.add_argument('--dump.name', type=str, default='', metavar='DUMP_NAME',
@@ -149,9 +151,6 @@ parser.add_argument('--out.dir', default='', type=str, metavar='PATH',
                     help='directory to output the result and checkpoints')
 parser.add_argument('--source', default='', type=str, metavar='PATH',
                     help='path of pretrained model')
-parser.add_argument('--map.dir', default='', type=str, metavar='PATH',
-                    help='directory where class mapping file locates at')
-
 
 # log args
 args = vars(parser.parse_args())
@@ -159,8 +158,6 @@ if not args['model.dir']:
     args['model.dir'] = PROJECT_ROOT
 if not args['out.dir']:
     args['out.dir'] = args['model.dir']
-if not args['map.dir']:
-    args['map.dir'] = args['model.dir']
 
 BATCHSIZES = {
                 "ilsvrc_2012": 448,

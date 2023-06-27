@@ -8,7 +8,7 @@ from models.models_dict import DATASET_MODELS_RESNET18, DATASET_MODELS_RESNET18_
 from utils import device
 
 
-def get_model(num_classes, args, d=None, freeze_fe=False, base_network_name=None):
+def get_model(num_classes, args, base_network_name=None, d=None, freeze_fe=False):
     train_classifier = args['model.classifier']
     model_name = args['model.backbone']
     dropout_rate = args.get('model.dropout', 0)
@@ -29,6 +29,24 @@ def get_model(num_classes, args, d=None, freeze_fe=False, base_network_name=None
                            pretrained_model_path=base_network_path)
         else:
             model_fn = partial(resnet18, dropout=dropout_rate)
+    elif 'moe' in model_name:
+        from models.resnet18_moe import resnet18
+        if args['model.pretrained']:
+            base_network_path = os.path.join(args['source'], 'weights', base_network_name, 'model_best.pth.tar')
+            model_fn = partial(resnet18, dropout=dropout_rate,
+                               pretrained_model_path=base_network_path,
+                               film_head=args['model.num_clusters'],
+                               tau=args['train.gumbel_tau'],
+                               num_clusters=args['model.num_clusters'],
+                               opt=args['cluster.opt'],
+                               freeze_backbone=args['train.freeze_backbone'])
+        else:
+            model_fn = partial(resnet18, dropout=dropout_rate,
+                               film_head=args['model.num_clusters'],
+                               tau=args['train.gumbel_tau'],
+                               num_clusters=args['model.num_clusters'],
+                               opt=args['cluster.opt'],
+                               freeze_backbone=False)
     else:
         from models.resnet18 import resnet18
         if args['model.pretrained']:
@@ -45,7 +63,7 @@ def get_model(num_classes, args, d=None, freeze_fe=False, base_network_name=None
 
     if d is not None:
         model.to(d)
-        print(f'Move model {args["model.name"]} to {d}.')
+        print(f'Move model {base_network_name} to {d}.')
     else:
         model.to(device)
 

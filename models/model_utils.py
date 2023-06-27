@@ -117,6 +117,7 @@ class CheckPointer(object):
         if is_best:
             shutil.copyfile(os.path.join(model_path, filename),
                             os.path.join(model_path, 'model_best.pth.tar'))
+
     def restore_out_model(self, ckpt='last', model=True,
                       optimizer=True, strict=True):
         if not os.path.exists(self.out_path):
