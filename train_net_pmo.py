@@ -210,7 +210,9 @@ def train():
                 pool.clear_clusters()
 
                 '''fill pool from train_loaders'''
-                while True:     # apply sampling multiple times to make sure enough samples
+                verbose = True
+                for t in range(args['train.max_samples_for_pool']):
+                # while True:     # apply sampling multiple times to make sure enough samples
                     for t_indx, trainset in enumerate(trainsets):
                         num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
                         for _ in range(num_task_per_batch):
@@ -232,7 +234,7 @@ def train():
                                 images, cluster_idxs, {
                                     'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
-                    '''check pool has enough samples, then break'''
+                    '''check pool has enough samples'''
                     available_cluster_idxs = []
                     for idx, classes in enumerate(pool.current_classes()):
                         # if len(classes) >= args['train.n_way']:
@@ -241,100 +243,108 @@ def train():
                                ) >= args['train.n_way']:
                             available_cluster_idxs.append(idx)
 
-                    if len(available_cluster_idxs) >= args['train.n_obj']:
-                        break
+                    if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
+                        print(f"==>> pool has enough samples after {t+1}/{args['train.num_sample_to_pool']} tasks.")
+                        verbose = False
+                        # break
+
+                    if t == args['train.num_sample_to_pool'] - 1:
+                        print(f"==>> pool has not enough samples. skip MO training")
 
                 '''repeat collecting MO loss'''
-                for mo_train_idx in range(args['train.n_mo']):
-                    selected_cluster_idxs = sorted(np.random.choice(
-                        available_cluster_idxs, args['train.n_obj'], replace=False))
-                    # which is also devices idx
-                    # device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
+                if len(available_cluster_idxs) >= args['train.n_obj']:
+                    for mo_train_idx in range(args['train.n_mo']):
+                        selected_cluster_idxs = sorted(np.random.choice(
+                            available_cluster_idxs, args['train.n_obj'], replace=False))
+                        # which is also devices idx
+                        # device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
 
-                    '''sample pure tasks from clusters in selected_cluster_idxs'''
-                    numpy_tasks = []
-                    for cluster_idx in selected_cluster_idxs:
-                        numpy_pure_task = pool.episodic_sample(cluster_idx)
-                        numpy_tasks.append(numpy_pure_task)
+                        '''sample pure tasks from clusters in selected_cluster_idxs'''
+                        numpy_tasks = []
+                        for cluster_idx in selected_cluster_idxs:
+                            numpy_pure_task = pool.episodic_sample(cluster_idx)
+                            numpy_tasks.append(numpy_pure_task)
 
-                    '''sample mix tasks by mixer'''
-                    for mix_id in range(args['train.n_mix']):
-                        numpy_mix_task, _ = mixer.mix(
-                            task_list=[pool.episodic_sample(idx) for idx in selected_cluster_idxs],
-                            mix_id=mix_id
-                        )
-                        numpy_tasks.append(numpy_mix_task)
+                        '''sample mix tasks by mixer'''
+                        for mix_id in range(args['train.n_mix']):
+                            numpy_mix_task, _ = mixer.mix(
+                                task_list=[pool.episodic_sample(idx) for idx in selected_cluster_idxs],
+                                mix_id=mix_id
+                            )
+                            numpy_tasks.append(numpy_mix_task)
 
-                    '''obtain ncc loss multi-obj matrix and put to last device'''
-                    ncc_losses_multi_obj = []    # [4, 2]
-                    for task_idx, task in enumerate(numpy_tasks):
+                        '''obtain ncc loss multi-obj matrix and put to last device'''
+                        ncc_losses_multi_obj = []    # [4, 2]
+                        for task_idx, task in enumerate(numpy_tasks):
 
-                        '''to device'''
-                        context_images = torch.from_numpy(task['context_images']).to(device)
-                        context_labels = torch.from_numpy(task['context_labels']).long().to(device)
-                        target_images = torch.from_numpy(task['target_images']).to(device)
-                        target_labels = torch.from_numpy(task['target_labels']).long().to(device)
+                            '''to device'''
+                            context_images = torch.from_numpy(task['context_images']).to(device)
+                            context_labels = torch.from_numpy(task['context_labels']).long().to(device)
+                            target_images = torch.from_numpy(task['target_images']).to(device)
+                            target_labels = torch.from_numpy(task['target_labels']).long().to(device)
 
-                        if 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']:
-                            enriched_context_features_list = [
-                                pmo(context_images, gumbel=True, selected_idx=selected_idx)
-                                for selected_idx in selected_cluster_idxs]
-                            enriched_target_features_list = [
-                                pmo(target_images, gumbel=True, selected_idx=selected_idx)
-                                for selected_idx in selected_cluster_idxs]
-                        else:
-                            with torch.no_grad():
+                            if 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']:
                                 enriched_context_features_list = [
                                     pmo(context_images, gumbel=True, selected_idx=selected_idx)
                                     for selected_idx in selected_cluster_idxs]
                                 enriched_target_features_list = [
                                     pmo(target_images, gumbel=True, selected_idx=selected_idx)
                                     for selected_idx in selected_cluster_idxs]
+                            else:
+                                with torch.no_grad():
+                                    enriched_context_features_list = [
+                                        pmo(context_images, gumbel=True, selected_idx=selected_idx)
+                                        for selected_idx in selected_cluster_idxs]
+                                    enriched_target_features_list = [
+                                        pmo(target_images, gumbel=True, selected_idx=selected_idx)
+                                        for selected_idx in selected_cluster_idxs]
 
-                        losses = []     # [2,]
-                        for obj_idx in range(len(selected_cluster_idxs)):       # obj_idx is the selected model
-                            loss, stats_dict, _ = prototype_loss(
-                                enriched_context_features_list[obj_idx], context_labels,
-                                enriched_target_features_list[obj_idx], target_labels,
-                                distance=args['test.distance'])
+                            losses = []     # [2,]
+                            for obj_idx in range(len(selected_cluster_idxs)):       # obj_idx is the selected model
+                                loss, stats_dict, _ = prototype_loss(
+                                    enriched_context_features_list[obj_idx], context_labels,
+                                    enriched_target_features_list[obj_idx], target_labels,
+                                    distance=args['test.distance'])
 
-                            # loss for all tasks on 1 model on 1 device. to last device
-                            losses.append(loss)
+                                # loss for all tasks on 1 model on 1 device. to last device
+                                losses.append(loss)
 
-                            epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])    # [2, 4]
-                            epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
-                            if task_idx < len(selected_cluster_idxs):       # [2, 2]
-                                if task_idx == obj_idx and 'pure' in args['train.loss_type']:
-                                    # backward pure loss on the corresponding model and cluster.
-                                    loss.backward(retain_graph=True)
+                                epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])  # [2, 4]
+                                epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
+                                if task_idx < len(selected_cluster_idxs):       # [2, 2]
+                                    if task_idx == obj_idx and 'pure' in args['train.loss_type']:
+                                        # backward pure loss on the corresponding model and cluster.
+                                        loss.backward(retain_graph=True)
 
-                        ncc_losses_multi_obj.append(torch.stack(losses))
-                    ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
+                            ncc_losses_multi_obj.append(torch.stack(losses))
+                        ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
 
-                    '''calculate HV loss'''
-                    ref = args['train.ref']
-                    ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
-                    hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
-                    epoch_loss['hv/loss'].append(hv_loss.item())
+                        '''calculate HV loss'''
+                        ref = args['train.ref']
+                        ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
+                        hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
+                        epoch_loss['hv/loss'].append(hv_loss.item())
 
-                    '''calculate HV value for mutli-obj loss and acc'''
-                    obj = np.array([[
-                        epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1] for task_idx in range(len(numpy_tasks))
-                    ] for obj_idx in range(len(selected_cluster_idxs))])
-                    hv = cal_hv(obj, ref, target='loss')
-                    epoch_loss['hv'].append(hv)
-                    obj = np.array([[
-                        epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1] for task_idx in range(len(numpy_tasks))
-                    ] for obj_idx in range(len(selected_cluster_idxs))])
-                    hv = cal_hv(obj, 0, target='acc')
-                    epoch_acc['hv'].append(hv)
+                        '''calculate HV value for mutli-obj loss and acc'''
+                        obj = np.array([[
+                            epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                            for task_idx in range(len(numpy_tasks))
+                        ] for obj_idx in range(len(selected_cluster_idxs))])
+                        hv = cal_hv(obj, ref, target='loss')
+                        epoch_loss['hv'].append(hv)
+                        obj = np.array([[
+                            epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                            for task_idx in range(len(numpy_tasks))
+                        ] for obj_idx in range(len(selected_cluster_idxs))])
+                        hv = cal_hv(obj, 0, target='acc')
+                        epoch_acc['hv'].append(hv)
 
-                    if 'hv' in args['train.loss_type']:
-                        hv_loss = hv_loss * args['train.hv_coefficient']
-                        '''since no torch is saved in the pool, do not need to retain_graph'''
-                        # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
-                        # hv_loss.backward(retain_graph=retain_graph)
-                        hv_loss.backward()
+                        if 'hv' in args['train.loss_type']:
+                            hv_loss = hv_loss * args['train.hv_coefficient']
+                            '''since no torch is saved in the pool, do not need to retain_graph'''
+                            # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
+                            # hv_loss.backward(retain_graph=retain_graph)
+                            hv_loss.backward()
 
             update_step(i)
 
@@ -374,44 +384,43 @@ def train():
                 # writer.add_scalar(f"loss/train/task_rec",
                 #                   np.mean(epoch_loss['task_rec']), i+1)
 
-                '''log multi-objective loss and accuracy'''
-                objs_loss, objs_acc = [], []        # for average figure visualization
-                for obj_idx in range(args['train.n_obj']):
-                    obj_loss, obj_acc = [], []
-                    for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
-                        loss_values = epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                        writer.add_scalar(f"train_loss/obj{obj_idx}/pop{pop_idx}",
-                                          np.mean(loss_values), i+1)
-                        obj_loss.append(np.mean(loss_values))
-                        acc_values = epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                        writer.add_scalar(f"train_accuracy/obj{obj_idx}/pop{pop_idx}",
-                                          np.mean(acc_values), i+1)
-                        obj_acc.append(np.mean(acc_values))
-                    objs_loss.append(obj_loss)
-                    objs_acc.append(obj_acc)
+                if len(epoch_loss['hv/loss']) > 0:      # did mo process
+                    '''log multi-objective loss and accuracy'''
+                    objs_loss, objs_acc = [], []        # for average figure visualization
+                    for obj_idx in range(args['train.n_obj']):
+                        obj_loss, obj_acc = [], []
+                        for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
+                            loss_values = epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
+                            writer.add_scalar(f"train_loss/obj{obj_idx}/pop{pop_idx}",
+                                              np.mean(loss_values), i+1)
+                            obj_loss.append(np.mean(loss_values))
+                            acc_values = epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
+                            writer.add_scalar(f"train_accuracy/obj{obj_idx}/pop{pop_idx}",
+                                              np.mean(acc_values), i+1)
+                            obj_acc.append(np.mean(acc_values))
+                        objs_loss.append(obj_loss)
+                        objs_acc.append(obj_acc)
 
-                '''log objs figure'''
-                pop_labels = [
-                    f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
-                    for idx in range(args['train.n_mix'] + args['train.n_obj'])
-                ]       # ['p0', 'p1', 'm0', 'm1']
-                objs = np.array(objs_loss)     # [2, 4]
-                figure = draw_objs(objs, pop_labels)
-                writer.add_figure(f"train_image/objs_loss", figure, i+1)
-                objs = np.array(objs_acc)     # [2, 4]
-                figure = draw_objs(objs, pop_labels)
-                writer.add_figure(f"train_image/objs_acc", figure, i+1)
+                    '''log objs figure'''
+                    pop_labels = [
+                        f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
+                        for idx in range(args['train.n_mix'] + args['train.n_obj'])
+                    ]       # ['p0', 'p1', 'm0', 'm1']
+                    objs = np.array(objs_loss)     # [2, 4]
+                    figure = draw_objs(objs, pop_labels)
+                    writer.add_figure(f"train_image/objs_loss", figure, i+1)
+                    objs = np.array(objs_acc)     # [2, 4]
+                    figure = draw_objs(objs, pop_labels)
+                    writer.add_figure(f"train_image/objs_acc", figure, i+1)
 
-                '''log hv'''
-                writer.add_scalar('train_loss/hv_loss', np.mean(epoch_loss['hv/loss']), i+1)
-                writer.add_scalar('train_loss/hv', np.mean(epoch_loss['hv']), i+1)
-                writer.add_scalar('train_accuracy/hv', np.mean(epoch_acc['hv']), i+1)
-                writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
-                print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
-                      f"loss {np.mean(epoch_loss['hv']):.3f}, "
-                      f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
-
-                epoch_loss, epoch_acc = init_train_log()
+                    '''log hv'''
+                    writer.add_scalar('train_loss/hv_loss', np.mean(epoch_loss['hv/loss']), i+1)
+                    writer.add_scalar('train_loss/hv', np.mean(epoch_loss['hv']), i+1)
+                    writer.add_scalar('train_accuracy/hv', np.mean(epoch_acc['hv']), i+1)
+                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
+                    print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
+                          f"loss {np.mean(epoch_loss['hv']):.3f}, "
+                          f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
 
                 '''write pool images'''
                 images = pool.current_images()
@@ -428,6 +437,12 @@ def train():
                         figure = draw_heatmap(sim_in_cluster)
                         writer.add_figure(f"train_image/pool-{cluster_id}-sim", figure, i+1)
 
+                '''write cluster centers'''
+                centers = pmo.selector.prototypes
+                centers = centers.view(*centers.shape[:2]).detach().cpu().numpy()
+                figure = draw_heatmap(centers)
+                writer.add_figure(f"train_image/cluster-centers", figure, i+1)
+
                 '''write pool assigns & gates'''
                 if args['train.cluster_center_mode'] == 'hierarchical':
                     assigns, gates = pool.current_assigns_gates()
@@ -439,14 +454,17 @@ def train():
                             gat_in_cluster = np.stack([
                                 gat[asn_idx] for asn_idx, gat in zip(argmx_asn, gate)])  # [num_cls, 4]
                             figure = draw_heatmap(asn_in_cluster)
-                            writer.add_figure(f"image/pool-{cluster_id}-assigns", figure, i+1)
+                            writer.add_figure(f"train_image/pool-{cluster_id}-assigns", figure, i+1)
                             figure = draw_heatmap(gat_in_cluster)
-                            writer.add_figure(f"image/pool-{cluster_id}-gates", figure, i+1)
+                            writer.add_figure(f"train_image/pool-{cluster_id}-gates", figure, i+1)
 
-                '''write pure and mixed tasks'''
-                for task_id, task in enumerate(numpy_tasks):
-                    imgs = np.concatenate([task['context_images'], task['target_images']])
-                    writer.add_images(f"train_image/task-{pop_labels[task_id]}", imgs, i+1)
+                if len(epoch_loss['hv/loss']) > 0:      # did mo process
+                    '''write pure and mixed tasks'''
+                    for task_id, task in enumerate(numpy_tasks):
+                        imgs = np.concatenate([task['context_images'], task['target_images']])
+                        writer.add_images(f"train_image/task-{pop_labels[task_id]}", imgs, i+1)
+
+                epoch_loss, epoch_acc = init_train_log()
 
             '''----------'''
             '''Eval Phase'''

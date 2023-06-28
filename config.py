@@ -88,8 +88,10 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
                          'If train.loss_type does not contain `hv`, just ignore.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
-parser.add_argument('--train.hv_coefficient', type=float, default=0.01, metavar='HV_COEFFICIENT',
+parser.add_argument('--train.hv_coefficient', type=float, default=1, metavar='HV_COEFFICIENT',
                     help='coeffient for hv loss .')
+parser.add_argument('--train.max_samples_for_pool', type=int, default=200, metavar='SAMPLE',
+                    help='Number of sampling tasks to put into pool.')
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
                     help='number of MO sampling to train. '
                          'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')

@@ -32,7 +32,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical'):
+    def __init__(self, capacity=8, max_num_classes=50, max_num_images=20, mode='hierarchical'):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
@@ -165,12 +165,6 @@ class Pool(nn.Module):
     def put_batch(self, images, cluster_idxs, info_dict):
         """
         Put samples (batch of torch cpu images) into clusters.
-        Issues to handle:
-            Maximum number of classes.
-                just remove the earliest one.
-            Already stored class in same cluster.
-                cat images with max size: max_num_images.
-                do not consider other cluster, since gumbel introduce randomness.
             info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
                               #  `selection`.  # torch cuda
         """
@@ -215,12 +209,19 @@ class Pool(nn.Module):
                 'class_similarity': np.mean(stored_similarities, axis=0),       # mean over all samples [n_clusters]
             })
 
+        '''after put all samples into pool, handle for full clusters'''
+        for cluster_idx, cluster in enumerate(self.clusters):
             '''sort class according to the corresponding similarity (mean over all samples in the class)'''
             self.clusters[cluster_idx].sort(
                 key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
-            if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
-                '''need to remove one with smallest similarity: last one'''
-                self.clusters[cluster_idx].pop(-1)
+
+            if len(self.clusters[cluster_idx]) > self.max_num_classes:
+                '''need to remove all classes only contain 1 image, since they are high probability to be outliers'''
+                self.clusters[cluster_idx] = [cls for cls in cluster if cls['images'].shape[0] > 1]
+
+            if len(self.clusters[cluster_idx]) > self.max_num_classes:
+                '''need to remove one with smallest similarity: last one to satisfy max_num_classes'''
+                self.clusters[cluster_idx] = self.clusters[cluster_idx][:self.max_num_classes]
 
     '''
     OLD PUT
@@ -1120,15 +1121,21 @@ def draw_objs(objs, labels):
     return fig
 
 
-def draw_heatmap(data):
+def draw_heatmap(data, verbose=True):
     """
     return a figure of heatmap.
     :param data: 2-D Numpy
+    :param verbose: whether to use annot
     """
     fig, ax = plt.subplots()
-    sns.heatmap(
-        data, cmap=plt.get_cmap('Greens'), annot=True, fmt=".3f", cbar=False,
-    )
+    if verbose:
+        sns.heatmap(
+            data, cmap=plt.get_cmap('Greens'), annot=True, fmt=".3f", cbar=False,
+        )
+    else:
+        sns.heatmap(
+            data, cmap=plt.get_cmap('Greens'), cbar=True,
+        )
     return fig
 
 

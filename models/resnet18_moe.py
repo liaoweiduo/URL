@@ -31,6 +31,13 @@ class CatFilm(nn.Module):
         return gamma * x + beta
 
 
+def film(x, gamma, beta):
+    """Film function."""
+    gamma = gamma.view(*gamma.shape, 1, 1)
+    beta = beta.view(*beta.shape, 1, 1)
+    return gamma * x + beta
+
+
 class BasicBlockFilm(nn.Module):
     expansion = 1
 
@@ -44,8 +51,13 @@ class BasicBlockFilm(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.film_head = film_head
-        self.film1 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
-        self.film2 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
+
+        self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
+        self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
+        self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
+        self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
+        # self.film1 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
+        # self.film2 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
 
     def forward(self, x, selection):    # [bs, file_head]: [1,0,...,0] or soft or None
         identity = x
@@ -54,10 +66,14 @@ class BasicBlockFilm(nn.Module):
         out = self.bn1(out)
 
         if selection is not None:
-            film_out = []
-            for idx in range(self.film_head):
-                film_out.append(self.film1[idx](out) * selection[:, idx].view(len(x), 1, 1, 1))
-            out = torch.sum(torch.stack(film_out), dim=0)
+            gamma = torch.mm(selection, self.film1_gammas)      # [bs, planes]
+            beta = torch.mm(selection, self.film1_betas)        # [bs, planes]
+            out = film(out, gamma, beta)
+
+            # film_out = []
+            # for idx in range(self.film_head):
+            #     film_out.append(self.film1[idx](out) * selection[:, idx].view(len(x), 1, 1, 1))
+            # out = torch.sum(torch.stack(film_out), dim=0)
 
         out = self.relu(out)
 
@@ -65,10 +81,14 @@ class BasicBlockFilm(nn.Module):
         out = self.bn2(out)
 
         if selection is not None:
-            film_out = []
-            for idx in range(self.film_head):
-                film_out.append(self.film2[idx](out) * selection[:, idx].view(len(x), 1, 1, 1))
-            out = torch.sum(torch.stack(film_out), dim=0)
+            gamma = torch.mm(selection, self.film2_gammas)      # [bs, planes]
+            beta = torch.mm(selection, self.film2_betas)        # [bs, planes]
+            out = film(out, gamma, beta)
+
+            # film_out = []
+            # for idx in range(self.film_head):
+            #     film_out.append(self.film2[idx](out) * selection[:, idx].view(len(x), 1, 1, 1))
+            # out = torch.sum(torch.stack(film_out), dim=0)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -87,7 +107,9 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.initial_pool = False
         self.film_head = film_head
-        self.film_normalize = nn.ModuleList([CatFilm(3) for _ in range(film_head)])
+        self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
+        self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
+        # self.film_normalize = nn.ModuleList([CatFilm(3) for _ in range(film_head)])
         inplanes = self.inplanes = 64
         self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=5, stride=2,
                                padding=1, bias=False)
@@ -148,7 +170,7 @@ class ResNet(nn.Module):
             '''select specific film head to forward by hard trick rather than the argmax head'''
             y_soft = selection_info['y_soft']
             bs, nc = y_soft.shape
-            index = selected_idx*torch.ones(bs, 1).long()
+            index = selected_idx*torch.ones(bs, 1, device=y_soft.device).long()
             y_hard = torch.zeros_like(y_soft, memory_format=torch.legacy_contiguous_format).scatter_(1, index, 1.0)
             # [bs, nc], one hot at selected_idx.
             selection = y_hard - y_soft.detach() + y_soft
@@ -167,10 +189,14 @@ class ResNet(nn.Module):
 
         """Computing the features"""
         if selection is not None:
-            film_out = []
-            for idx in range(self.film_head):
-                film_out.append(self.film_normalize[idx](x) * selection[:, idx].view(len(x), 1, 1, 1))
-            x = torch.sum(torch.stack(film_out), dim=0)
+            gamma = torch.mm(selection, self.film_normalize_gammas)      # [bs, 3]
+            beta = torch.mm(selection, self.film_normalize_betas)        # [bs, 3]
+            x = film(x, gamma, beta)
+
+            # film_out = []
+            # for idx in range(self.film_head):
+            #     film_out.append(self.film_normalize[idx](x) * selection[:, idx].view(len(x), 1, 1, 1))
+            # x = torch.sum(torch.stack(film_out), dim=0)
 
         x = self.conv1(x)
         x = self.bn1(x)
@@ -222,7 +248,7 @@ class ResNet(nn.Module):
                 if v.requires_grad]
 
 
-def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=True, **kwargs):
+def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=False, **kwargs):
     """
         Constructs a FiLM adapted ResNet-18 model.
     """
@@ -359,7 +385,9 @@ if __name__ == '__main__':
     import numpy as np
 
     '''resnet18 moe'''
-    res = resnet18(film_head=8)
+    res = resnet18(film_head=8, freeze_backbone=True,
+                   pretrained_model_path=os.path.join('../../URL-experiments/saved_results/url',
+                                                      'weights', 'url', 'model_best.pth.tar'))
 
     # bs 5, img (3, 128, 128), film_head 8
     x_ = torch.randn(5, 3, 128, 128)
@@ -367,27 +395,34 @@ if __name__ == '__main__':
     selection_[:, 1] = 1
     out_ = res.embed(x_, selection_)
 
+    param_count = 0
+    for k, v in res.named_parameters():
+        print(f'{k}: {v.shape}, {v.requires_grad}')
+        if v.requires_grad:
+            param_count += 1
+    print(f'param_count: {param_count}')
+
     '''selector'''
-    net = Selector(tau=1)
-
-    # bs 5, feature size 512
-    inputs_ = torch.randn(5, 512)
-
-    fig, axes = plt.subplots(5, 5, figsize=(20, 16))
-
-    for i, tau in enumerate(np.logspace(-1, 1, 5)):
-        net.tau = tau
-        num_seed = 5 if i < 4 else 4
-        for seed_i in range(num_seed):
-            selection_, y_soft_ = net(inputs_, gumbel=True)
-
-            idx, idy = seed_i, i
-            sns.heatmap(y_soft_['y_soft'].detach().cpu().numpy(), annot=True, fmt=".2f", linewidth=.5, cbar=False,
-                        ax=axes[idy, idx])
-            axes[idy, idx].set_title(f'tau={tau:.2f}')
-
-    sns.heatmap(y_soft_['normal_soft'].detach().cpu().numpy(), annot=True, fmt=".2f", linewidth=.5, cbar=False,
-                ax=axes[4, 4])
-    axes[4, 4].set_title(f'softmax')
-
-    plt.savefig(os.path.join('D:', 'Downloads', 'fig.png'), dpi=400, bbox_inches='tight')
+    # net = Selector(tau=1)
+    #
+    # # bs 5, feature size 512
+    # inputs_ = torch.randn(5, 512)
+    #
+    # fig, axes = plt.subplots(5, 5, figsize=(20, 16))
+    #
+    # for i, tau in enumerate(np.logspace(-1, 1, 5)):
+    #     net.tau = tau
+    #     num_seed = 5 if i < 4 else 4
+    #     for seed_i in range(num_seed):
+    #         selection_, y_soft_ = net(inputs_, gumbel=True)
+    #
+    #         idx, idy = seed_i, i
+    #         sns.heatmap(y_soft_['y_soft'].detach().cpu().numpy(), annot=True, fmt=".2f", linewidth=.5, cbar=False,
+    #                     ax=axes[idy, idx])
+    #         axes[idy, idx].set_title(f'tau={tau:.2f}')
+    #
+    # sns.heatmap(y_soft_['normal_soft'].detach().cpu().numpy(), annot=True, fmt=".2f", linewidth=.5, cbar=False,
+    #             ax=axes[4, 4])
+    # axes[4, 4].set_title(f'softmax')
+    #
+    # plt.savefig(os.path.join('D:', 'Downloads', 'fig.png'), dpi=400, bbox_inches='tight')
