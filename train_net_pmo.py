@@ -528,15 +528,17 @@ def train():
                                 if available_way >= args['train.n_way']:
                                     # enough classes to construct 1 task
                                     # then use all available classes to construct 1 task
-                                    numpy_task = val_pool.episodic_sample(
-                                        idx, n_way=available_way, remove_sampled_classes=True)
+                                    task = val_pool.episodic_sample(
+                                        idx, n_way=available_way, remove_sampled_classes=True,
+                                        d=device
+                                    )
 
-                                    enriched_context_features = pmo(numpy_task['context_images'], gumbel=False)
-                                    enriched_target_features = pmo(numpy_task['target_images'], gumbel=False)
+                                    enriched_context_features = pmo(task['context_images'], gumbel=False)
+                                    enriched_target_features = pmo(task['target_images'], gumbel=False)
 
                                     _, stats_dict, _ = prototype_loss(
-                                        enriched_context_features, numpy_task['context_labels'],
-                                        enriched_target_features, numpy_task['target_labels'],
+                                        enriched_context_features, task['context_labels'],
+                                        enriched_target_features, task['target_labels'],
                                         distance=args['test.distance'])
 
                                     cluster_losses[idx].append(stats_dict['loss'])

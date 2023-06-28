@@ -729,7 +729,9 @@ class Pool(nn.Module):
 
         # if single_image:
         #     '''construct a single image for each cluster'''
+        #     max_imgs = self.max_num_images
         #     for cluster in images:
+
 
         return images
 
