@@ -509,7 +509,7 @@ def train():
                             '''put to val_pool'''
                             images = torch.cat([context_images, target_images])
                             gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
-                            domain = np.array([domain * len(gt_labels)])
+                            domain = np.array([domain] * len(gt_labels))
 
                             '''obtain selection vec for images'''
                             _, selection_info = pmo.selector(

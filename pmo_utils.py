@@ -709,7 +709,7 @@ class Pool(nn.Module):
             clses.append(clses_in_cluster)
         return clses
 
-    def current_images(self):
+    def current_images(self, single_image=False):
         """
         # Return a batch of images (torch.Tensor) in the current pool with pool_montage.
         # batch of images => (10, 3, 84, 84)
@@ -726,6 +726,11 @@ class Pool(nn.Module):
             for cls in cluster:
                 imgs.append(cls['images'])      # cls['images'] shape [10, 3, 84, 84]
             images.append(imgs)
+
+        # if single_image:
+        #     '''construct a single image for each cluster'''
+        #     for cluster in images:
+
         return images
 
     def current_embeddings(self):
