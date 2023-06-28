@@ -731,7 +731,7 @@ class Pool(nn.Module):
             '''construct a single image for each cluster'''
             for cluster_idx, cluster in enumerate(images):
                 for cls_idx, cls in enumerate(cluster):
-                    imgs = np.zeros(self.max_num_images, *cls.shape[1:])
+                    imgs = np.zeros((self.max_num_images, *cls.shape[1:]))
                     if len(cls) > 0:    # contain images
                         imgs[:cls.shape[0]] = cls
                     cluster[cls_idx] = np.concatenate([
