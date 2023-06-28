@@ -736,9 +736,12 @@ class Pool(nn.Module):
                         imgs[:cls.shape[0]] = cls
                     cluster[cls_idx] = np.concatenate([
                         imgs[img_idx] for img_idx in range(self.max_num_images)], axis=-1)
-                images[cluster_idx] = np.concatenate(cluster, axis=-2)
-                # [3, 84*num_class, 84*max_num_images_in_class]
-                # [3, 84*50, 84*20]
+                if len(cluster) > 0:    # no class
+                    images[cluster_idx] = np.concatenate(cluster, axis=-2)
+                    # [3, 84*num_class, 84*max_num_images_in_class]
+                    # [3, 84*50, 84*20]
+                else:   # empty cluster
+                    images[cluster_idx] = np.zeros((3, 84, 84))
 
         return images
 
