@@ -47,7 +47,6 @@ class Pool(nn.Module):
         self.emb_dim = 512
         self.load_path = os.path.join(args['model.dir'], 'weights', 'pool')
         self.out_path = os.path.join(args['out.dir'], 'weights', 'pool')
-        self.out_path = check_dir(self.out_path, False)
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
         self.centers = None
         self.buffer = []
@@ -97,6 +96,7 @@ class Pool(nn.Module):
         Only label information is stored for analysis, images are not stored for saving storage.
         Cluster centers are also stored.
         """
+        check_dir(self.out_path, False)
         pool_dict = dict(epoch=epoch + 1)
 
         cu_cl = self.current_classes()

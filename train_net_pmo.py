@@ -211,7 +211,7 @@ def train():
 
                 '''fill pool from train_loaders'''
                 verbose = True
-                for t in range(args['train.max_samples_for_pool']):
+                for t in tqdm(range(args['train.max_sampling_iter_for_pool']), ncols=100):
                 # while True:     # apply sampling multiple times to make sure enough samples
                     for t_indx, trainset in enumerate(trainsets):
                         num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
@@ -244,11 +244,12 @@ def train():
                             available_cluster_idxs.append(idx)
 
                     if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
-                        print(f"==>> pool has enough samples after {t+1}/{args['train.max_samples_for_pool']} tasks.")
+                        print(f"==>> pool has enough samples after "
+                              f"{t+1}/{args['train.max_sampling_iter_for_pool']} iters of sampling.")
                         verbose = False
                         # break
 
-                    if t == args['train.max_samples_for_pool'] - 1:
+                    if t == args['train.max_sampling_iter_for_pool'] - 1 and verbose:
                         print(f"==>> pool has not enough samples. skip MO training")
 
                 '''repeat collecting MO loss'''
@@ -434,13 +435,13 @@ def train():
                 for cluster_id, cluster in enumerate(similarities):
                     if len(cluster) > 0:
                         sim_in_cluster = np.stack(cluster)  # [num_cls, 8]
-                        figure = draw_heatmap(sim_in_cluster)
+                        figure = draw_heatmap(sim_in_cluster, verbose=False)
                         writer.add_figure(f"train_image/pool-{cluster_id}-sim", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
                 centers = centers.view(*centers.shape[:2]).detach().cpu().numpy()
-                figure = draw_heatmap(centers)
+                figure = draw_heatmap(centers, verbose=False)
                 writer.add_figure(f"train_image/cluster-centers", figure, i+1)
 
                 '''write pool assigns & gates'''
@@ -517,7 +518,7 @@ def train():
                             cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
 
                             val_pool.put_batch(
-                                images, cluster_idxs, {
+                                images.cpu(), cluster_idxs, {
                                     'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
                             '''check if any cluster have sufficient class to construct 1 task'''
