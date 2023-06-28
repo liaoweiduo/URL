@@ -727,11 +727,18 @@ class Pool(nn.Module):
                 imgs.append(cls['images'])      # cls['images'] shape [10, 3, 84, 84]
             images.append(imgs)
 
-        # if single_image:
-        #     '''construct a single image for each cluster'''
-        #     max_imgs = self.max_num_images
-        #     for cluster in images:
-
+        if single_image:
+            '''construct a single image for each cluster'''
+            for cluster_idx, cluster in enumerate(images):
+                for cls_idx, cls in enumerate(cluster):
+                    imgs = np.zeros(self.max_num_images, *cls.shape[1:])
+                    if len(cls) > 0:    # contain images
+                        imgs[:cls.shape[0]] = cls
+                    cluster[cls_idx] = np.concatenate([
+                        imgs[img_idx] for img_idx in range(self.max_num_images)], axis=-1)
+                images[cluster_idx] = np.concatenate(cluster, axis=-2)
+                # [3, 84*num_class, 84*max_num_images_in_class]
+                # [3, 84*50, 84*20]
 
         return images
 

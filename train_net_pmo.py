@@ -424,11 +424,12 @@ def train():
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
 
                 '''write pool images'''
-                images = pool.current_images()
+                images = pool.current_images(single_image=True)
                 for cluster_id, cluster in enumerate(images):
-                    if len(cluster) > 0:
-                        img_in_cluster = np.concatenate(cluster)
-                        writer.add_images(f"train_image/pool-{cluster_id}", img_in_cluster, i+1)
+                    writer.add_image(f"train_image/pool-{cluster_id}", cluster, i+1)
+                    # if len(cluster) > 0:
+                    #     img_in_cluster = np.concatenate(cluster)
+                    #     writer.add_images(f"train_image/pool-{cluster_id}", img_in_cluster, i+1)
 
                 '''write pool similarities'''
                 similarities = pool.current_similarities()
@@ -545,16 +546,16 @@ def train():
                                     cluster_accs[idx].append(stats_dict['acc'])
 
                         '''write and print val on source'''
-                        epoch_val_loss[valset] = np.mean(val_losses)
-                        epoch_val_acc[valset] = np.mean(val_accs)
+                        epoch_val_loss[valset] = np.mean(val_losses[valset])
+                        epoch_val_acc[valset] = np.mean(val_accs[valset])
                         writer.add_scalar(f"val_loss/{valset}", epoch_val_loss[valset], i+1)
                         writer.add_scalar(f"val_accuracy/{valset}", epoch_val_acc[valset], i+1)
-                        print(f"==>> val: loss {np.mean(val_losses):.3f}, "
-                              f"accuracy {np.mean(val_accs):.3f}.")
+                        print(f"==>> val: loss {np.mean(val_losses[valset]):.3f}, "
+                              f"accuracy {np.mean(val_losses[valset]):.3f}.")
 
                 '''write summaries averaged over sources'''
-                avg_val_source_loss = np.mean(np.concatenate(val_losses))
-                avg_val_source_acc = np.mean(np.concatenate(val_accs))
+                avg_val_source_loss = np.mean(np.concatenate([val_loss for val_loss in val_losses.values()]))
+                avg_val_source_acc = np.mean(np.concatenate([val_acc for val_acc in val_accs.values()]))
                 writer.add_scalar(f"val_loss/avg_val_source_loss", avg_val_source_loss, i+1)
                 writer.add_scalar(f"val_accuracy/avg_val_source_acc", avg_val_source_acc, i+1)
                 print(f"==>> val: avg_loss {avg_val_source_loss:.3f}, "
