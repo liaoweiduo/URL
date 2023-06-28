@@ -244,11 +244,11 @@ def train():
                             available_cluster_idxs.append(idx)
 
                     if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
-                        print(f"==>> pool has enough samples after {t+1}/{args['train.num_sample_to_pool']} tasks.")
+                        print(f"==>> pool has enough samples after {t+1}/{args['train.max_samples_for_pool']} tasks.")
                         verbose = False
                         # break
 
-                    if t == args['train.num_sample_to_pool'] - 1:
+                    if t == args['train.max_samples_for_pool'] - 1:
                         print(f"==>> pool has not enough samples. skip MO training")
 
                 '''repeat collecting MO loss'''
