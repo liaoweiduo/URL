@@ -229,6 +229,8 @@ def train():
                                     pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
                                 similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                                 cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
+                                similarities = selection_info['normal_soft'].detach().cpu().numpy()
+                                # using gumbel to determine which cluster to put, but similarity use normal softmax
 
                             pool.put_batch(
                                 images, cluster_idxs, {
@@ -551,7 +553,7 @@ def train():
                         writer.add_scalar(f"val_loss/{valset}", epoch_val_loss[valset], i+1)
                         writer.add_scalar(f"val_accuracy/{valset}", epoch_val_acc[valset], i+1)
                         print(f"==>> val: loss {np.mean(val_losses[valset]):.3f}, "
-                              f"accuracy {np.mean(val_losses[valset]):.3f}.")
+                              f"accuracy {np.mean(val_accs[valset]):.3f}.")
 
                 '''write summaries averaged over sources'''
                 avg_val_source_loss = np.mean(np.concatenate([val_loss for val_loss in val_losses.values()]))
@@ -571,11 +573,11 @@ def train():
                         writer.add_scalar(f"val_loss/C{cluster_idx}", cluster_loss, i+1)
                         writer.add_scalar(f"val_accuracy/C{cluster_idx}", cluster_acc, i+1)
                         print(f"==>> val C{cluster_idx}: "
-                              f"accuracy {cluster_acc:.3f}%, val_loss {cluster_loss:.3f}")
+                              f"val_loss {cluster_loss:.3f}, accuracy {cluster_acc:.3f}")
 
                     else:   # no class(task) is assign to this cluster
                         print(f"==>> val C{cluster_idx}: "
-                              f"val_acc No value, val_loss No value")
+                              f"val_loss No value, val_acc No value")
 
                 # write summaries averaged over sources/clusters
                 avg_val_cluster_loss = np.mean(np.concatenate(cluster_losses))
