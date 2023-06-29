@@ -77,7 +77,7 @@ def train():
         pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
 
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_parameters())
-        checkpointer = CheckPointer(args, pmo, optimizer=optimizer)
+        checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
                 checkpointer.restore_model(ckpt='last')
@@ -420,16 +420,17 @@ def train():
                     writer.add_scalar('train_loss/hv_loss', np.mean(epoch_loss['hv/loss']), i+1)
                     writer.add_scalar('train_loss/hv', np.mean(epoch_loss['hv']), i+1)
                     writer.add_scalar('train_accuracy/hv', np.mean(epoch_acc['hv']), i+1)
-                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
                     print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
                           f"loss {np.mean(epoch_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
 
+                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
+
                 '''write pool images'''
                 images = pool.current_images(single_image=True)
                 for cluster_id, cluster in enumerate(images):
-                    writer.add_image(f"train_image/pool-{cluster_id}", cluster, i+1)
-                    # if len(cluster) > 0:
+                    if len(cluster) > 0:
+                        writer.add_image(f"train_image/pool-{cluster_id}", cluster, i+1)
                     #     img_in_cluster = np.concatenate(cluster)
                     #     writer.add_images(f"train_image/pool-{cluster_id}", img_in_cluster, i+1)
 
@@ -618,7 +619,7 @@ def train():
 
     if start_iter < max_iter:
         print(f"""Done training with best_mean_val_loss: {best_val_loss:.3f}, 
-        best_avg_val_acc: {best_val_acc:.2f}%""")
+        best_avg_val_acc: {best_val_acc:.3f}""")
     else:
         print(f"""Training not completed. Loaded checkpoint at {start_iter}, while max_iter was {max_iter}""")
 

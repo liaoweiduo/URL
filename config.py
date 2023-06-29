@@ -97,7 +97,7 @@ parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
                          'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')
 parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
                     help='number of ways to train')
-parser.add_argument('--train.n_shot', type=int, default=5, metavar='N_SHOT',
+parser.add_argument('--train.n_shot', type=int, default=1, metavar='N_SHOT',
                     help='number of shots to train')
 parser.add_argument('--train.n_query', type=int, default=5, metavar='N_QUERY',
                     help='number of queries to train')
@@ -153,6 +153,10 @@ parser.add_argument('--out.dir', default='', type=str, metavar='PATH',
                     help='directory to output the result and checkpoints')
 parser.add_argument('--source', default='', type=str, metavar='PATH',
                     help='path of pretrained model')
+
+# for jupyter
+parser.add_argument('-f', default='', type=str, metavar='F',
+                    help='jupyter argument')
 
 # log args
 args = vars(parser.parse_args())

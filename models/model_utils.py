@@ -67,9 +67,10 @@ class CosineConv(nn.Module):
 
 
 class CheckPointer(object):
-    def __init__(self, args, model=None, optimizer=None):
+    def __init__(self, args, model=None, optimizer=None, save_all=False):
         self.model = model
         self.optimizer = optimizer
+        self.save_all = save_all
         self.args = args
         self.model_path = os.path.join(args['model.dir'], 'weights', args['model.name'])
         self.out_path = os.path.join(args['out.dir'], 'weights', args['model.name'])
@@ -114,6 +115,9 @@ class CheckPointer(object):
 
         model_path = check_dir(self.out_path, True)
         torch.save(state, os.path.join(model_path, filename))
+        if self.save_all:
+            shutil.copyfile(os.path.join(model_path, filename),     # 'checkpoint.pth.tar' -> 'checkpoint-i.pth.tar'
+                            os.path.join(model_path, f"{filename[:-8]}-{epoch}{filename[-8:]}"))
         if is_best:
             shutil.copyfile(os.path.join(model_path, filename),
                             os.path.join(model_path, 'model_best.pth.tar'))
