@@ -346,7 +346,8 @@ def train():
                                 if task_idx < len(selected_cluster_idxs):       # [2, 2]
                                     if task_idx == obj_idx and 'pure' in args['train.loss_type']:
                                         # backward pure loss on the corresponding model and cluster.
-                                        loss.backward(retain_graph=True)
+                                        retain_graph = 'hv' in args['train.loss_type']
+                                        loss.backward(retain_graph=retain_graph)
 
                             ncc_losses_multi_obj.append(torch.stack(losses))
                         ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
