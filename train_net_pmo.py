@@ -379,6 +379,7 @@ def train():
                             hv_loss.backward()
 
             update_step(i)
+            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
             # # saving pool
             # pool.store(i, train_loaders, trainsets, False,
@@ -452,8 +453,6 @@ def train():
                     print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
                           f"loss {np.mean(epoch_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
-
-                writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
                 '''write pool images'''
                 images = pool.current_images(single_image=True)
