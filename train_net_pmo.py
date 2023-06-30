@@ -208,6 +208,7 @@ def train():
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
                 pool.clear_clusters()
+                pool.clear_buffer()
 
                 '''fill pool from train_loaders'''
                 verbose = True
@@ -218,40 +219,68 @@ def train():
                         for _ in range(num_task_per_batch):
                             samples = train_loaders[trainset].get_train_task(session, d='cpu')
                             images = torch.cat([samples['context_images'], samples['target_images']])
-                            # re_labels = torch.cat([samples['context_labels'], samples['target_labels']])
+                            re_labels = torch.cat([samples['context_labels'], samples['target_labels']]).numpy()
                             gt_labels = torch.cat([samples['context_gt'], samples['target_gt']]).numpy()
                             domain = np.array([t_indx] * len(gt_labels))
 
+                            # put in sequence
+                            # '''obtain selection vec for images'''
+                            # with torch.no_grad():
+                            #     _, selection_info = pmo.selector(
+                            #         pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
+                            #     similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                            #     cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
+                            #     similarities = selection_info['normal_soft'].detach().cpu().numpy()
+                            #     # using gumbel to determine which cluster to put, but similarity use normal softmax
+                            #
+                            # pool.put_batch(
+                            #     images, cluster_idxs, {
+                            #         'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+
+                            # put to buffer then put to cluster
                             '''obtain selection vec for images'''
                             with torch.no_grad():
-                                # todo: check whether to use gumbel or not when determine the pool
                                 _, selection_info = pmo.selector(
-                                    pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
+                                    pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
                                 similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                                cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
-                                similarities = selection_info['normal_soft'].detach().cpu().numpy()
-                                # using gumbel to determine which cluster to put, but similarity use normal softmax
 
-                            pool.put_batch(
-                                images, cluster_idxs, {
-                                    'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+                            pool.put_buffer(images, {
+                                'domain': domain, 'gt_labels': gt_labels,
+                                're_labels': re_labels, 'similarities': similarities})
 
-                    '''check pool has enough samples'''
-                    available_cluster_idxs = []
-                    for idx, classes in enumerate(pool.current_classes()):
-                        # if len(classes) >= args['train.n_way']:
-                        num_imgs = np.array([cls[1] for cls in classes])
-                        if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
-                               ) >= args['train.n_way']:
-                            available_cluster_idxs.append(idx)
+                    # '''check pool has enough samples'''
+                    # available_cluster_idxs = []
+                    # for idx, classes in enumerate(pool.current_classes()):
+                    #     # if len(classes) >= args['train.n_way']:
+                    #     num_imgs = np.array([cls[1] for cls in classes])
+                    #     if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
+                    #            ) >= args['train.n_way']:
+                    #         available_cluster_idxs.append(idx)
+                    #
+                    # if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
+                    #     print(f"==>> pool has enough samples after "
+                    #           f"{t+1}/{args['train.max_sampling_iter_for_pool']} iters of sampling.")
+                    #     verbose = False
+                    #     # break
+                    #
+                    # if t == args['train.max_sampling_iter_for_pool'] - 1 and verbose:
+                    #     print(f"==>> pool has not enough samples. skip MO training")
 
-                    if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
-                        print(f"==>> pool has enough samples after "
-                              f"{t+1}/{args['train.max_sampling_iter_for_pool']} iters of sampling.")
-                        verbose = False
-                        # break
+                '''buffer -> clusters'''
+                pool.buffer2cluster()
 
-                    if t == args['train.max_sampling_iter_for_pool'] - 1 and verbose:
+                '''check pool has enough samples'''
+                available_cluster_idxs = []
+                for idx, classes in enumerate(pool.current_classes()):
+                    # if len(classes) >= args['train.n_way']:
+                    num_imgs = np.array([cls[1] for cls in classes])
+                    if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
+                           ) >= args['train.n_way']:
+                        available_cluster_idxs.append(idx)
+                if verbose:
+                    if len(available_cluster_idxs) >= args['train.n_obj']:
+                        print(f"==>> pool has enough samples.")
+                    else:
                         print(f"==>> pool has not enough samples. skip MO training")
 
                 '''repeat collecting MO loss'''
@@ -424,7 +453,7 @@ def train():
                           f"loss {np.mean(epoch_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
 
-                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
+                writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
                 '''write pool images'''
                 images = pool.current_images(single_image=True)

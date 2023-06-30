@@ -32,7 +32,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=50, max_num_images=20, mode='hierarchical'):
+    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical'):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
@@ -222,6 +222,79 @@ class Pool(nn.Module):
             if len(self.clusters[cluster_idx]) > self.max_num_classes:
                 '''need to remove one with smallest similarity: last one to satisfy max_num_classes'''
                 self.clusters[cluster_idx] = self.clusters[cluster_idx][:self.max_num_classes]
+
+    def put_buffer(self, images, info_dict):
+        """
+        Put samples (batch of torch cpu images) into buffer.
+            info_dict should contain `domain`, `gt_labels`, `re_labels`, `similarities`,     # numpy
+        """
+        '''unpack'''
+        domain, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        re_labels, similarities = info_dict['re_labels'], info_dict['similarities']
+        domain = domain[0].item()
+
+        '''images for one class'''
+        for re_label in np.unique(re_labels):
+            mask = re_labels == re_label
+            class_images, gt_label = images[mask].numpy(), gt_labels[mask][0].item()
+            class_similarities = similarities[mask]
+            label = (gt_label, domain)
+
+            '''pop stored images and cat new images'''
+            position = self.find_label(label, target='buffer')
+            if position != -1:  # find exist label, cat onto it and re-put
+                stored = self.buffer.pop(position)
+                assert stored['label'] == label
+                stored_images = np.concatenate([stored['images'], class_images])
+                stored_similarities = np.concatenate([stored['similarities'], class_similarities])
+            else:
+                stored_images = class_images
+                stored_similarities = class_similarities
+
+            class_dict = {
+                'images': stored_images, 'label': label,  # 'selection': stored_selection,
+                'similarities': stored_similarities,
+                # 'class_similarity': np.mean(stored_similarities, axis=0),  # mean over all samples [n_clusters]
+            }
+
+            '''put into buffer'''
+            self.buffer.append(class_dict)
+
+    def buffer2cluster(self):
+        """
+        For each cluster, find max_num_classes.
+        And for each class, find max_num_images with corresponding average sim.
+        """
+        for cluster_idx in range(self.capacity):
+            '''preprocess buffer according to cluster_idx'''
+            for cls in self.buffer:
+                '''sort within class '''
+                indexes = np.argsort(cls['similarities'][:, cluster_idx])[::-1]     # descending order
+                chosen_images = cls['images'][indexes][:self.max_num_images]
+                remain_images = cls['images'][indexes][self.max_num_images:]
+                # can be empty array([], shape=(0, 3, 84, 84)) len(remain_images) = 0
+                chosen_similarities = cls['similarities'][indexes][:self.max_num_images]
+                remain_similarities = cls['similarities'][indexes][self.max_num_images:]
+                class_similarity = np.mean(chosen_similarities, axis=0)
+                # mean over max_num_img samples [n_clusters]
+                cls['remain_images'], cls['remain_similarities'] = remain_images, remain_similarities
+                cls['chosen_images'], cls['chosen_similarities'] = chosen_images, chosen_similarities
+                cls['class_similarity'] = class_similarity
+
+            self.buffer.sort(
+                key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
+
+            '''put cls to cluster and modify cls'''
+            for cls in self.buffer[:self.max_num_classes]:      # other clses in the buffer are not considered
+                self.clusters[cluster_idx].append({
+                    'images': cls['chosen_images'], 'label': cls['label'],
+                    'similarities': cls['chosen_similarities'],
+                    'class_similarity': cls['class_similarity'],
+                })
+                cls['images'], cls['similarities'] = cls['remain_images'], cls['remain_similarities']
+
+            '''remove empty cls'''
+            self.buffer = [cls for cls in self.buffer if len(cls['images']) > 0]
 
     '''
     OLD PUT

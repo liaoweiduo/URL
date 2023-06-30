@@ -126,7 +126,7 @@ class ResNet(nn.Module):
         self.outplanes = 512
 
         # selector
-        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='dot', tau=tau)
+        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)
 
         # handle classifier creation
         if num_classes is not None:
@@ -288,12 +288,12 @@ class Selector(nn.Module):
         self.prot_shape = (1, 1)
         self.prototype_shape = (self.n_class, self.rep_dim, *self.prot_shape)
         self.prototypes = nn.Parameter(torch.rand(self.prototype_shape))
-        # self.logit_scale = nn.Parameter(torch.ones([]))     # 1
-        self.logit_scale = torch.ones([])     # 1
+        self.logit_scale = nn.Parameter(torch.ones([]))     # 1
+        # self.logit_scale = torch.ones([])     # 1
         # self.cluster_centers = nn.Parameter(torch.randn((num_clusters, emb_dim)))
 
-        # self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
-        self.ones = torch.ones(self.prototype_shape)
+        self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
+        # self.ones = torch.ones(self.prototype_shape)
 
     def forward(self, inputs, gumbel=True):
         """
