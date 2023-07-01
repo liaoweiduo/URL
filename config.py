@@ -58,7 +58,8 @@ parser.add_argument('--train.exp_decay_start_iter', type=int, default=30000, met
                     help='the value to divide learning rate by when decayin lr')
 parser.add_argument('--train.cosine_anneal_freq', type=int, default=4000, metavar='ANNEAL_FREQ',
                     help='the value to divide learning rate by when decayin lr')
-parser.add_argument('--train.nesterov_momentum', action='store_true', help="If to augment query images in order to avearge the embeddings")
+parser.add_argument('--train.nesterov_momentum', action='store_true',
+                    help="If to augment query images in order to average the embeddings")
 
 # evaluation during training
 parser.add_argument('--train.summary_freq', type=int, default=200, metavar='SUMMARY_FREQ',
