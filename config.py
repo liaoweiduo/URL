@@ -24,7 +24,7 @@ parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of
 # adaptor args
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
 # Selector model args
-parser.add_argument('--cluster.opt', type=str, default='linear', help="type of cluster model, linear or nonlinear")
+parser.add_argument('--cluster.opt', type=str, default='nonlinear', help="type of cluster model, linear or nonlinear")
 
 # train args
 parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'],

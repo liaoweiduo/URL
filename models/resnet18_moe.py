@@ -177,7 +177,7 @@ class ResNet(nn.Module):
 
         x = self.embed(x, selection=selection)
         x = self.cls_fn(x)          # cls_fn is identity if no classifier
-        return x
+        return x, selection_info
 
     def embed(self, x, selection=None, squeeze=True, param_dict=None):
         """
