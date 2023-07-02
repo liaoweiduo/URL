@@ -402,10 +402,10 @@ def train():
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
 
-            '''try selector's grad * 100'''
+            '''try prototypes' grad * 1000'''
             for k, p in pmo.named_parameters():
-                if 'selector' in k and p.grad is not None:
-                    p.grad = p.grad * 100
+                if 'selector.prototypes' in k and p.grad is not None:
+                    p.grad = p.grad * 1000
 
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
