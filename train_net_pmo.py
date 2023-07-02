@@ -404,7 +404,7 @@ def train():
 
             '''try selector's grad * 100'''
             for k, p in pmo.named_parameters():
-                if 'selector' in k:
+                if 'selector' in k and p.grad is not None:
                     p.grad = p.grad * 100
 
             update_step(i)

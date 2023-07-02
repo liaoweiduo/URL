@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --train.max_iter=200 --train.summary_freq=10 \
     --train.type=standard --train.freeze_backbone --train.loss_type=task+pure+hv \
     --train.n_mo=10 --train.hv_coefficient=0.001 --train.mo_freq=10 \
-    --train.cosine_anneal_freq=20 --train.eval_freq=20 --train.eval_size 50 # \
+    --train.cosine_anneal_freq=200 --train.eval_freq=200 --train.eval_size 50 # \
 #    1> ../URL-experiments/out/$OUTNAME.out  # 2> ../URL-experiments/out/pmo.err
 #    2>&1
 
