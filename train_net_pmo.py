@@ -368,7 +368,7 @@ def train():
                                         epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
 
                                         '''ce loss * 5'''
-                                        selection_ce_loss = selection_ce_loss * 10
+                                        selection_ce_loss = selection_ce_loss * 100
                                         selection_ce_loss.backward(retain_graph=True)
 
                                         # backward pure loss on the corresponding model and cluster.

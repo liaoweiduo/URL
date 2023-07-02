@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-moe-sgd-ce_select-cluster_nonlinear-lr1e-3-ce10"
+OUTNAME="pmo-moe-sgd-ce_select-cluster_nonlinear-lr1e-3-ce100"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 8 --model.backbone resnet18_moe \
