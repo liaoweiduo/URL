@@ -402,6 +402,11 @@ def train():
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
 
+            '''try selector's grad * 100'''
+            for k, p in pmo.named_parameters():
+                if 'selector' in k:
+                    p.grad = p.grad * 100
+
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
