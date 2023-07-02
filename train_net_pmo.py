@@ -366,6 +366,9 @@ def train():
                                         selection_ce_loss = fn(y_soft, labels)
 
                                         epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
+
+                                        '''ce loss * 5'''
+                                        selection_ce_loss = selection_ce_loss * 5
                                         selection_ce_loss.backward(retain_graph=True)
 
                                         # backward pure loss on the corresponding model and cluster.
@@ -402,10 +405,10 @@ def train():
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
 
-            '''try prototypes' grad * 1000'''
-            for k, p in pmo.named_parameters():
-                if 'selector.prototypes' in k and p.grad is not None:
-                    p.grad = p.grad * 1000
+            # '''try prototypes' grad * 1000'''
+            # for k, p in pmo.named_parameters():
+            #     if 'selector.prototypes' in k and p.grad is not None:
+            #         p.grad = p.grad * 1000
 
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
