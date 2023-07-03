@@ -162,7 +162,9 @@ class ResNet(nn.Module):
         # return nn.Sequential(*layers)
         return nn.ModuleList(layers)       # forward need head_idx, can not use Sequential
 
-    def forward(self, x_list: list[torch.Tensor], gumbel=True, selected_idx=None):
+    def forward(self, x_list, gumbel=True, selected_idx=None):
+        if isinstance(x_list, torch.Tensor):
+            x_list = [x_list]
         features = torch.mean(self.embed(torch.cat(x_list)), dim=0, keepdim=True)        # [1, 512]
         # features = self.embed(x)        # forward backbone without film
         selection, selection_info = self.selector(features, gumbel=gumbel)       # [1, n_clusters]
