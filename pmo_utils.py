@@ -85,7 +85,9 @@ class Pool(nn.Module):
         return [v for k, v in self.named_parameters()]
 
     def clear_clusters(self):
+        clusters = self.clusters
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
+        return clusters
 
     def clear_buffer(self):
         self.buffer = []
@@ -229,14 +231,13 @@ class Pool(nn.Module):
             info_dict should contain `domain`, `gt_labels`, `re_labels`, `similarities`,     # numpy
         """
         '''unpack'''
-        domain, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
         re_labels, similarities = info_dict['re_labels'], info_dict['similarities']
-        domain = domain[0].item()
 
         '''images for one class'''
         for re_label in np.unique(re_labels):
             mask = re_labels == re_label
-            class_images, gt_label = images[mask].numpy(), gt_labels[mask][0].item()
+            class_images, gt_label, domain = images[mask].numpy(), gt_labels[mask][0].item(), domains[mask][0].item()
             class_similarities = similarities[mask]
             label = (gt_label, domain)
 
@@ -312,8 +313,7 @@ class Pool(nn.Module):
             if position != -1:      # find exist label, cat onto it and reput into buffer
                 stored = self.buffer.pop(position)
                 assert stored['label'] == label
-                stored_images = stored['images']
-                stored_images = np.concatenate([stored_images, images])
+                stored_images = np.concatenate([stored['images'], images])
             else:
                 stored_images = images
 

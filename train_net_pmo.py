@@ -209,8 +209,28 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                pool.clear_clusters()
+                '''clear buffer and cluster'''
+                current_clusters = pool.clear_clusters()
                 pool.clear_buffer()
+
+                '''re-put samples into buffer'''
+                current_clusters = [cls for clses in current_clusters for cls in clses]       # cat all clusters
+                if len(current_clusters) > 0:
+                    images = torch.from_numpy(np.concatenate([cls['images'] for cls in current_clusters]))
+                    domain = np.array([cls['label'][0] for cls in current_clusters for img in cls['images']])
+                    gt_labels = np.array([cls['label'][1] for cls in current_clusters for img in cls['images']])
+                    labels = [cls['label'] for cls in current_clusters for img in cls['images']]
+                    label_set = sorted(set(labels))
+                    re_labels = np.array(list(map(lambda label: label_set.index(label), labels)))
+
+                    with torch.no_grad():
+                        _, selection_info = pmo.selector(
+                            pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
+                        similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+                    pool.put_buffer(images, {
+                        'domain': domain, 'gt_labels': gt_labels,
+                        're_labels': re_labels, 'similarities': similarities})
 
                 '''fill pool from train_loaders'''
                 verbose = True
