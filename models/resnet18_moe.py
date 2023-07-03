@@ -126,7 +126,7 @@ class ResNet(nn.Module):
         self.outplanes = 512
 
         # selector
-        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='dot', tau=tau)      # cosine
+        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)      # cosine
 
         # handle classifier creation
         if num_classes is not None:
@@ -162,9 +162,10 @@ class ResNet(nn.Module):
         # return nn.Sequential(*layers)
         return nn.ModuleList(layers)       # forward need head_idx, can not use Sequential
 
-    def forward(self, x, gumbel=True, selected_idx=None):
-        features = self.embed(x)        # forward backbone without film
-        selection, selection_info = self.selector(features, gumbel=gumbel)       # [bs, n_clusters]
+    def forward(self, x_list: list[torch.Tensor], gumbel=True, selected_idx=None):
+        features = torch.mean(self.embed(torch.cat(x_list)), dim=0, keepdim=True)        # [1, 512]
+        # features = self.embed(x)        # forward backbone without film
+        selection, selection_info = self.selector(features, gumbel=gumbel)       # [1, n_clusters]
 
         if selected_idx is not None:
             '''select specific film head to forward by hard trick rather than the argmax head'''
@@ -175,9 +176,12 @@ class ResNet(nn.Module):
             # [bs, nc], one hot at selected_idx.
             selection = y_hard - y_soft.detach() + y_soft
 
-        x = self.embed(x, selection=selection)
-        x = self.cls_fn(x)          # cls_fn is identity if no classifier
-        return x, selection_info
+        results = []
+        for x in x_list:
+            x = self.embed(x, selection=selection)
+            x = self.cls_fn(x)          # cls_fn is identity if no classifier
+            results.append(x)
+        return results, selection_info
 
     def embed(self, x, selection=None, squeeze=True, param_dict=None):
         """
@@ -218,7 +222,7 @@ class ResNet(nn.Module):
         # x = self.layer4(x)
 
         x = self.avgpool(x)
-        return x.squeeze()
+        return x.flatten(1)         # x.squeeze()
 
     def freeze_backbone(self):
         for k, v in self.named_parameters():

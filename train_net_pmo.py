@@ -185,8 +185,9 @@ def train():
                 # context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
                 # domain = t_indx
 
-                enriched_context_features, _ = pmo(context_images, gumbel=True)
-                enriched_target_features, _ = pmo(target_images, gumbel=True)
+                [enriched_context_features, enriched_target_features], _ = pmo(
+                    [context_images, target_images], gumbel=True)
+                # enriched_target_features, _ = pmo(target_images, gumbel=True)
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -318,27 +319,33 @@ def train():
 
                             if 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']:
                                 features_selection_pairs = [
-                                    pmo(context_images, gumbel=True, selected_idx=selected_idx)
-                                    for selected_idx in selected_cluster_idxs]
-                                enriched_context_features_list = [t[0] for t in features_selection_pairs]
-                                context_selection_list = [t[1] for t in features_selection_pairs]
-                                features_selection_pairs = [
-                                    pmo(target_images, gumbel=True, selected_idx=selected_idx)
-                                    for selected_idx in selected_cluster_idxs]
-                                enriched_target_features_list = [t[0] for t in features_selection_pairs]
-                                target_selection_list = [t[1] for t in features_selection_pairs]
+                                    pmo([context_images, target_images], gumbel=True, selected_idx=selected_idx)
+                                    for selected_idx in selected_cluster_idxs]      # [obj_id][fea or sel]
+                                enriched_context_features_list = [t[0][0] for t in features_selection_pairs]
+                                enriched_target_features_list = [t[0][1] for t in features_selection_pairs]
+
+                                selection_list = [t[1] for t in features_selection_pairs]
+
                             else:
                                 with torch.no_grad():
                                     features_selection_pairs = [
-                                        pmo(context_images, gumbel=True, selected_idx=selected_idx)
-                                        for selected_idx in selected_cluster_idxs]
-                                    enriched_context_features_list = [t[0] for t in features_selection_pairs]
-                                    context_selection_list = [t[1] for t in features_selection_pairs]
-                                    features_selection_pairs = [
-                                        pmo(target_images, gumbel=True, selected_idx=selected_idx)
-                                        for selected_idx in selected_cluster_idxs]
-                                    enriched_target_features_list = [t[0] for t in features_selection_pairs]
-                                    target_selection_list = [t[1] for t in features_selection_pairs]
+                                        pmo([context_images, target_images], gumbel=True, selected_idx=selected_idx)
+                                        for selected_idx in selected_cluster_idxs]      # [obj_id][fea or sel]
+                                    enriched_context_features_list = [t[0][0] for t in features_selection_pairs]
+                                    enriched_target_features_list = [t[0][1] for t in features_selection_pairs]
+
+                                    selection_list = [t[1] for t in features_selection_pairs]
+
+                                    # features_selection_pairs = [
+                                    #     pmo(context_images, gumbel=True, selected_idx=selected_idx)
+                                    #     for selected_idx in selected_cluster_idxs]
+                                    # enriched_context_features_list = [t[0] for t in features_selection_pairs]
+                                    # context_selection_list = [t[1] for t in features_selection_pairs]
+                                    # features_selection_pairs = [
+                                    #     pmo(target_images, gumbel=True, selected_idx=selected_idx)
+                                    #     for selected_idx in selected_cluster_idxs]
+                                    # enriched_target_features_list = [t[0] for t in features_selection_pairs]
+                                    # target_selection_list = [t[1] for t in features_selection_pairs]
 
                             losses = []     # [2,]
                             for obj_idx in range(len(selected_cluster_idxs)):       # obj_idx is the selected model
@@ -357,9 +364,16 @@ def train():
 
                                         '''selection CE loss'''
                                         fn = torch.nn.CrossEntropyLoss()
+                                        '''
+                                        since gumbel, selection_info can be diff, but not related to selected_idx
+                                        we can both utilize these two random sampling
+                                        '''
                                         y_soft = torch.cat([
-                                            context_selection_list[obj_idx]['y_soft'],
-                                            target_selection_list[obj_idx]['y_soft']])
+                                            selection_list[obj]['y_soft'] for obj in range(len(selected_cluster_idxs))])
+                                        # [2, 8]
+                                        # y_soft = torch.cat([
+                                        #     context_selection_list[obj_idx]['y_soft'],
+                                        #     target_selection_list[obj_idx]['y_soft']])
                                         select_idx = selected_cluster_idxs[obj_idx]
                                         labels = torch.ones(
                                             (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
@@ -367,8 +381,9 @@ def train():
 
                                         epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
 
-                                        '''ce loss * 5'''
-                                        selection_ce_loss = selection_ce_loss * 10
+                                        # '''ce loss * 5'''
+                                        # selection_ce_loss = selection_ce_loss * 10
+
                                         selection_ce_loss.backward(retain_graph=True)
 
                                         # backward pure loss on the corresponding model and cluster.
@@ -563,8 +578,10 @@ def train():
                             context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
                             domain = v_indx
 
-                            enriched_context_features, _ = pmo(context_images, gumbel=False)
-                            enriched_target_features, _ = pmo(target_images, gumbel=False)
+                            [enriched_context_features, enriched_target_features], _ = pmo(
+                                [context_images, target_images], gumbel=False)
+                            # enriched_context_features, _ = pmo(context_images, gumbel=False)
+                            # enriched_target_features, _ = pmo(target_images, gumbel=False)
 
                             _, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -601,8 +618,11 @@ def train():
                                         d=device
                                     )
 
-                                    enriched_context_features, _ = pmo(task['context_images'], gumbel=False)
-                                    enriched_target_features, _ = pmo(task['target_images'], gumbel=False)
+                                    [enriched_context_features, enriched_target_features], _ = pmo(
+                                        [task['context_images'], task['target_images']], gumbel=False)
+
+                                    # enriched_context_features, _ = pmo(task['context_images'], gumbel=False)
+                                    # enriched_target_features, _ = pmo(task['target_images'], gumbel=False)
 
                                     _, stats_dict, _ = prototype_loss(
                                         enriched_context_features, task['context_labels'],
