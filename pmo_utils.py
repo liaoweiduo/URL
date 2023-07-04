@@ -107,7 +107,7 @@ class Pool(nn.Module):
             pool_dict[f'{cluster_idx}_str'] = []
             for cls_idx in range(len(cu_cl[cluster_idx])):
                 label = cu_cl[cluster_idx][cls_idx][0]
-                print('label', label)
+                # print('label', label)
                 domain = cu_cl[cluster_idx][cls_idx][0][1].item()
                 str_label = loaders[trainsets[domain]].label_to_str(label, domain=0)
                 pool_dict[cluster_idx].append(label)
