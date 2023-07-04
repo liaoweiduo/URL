@@ -246,7 +246,7 @@ class Pool(nn.Module):
             position = self.find_label(label, target='buffer')
             if position != -1:  # find exist label, cat onto it and re-put
                 stored = self.buffer.pop(position)
-                assert stored['label'] == label
+                assert (stored['label'] == label).all()
                 stored_images = np.concatenate([stored['images'], class_images])
                 stored_similarities = np.concatenate([stored['similarities'], class_similarities])
             else:
