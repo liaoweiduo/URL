@@ -448,10 +448,6 @@ def train():
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
-            # # saving pool
-            # pool.store(i, train_loaders, trainsets, False,
-            #            class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
-
             if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
@@ -520,6 +516,10 @@ def train():
                     print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
                           f"loss {np.mean(epoch_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
+
+                '''store pool'''
+                pool.store(i, train_loaders, trainsets, False,
+                           class_filename=f'pool-{i+1}.json', center_filename=f'pool-{i+1}.npy')
 
                 '''write pool images'''
                 images = pool.current_images(single_image=True)

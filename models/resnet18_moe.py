@@ -309,6 +309,7 @@ class Selector(nn.Module):
         """
         bs = inputs.shape[0]
         embeddings = self.encoder([inputs])[0]     # [bs, 64]
+        embeddings = F.sigmoid(embeddings)          # apply sigmoid activation on embeddings
         embeddings = embeddings.view(bs, self.rep_dim, *self.prot_shape)    # [bs, 64, 1, 1]
 
         dist = self._distance(embeddings).view(bs, self.n_class)        # [bs, n_proto]  similarity

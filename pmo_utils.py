@@ -119,7 +119,7 @@ class Pool(nn.Module):
             shutil.copyfile(os.path.join(self.out_path, class_filename),
                             os.path.join(self.out_path, 'pool_best.json'))
 
-        if self.mode == 'hierarchical':
+        if self.mode not in ['learnable', 'mov_avg', 'kmeans']:
             return
 
         path = os.path.join(self.out_path, center_filename)
@@ -178,7 +178,7 @@ class Pool(nn.Module):
         for sample_idx in range(len(cluster_idxs)):
             cluster_idx = cluster_idxs[sample_idx]
             '''pop stored images and cat new images'''
-            label = (gt_labels[sample_idx].item(), domain[sample_idx].item())
+            label = np.array([gt_labels[sample_idx], domain[sample_idx]])
             position = self.find_label(label, cluster_idx=cluster_idx)
             if position != -1:      # find exist label, cat onto it and re-put
                 stored = self.clusters[position[0]].pop(position[1])
@@ -228,18 +228,19 @@ class Pool(nn.Module):
     def put_buffer(self, images, info_dict):
         """
         Put samples (batch of torch cpu images) into buffer.
-            info_dict should contain `domain`, `gt_labels`, `re_labels`, `similarities`,     # numpy
+            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
         """
         '''unpack'''
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
-        re_labels, similarities = info_dict['re_labels'], info_dict['similarities']
+        similarities = info_dict['similarities']
 
         '''images for one class'''
-        for re_label in np.unique(re_labels):
-            mask = re_labels == re_label
-            class_images, gt_label, domain = images[mask].numpy(), gt_labels[mask][0].item(), domains[mask][0].item()
+        labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
+        for label in np.unique(labels, axis=0):     # unique along first axis
+            mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
+            # assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
+            class_images = images[mask].numpy()
             class_similarities = similarities[mask]
-            label = (gt_label, domain)
 
             '''pop stored images and cat new images'''
             position = self.find_label(label, target='buffer')
@@ -251,6 +252,10 @@ class Pool(nn.Module):
             else:
                 stored_images = class_images
                 stored_similarities = class_similarities
+
+            '''remove same image'''
+            stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
+            stored_similarities = stored_similarities[img_idxes]
 
             class_dict = {
                 'images': stored_images, 'label': label,  # 'selection': stored_selection,
@@ -748,7 +753,7 @@ class Pool(nn.Module):
 
         return logits
 
-    def find_label(self, label, target='clusters', cluster_idx=None):
+    def find_label(self, label: np.ndarray, target='clusters', cluster_idx=None):
         """
         Find label in pool, return position with (cluster_idx, cls_idx)
         If not in pool, return -1.
@@ -757,16 +762,16 @@ class Pool(nn.Module):
         if target == 'clusters':
             if cluster_idx is not None:
                 for cls_idx, cls in enumerate(self.clusters[cluster_idx]):
-                    if cls['label'] == label:       # (0, str) == (0, str) ? int
+                    if (cls['label'] == label).all():       # (0, str) == (0, str) ? int
                         return cluster_idx, cls_idx
             else:
                 for cluster_idx, cluster in enumerate(self.clusters):
                     for cls_idx, cls in enumerate(cluster):
-                        if cls['label'] == label:       # (0, str) == (0, str) ? int
+                        if (cls['label'] == label).all():       # (0, str) == (0, str) ? int
                             return cluster_idx, cls_idx
         elif target == 'buffer':
             for buf_idx, cls in enumerate(self.buffer):
-                if cls['label'] == label:
+                if (cls['label'] == label).all():
                     return buf_idx
         return -1
 
