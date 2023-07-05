@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-moe-sele_sig-dot-mo_freq1-cosann-lr5e-5"
+OUTNAME="pmo-moe-sele_sig-dot-cosann-lr5e-5"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 8 --model.backbone resnet18_moe \
@@ -14,9 +14,9 @@ CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --data.val ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower \
     --data.test ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower \
     --train.optimizer=adam --train.learning_rate=5e-5 --train.weight_decay=5e-6 \
-    --train.max_iter=1000 --train.summary_freq=50 \
+    --train.max_iter=5000 --train.summary_freq=50 \
     --train.type=standard --train.freeze_backbone --train.loss_type=task+pure+hv \
-    --train.n_mo=10 --train.hv_coefficient=0.001 --train.mo_freq=1 \
+    --train.n_mo=10 --train.hv_coefficient=0.001 --train.mo_freq=10 \
     --train.cosine_anneal_freq=100 --train.eval_freq=100 --train.eval_size 50 # \
 #    1> ../URL-experiments/out/$OUTNAME.out  # 2> ../URL-experiments/out/pmo.err
 #    2>&1

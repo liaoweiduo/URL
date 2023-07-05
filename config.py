@@ -96,12 +96,12 @@ parser.add_argument('--train.max_sampling_iter_for_pool', type=int, default=1, m
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
                     help='number of MO sampling to train. '
                          'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')
-parser.add_argument('--train.n_way', type=int, default=5, metavar='N_WAY',
-                    help='number of ways to train')
-parser.add_argument('--train.n_shot', type=int, default=1, metavar='N_SHOT',
-                    help='number of shots to train')
-parser.add_argument('--train.n_query', type=int, default=5, metavar='N_QUERY',
-                    help='number of queries to train')
+parser.add_argument('--train.mo_task_type', type=str, choices=['standard', '1shot', '5shot'],
+                    default='standard', metavar='TASK_TYPE',
+                    help="meta-train type for task sampling from pool, "
+                         "standard varying number of ways and shots (ten-query) as in Meta-Dataset, "
+                         "1shot for five-way-one-shot-ten-query "
+                         "and 5shot for varying-way-five-shot-ten-query evaluation.")
 parser.add_argument('--train.n_obj', type=int, default=2, metavar='N_OBJ',
                     help='number of objs (models considered in 1 iter) to train')
 parser.add_argument('--train.mix_mode', type=str, default='cutmix', metavar='MIX_MODE',

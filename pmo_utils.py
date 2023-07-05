@@ -868,9 +868,9 @@ class Pool(nn.Module):
     def episodic_sample(
             self,
             cluster_idx,
-            n_way=args['train.n_way'],
-            n_shot=args['train.n_shot'],
-            n_query=args['train.n_query'],
+            n_way,
+            n_shot,
+            n_query,
             remove_sampled_classes=False,
             d='numpy',
     ):
@@ -882,7 +882,7 @@ class Pool(nn.Module):
         """
         candidate_class_idxs = np.arange(len(self.clusters[cluster_idx]))
         num_imgs = np.array([cls[1] for cls in self.current_classes()[cluster_idx]])
-        candidate_class_idxs = candidate_class_idxs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
+        candidate_class_idxs = candidate_class_idxs[num_imgs >= n_shot + n_query]
         assert len(candidate_class_idxs) >= n_way
 
         selected_class_idxs = np.random.choice(candidate_class_idxs, n_way, replace=False)
@@ -1306,6 +1306,55 @@ def to_torch(sample, grad_ones, device_list=None):
             s[key] = val.to(d)
 
     return sample_dict
+
+
+def available_setting(num_imgs_clusters, task_type, max_shot=False):
+    """Check whether pool has enough samples for specific task_type and return a valid setting.
+    :param num_imgs_clusters: list of Numpy array with shape [num_clusters * [num_classes]]
+                              indicating number of images for specific class in specific clusters.
+    :param task_type: `standard`: vary-way-vary-shot-ten-query
+                      `1shot`: five-way-one-shot-ten-query
+                      `5shot`: vary-way-five-shot-ten-query
+    :param max_shot: if True, return max_shot rather than random shot
+    :return a valid setting.
+    """
+    n_query = 10
+
+    min_shot = 5 if task_type == '5shot' else 1
+    min_way = 5
+    max_way = 5 if task_type == '1shot' else min(
+        [len(num_images[num_images >= min_shot + n_query]) for num_images in num_imgs_clusters])
+
+    if max_way < min_way:
+        return -1, -1, -1   # do not satisfy the minimum requirement.
+
+    n_way = np.random.randint(min_way, max_way + 1)
+
+    # shot depends on chosen n_way
+    max_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else min(
+        [sorted(num_images[num_images >= min_shot + n_query], reverse=True)[n_way - 1]
+         for num_images in num_imgs_clusters])
+    n_shot = max_shot if max_shot else np.random.randint(min_shot, max_shot + 1)
+
+    return n_way, n_shot, n_query
+
+
+def check_available(num_imgs_clusters, n_way, n_shot, n_query):
+    """Check whether pool has enough samples for specific setting and return available cluster idxes.
+    :param num_imgs_clusters: list of Numpy array with shape [num_clusters * [num_classes]]
+                              indicating number of images for specific class in specific clusters.
+    :param n_way:
+    :param n_shot:
+    :param n_query:
+
+    :return available cluster idxes which can satisfy sampling n_way, n_shot, n_query.
+    """
+    available_cluster_idxs = []
+    for idx, num_imgs in enumerate(num_imgs_clusters):
+        if len(num_imgs[num_imgs >= n_shot + n_query]) >= n_way:
+            available_cluster_idxs.append(idx)
+
+    return available_cluster_idxs
 
 
 if __name__ == '__main__':

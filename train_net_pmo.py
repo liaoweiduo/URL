@@ -26,7 +26,8 @@ from models.model_helpers import get_model, get_optimizer
 from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
-from pmo_utils import Pool, Mixer, prototype_similarity, cal_hv_loss, cal_hv, draw_objs, draw_heatmap, pmo_embed
+from pmo_utils import (Pool, Mixer,
+                       cal_hv_loss, cal_hv, draw_objs, draw_heatmap, available_setting, check_available)
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -232,9 +233,7 @@ def train():
                         'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
                 '''fill pool from train_loaders'''
-                verbose = True
                 for t in tqdm(range(args['train.max_sampling_iter_for_pool']), ncols=100):
-                # while True:     # apply sampling multiple times to make sure enough samples
                     for t_indx, trainset in enumerate(trainsets):
                         num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
                         for _ in range(num_task_per_batch):
@@ -268,44 +267,21 @@ def train():
                             pool.put_buffer(images, {
                                 'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
-                    # '''check pool has enough samples'''
-                    # available_cluster_idxs = []
-                    # for idx, classes in enumerate(pool.current_classes()):
-                    #     # if len(classes) >= args['train.n_way']:
-                    #     num_imgs = np.array([cls[1] for cls in classes])
-                    #     if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
-                    #            ) >= args['train.n_way']:
-                    #         available_cluster_idxs.append(idx)
-                    #
-                    # if len(available_cluster_idxs) >= args['train.n_obj'] and verbose:
-                    #     print(f"==>> pool has enough samples after "
-                    #           f"{t+1}/{args['train.max_sampling_iter_for_pool']} iters of sampling.")
-                    #     verbose = False
-                    #     # break
-                    #
-                    # if t == args['train.max_sampling_iter_for_pool'] - 1 and verbose:
-                    #     print(f"==>> pool has not enough samples. skip MO training")
-
                 '''buffer -> clusters'''
                 pool.buffer2cluster()
 
-                '''check pool has enough samples'''
-                available_cluster_idxs = []
-                for idx, classes in enumerate(pool.current_classes()):
-                    # if len(classes) >= args['train.n_way']:
-                    num_imgs = np.array([cls[1] for cls in classes])
-                    if len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']]
-                           ) >= args['train.n_way']:
-                        available_cluster_idxs.append(idx)
-                if verbose:
-                    if len(available_cluster_idxs) >= args['train.n_obj']:
-                        print(f"==>> pool has enough samples.")
-                    else:
-                        print(f"==>> pool has not enough samples. skip MO training")
+                num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
 
                 '''repeat collecting MO loss'''
-                if len(available_cluster_idxs) >= args['train.n_obj']:
-                    for mo_train_idx in range(args['train.n_mo']):
+                for mo_train_idx in range(args['train.n_mo']):
+                    '''check pool has enough samples and generate 1 setting'''
+                    n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'])
+                    if n_way == -1:         # not enough samples
+                        print(f"==>> pool has not enough samples. skip MO training")
+                        break
+                    else:
+                        available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
+
                         selected_cluster_idxs = sorted(np.random.choice(
                             available_cluster_idxs, args['train.n_obj'], replace=False))
                         # which is also devices idx
@@ -314,13 +290,14 @@ def train():
                         '''sample pure tasks from clusters in selected_cluster_idxs'''
                         numpy_tasks = []
                         for cluster_idx in selected_cluster_idxs:
-                            numpy_pure_task = pool.episodic_sample(cluster_idx)
+                            numpy_pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query)
                             numpy_tasks.append(numpy_pure_task)
 
                         '''sample mix tasks by mixer'''
                         for mix_id in range(args['train.n_mix']):
                             numpy_mix_task, _ = mixer.mix(
-                                task_list=[pool.episodic_sample(idx) for idx in selected_cluster_idxs],
+                                task_list=[pool.episodic_sample(idx, n_way, n_shot, n_query)
+                                           for idx in selected_cluster_idxs],
                                 mix_id=mix_id
                             )
                             numpy_tasks.append(numpy_mix_task)
@@ -446,7 +423,7 @@ def train():
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
-            if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
+            if (i + 1) % args['train.summary_freq'] == 0 or i == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
                 epoch_train_history = dict()
@@ -625,14 +602,20 @@ def train():
                                     'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
                             '''check if any cluster have sufficient class to construct 1 task'''
-                            for idx, classes in enumerate(val_pool.current_classes()):
-                                num_imgs = np.array([cls[1] for cls in classes])
-                                available_way = len(num_imgs[num_imgs >= args['train.n_shot'] + args['train.n_query']])
-                                if available_way >= args['train.n_way']:
-                                    # enough classes to construct 1 task
-                                    # then use all available classes to construct 1 task
+
+                            num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
+                                                 pool.current_classes()]
+                            n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
+                                                                       max_shot=True)
+
+                            if n_way != -1:
+                                # enough classes to construct 1 task
+                                available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
+                                # then use all available classes to construct 1 task
+                                for idx in available_cluster_idxs:
                                     task = val_pool.episodic_sample(
-                                        idx, n_way=available_way, remove_sampled_classes=True,
+                                        idx, n_way, n_shot, n_query,
+                                        remove_sampled_classes=True,
                                         d=device
                                     )
 
