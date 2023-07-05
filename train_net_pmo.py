@@ -606,7 +606,7 @@ def train():
                             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
                                                  pool.current_classes()]
                             n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
-                                                                       max_shot=True)
+                                                                       use_max_shot=True)
 
                             if n_way != -1:
                                 # enough classes to construct 1 task

@@ -1308,14 +1308,14 @@ def to_torch(sample, grad_ones, device_list=None):
     return sample_dict
 
 
-def available_setting(num_imgs_clusters, task_type, max_shot=False):
+def available_setting(num_imgs_clusters, task_type, use_max_shot=False):
     """Check whether pool has enough samples for specific task_type and return a valid setting.
     :param num_imgs_clusters: list of Numpy array with shape [num_clusters * [num_classes]]
                               indicating number of images for specific class in specific clusters.
     :param task_type: `standard`: vary-way-vary-shot-ten-query
                       `1shot`: five-way-one-shot-ten-query
                       `5shot`: vary-way-five-shot-ten-query
-    :param max_shot: if True, return max_shot rather than random shot
+    :param use_max_shot: if True, return max_shot rather than random shot
     :return a valid setting.
     """
     n_query = 10
@@ -1332,9 +1332,10 @@ def available_setting(num_imgs_clusters, task_type, max_shot=False):
 
     # shot depends on chosen n_way
     max_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else min(
-        [sorted(num_images[num_images >= min_shot + n_query], reverse=True)[n_way - 1]
+        [sorted(num_images[num_images >= min_shot + n_query], reverse=True)[n_way - 1] - n_query
          for num_images in num_imgs_clusters])
-    n_shot = max_shot if max_shot else np.random.randint(min_shot, max_shot + 1)
+
+    n_shot = max_shot if use_max_shot else np.random.randint(min_shot, max_shot + 1)
 
     return n_way, n_shot, n_query
 
