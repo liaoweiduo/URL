@@ -220,9 +220,6 @@ def train():
                     images = torch.from_numpy(np.concatenate([cls['images'] for cls in current_clusters]))
                     gt_labels = np.array([cls['label'][0] for cls in current_clusters for img in cls['images']])
                     domain = np.array([cls['label'][1] for cls in current_clusters for img in cls['images']])
-                    # labels = [cls['label'] for cls in current_clusters for img in cls['images']]
-                    # label_set = sorted(set(labels))
-                    # re_labels = np.array(list(map(lambda label: label_set.index(label), labels)))
 
                     with torch.no_grad():
                         _, selection_info = pmo.selector(
