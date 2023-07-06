@@ -552,7 +552,7 @@ def train():
                 model_eval()
 
                 val_pool = Pool(capacity=args['model.num_clusters'], mode=args['train.cluster_center_mode'])
-                val_pool.centers = pool.centers     # same centers and device as train_pool
+                val_pool.centers = pool.centers     # same centers and device as train_pool; no use
                 val_pool.eval()
 
                 '''collect val_losses/accs for all sources and cluster_losses/accs for all FiLMs'''
@@ -601,7 +601,7 @@ def train():
                             '''check if any cluster have sufficient class to construct 1 task'''
 
                             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
-                                                 pool.current_classes()]
+                                                 val_pool.current_classes()]
                             n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
                                                                        use_max_shot=True)
 
