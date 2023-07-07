@@ -1308,13 +1308,14 @@ def to_torch(sample, grad_ones, device_list=None):
     return sample_dict
 
 
-def available_setting(num_imgs_clusters, task_type, use_max_shot=False):
+def available_setting(num_imgs_clusters, task_type, min_available_clusters=1, use_max_shot=False):
     """Check whether pool has enough samples for specific task_type and return a valid setting.
     :param num_imgs_clusters: list of Numpy array with shape [num_clusters * [num_classes]]
                               indicating number of images for specific class in specific clusters.
     :param task_type: `standard`: vary-way-vary-shot-ten-query
                       `1shot`: five-way-one-shot-ten-query
                       `5shot`: vary-way-five-shot-ten-query
+    :param min_available_clusters: minimum number of available clusters to apply that setting.
     :param use_max_shot: if True, return max_shot rather than random shot
     :return a valid setting.
     """
@@ -1322,20 +1323,26 @@ def available_setting(num_imgs_clusters, task_type, use_max_shot=False):
 
     min_shot = 5 if task_type == '5shot' else 1
     min_way = 5
-    max_way = 5 if task_type == '1shot' else min(
-        [len(num_images[num_images >= min_shot + n_query]) for num_images in num_imgs_clusters])
+    max_way = sorted([len(num_images[num_images >= min_shot + n_query]) for num_images in num_imgs_clusters]
+                     )[::-1][min_available_clusters - 1]
 
     if max_way < min_way:
         return -1, -1, -1   # do not satisfy the minimum requirement.
 
-    n_way = np.random.randint(min_way, max_way + 1)
+    n_way = 5 if task_type == '1shot' else np.random.randint(min_way, max_way + 1)
 
     # shot depends on chosen n_way
-    max_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else min(
-        [sorted(num_images[num_images >= min_shot + n_query], reverse=True)[n_way - 1] - n_query
-         for num_images in num_imgs_clusters])
+    available_shots = []
+    for num_images in num_imgs_clusters:
+        shots = sorted(num_images[num_images >= min_shot + n_query])[::-1][:n_way]
+        available_shots.append(0 if len(shots) == 0 else shots[-1] - n_query)
+    max_shot = np.min(sorted(available_shots)[::-1][:min_available_clusters])
 
-    n_shot = max_shot if use_max_shot else np.random.randint(min_shot, max_shot + 1)
+    if max_shot < min_shot:
+        return -1, -1, -1   # do not satisfy the minimum requirement.
+
+    n_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else max_shot if (
+        use_max_shot) else np.random.randint(min_shot, max_shot + 1)
 
     return n_way, n_shot, n_query
 

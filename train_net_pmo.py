@@ -272,7 +272,8 @@ def train():
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
-                    n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'])
+                    n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'],
+                                                               min_available_clusters=args['train.n_obj'])
                     if n_way == -1:         # not enough samples
                         print(f"==>> pool has not enough samples. skip MO training")
                         break
@@ -441,12 +442,14 @@ def train():
                                           np.mean(epoch_acc[f'task/{dataset_name}']), i+1)
                         average_loss.append(epoch_loss[f'task/{dataset_name}'])
                         average_accuracy.append(epoch_acc[f'task/{dataset_name}'])
-                average_loss = np.mean(np.concatenate(average_loss))
-                average_accuracy = np.mean(np.concatenate(average_accuracy))
-                writer.add_scalar(f"train_loss/task/average", average_loss, i+1)
-                writer.add_scalar(f"train_accuracy/task/average", average_accuracy, i+1)
-                print(f"==>> task: loss {average_loss:.3f}, "
-                      f"accuracy {average_accuracy:.3f}.")
+
+                if len(average_loss) > 0:      # did task train process
+                    average_loss = np.mean(np.concatenate(average_loss))
+                    average_accuracy = np.mean(np.concatenate(average_accuracy))
+                    writer.add_scalar(f"train_loss/task/average", average_loss, i+1)
+                    writer.add_scalar(f"train_accuracy/task/average", average_accuracy, i+1)
+                    print(f"==>> task: loss {average_loss:.3f}, "
+                          f"accuracy {average_accuracy:.3f}.")
 
                 # '''log task_rec'''
                 # writer.add_scalar(f"loss/train/task_rec",
@@ -592,6 +595,8 @@ def train():
                             _, selection_info = pmo.selector(
                                 pmo.embed(images), gumbel=False)  # [bs, n_clusters]
                             similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                            # if similarities.shape[0] == 1 and images.shape[0] != 1:    # repeat to match num of samples
+                            #     similarities = np.concatenate(([similarities for _ in range(images.shape[0])]))
                             cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
 
                             val_pool.put_batch(
@@ -603,6 +608,7 @@ def train():
                             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
                                                  val_pool.current_classes()]
                             n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
+                                                                       min_available_clusters=1,
                                                                        use_max_shot=True)
 
                             if n_way != -1:
