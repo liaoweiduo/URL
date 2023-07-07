@@ -27,73 +27,73 @@ from config import args, BATCHSIZES, LOSSWEIGHTS, KDFLOSSWEIGHTS, KDPLOSSWEIGHTS
 
 
 def train():
-    # initialize datasets and loaders
-    trainsets, valsets, testsets = args['data.train'], args['data.val'], args['data.test']
-
-    train_loaders = []
-    num_train_classes = dict()
-    kd_weight_annealing = dict()
-    for t_indx, trainset in enumerate(trainsets):
-        train_loaders.append(MetaDatasetBatchReader('train', [trainset], valsets, testsets,
-                                          batch_size=BATCHSIZES[trainset]))
-        num_train_classes[trainset] = train_loaders[t_indx].num_classes('train')
-        # setting up knowledge distillation losses weights annealing
-        kd_weight_annealing[trainset] = WeightAnnealing(T=int(args['train.cosine_anneal_freq'] * KDANNEALING[trainset]))
-    val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets)
-
-    # initialize model and optimizer
-    model = get_model(list(num_train_classes.values()), args)
-    model_name_temp = args['model.name']
-    # KL-divergence loss
-    criterion_div = DistillKL(T=4)
-    # get a MTL model initialized by ImageNet pretrained model and deactivate the pretrained flag
-    args['model.pretrained']=False
-    optimizer = get_optimizer(model, args, params=model.get_parameters())
-    # adaptors for aligning features between MDL and SDL models
-    adaptors = adaptor(num_datasets=len(trainsets), dim_in=512, opt=args['adaptor.opt']).to(device)
-    optimizer_adaptor = torch.optim.Adam(adaptors.parameters(), lr=0.1, weight_decay=5e-4)
-
-    # loading single domain learning networks
-    extractor_domains = trainsets
-    dataset_models = DATASET_MODELS_DICT[args['model.backbone']]
-    embed_many = get_domain_extractors(extractor_domains, dataset_models, args, num_train_classes)
-
-    # restoring the last checkpoint
-    args['model.name'] = model_name_temp
-    checkpointer = CheckPointer(args, model, optimizer=optimizer)
-    if os.path.isfile(checkpointer.out_last_ckpt) and args['train.resume']:
-        start_iter, best_val_loss, best_val_acc =\
-            checkpointer.restore_out_model(ckpt='last')
-    else:
-        print('No checkpoint restoration')
-        best_val_loss = 999999999
-        best_val_acc = start_iter = 0
-
-    # define learning rate policy
-    if args['train.lr_policy'] == "step":
-        lr_manager = UniformStepLR(optimizer, args, start_iter)
-        lr_manager_ad = UniformStepLR(optimizer_adaptor, args, start_iter)
-    elif "exp_decay" in args['train.lr_policy']:
-        lr_manager = ExpDecayLR(optimizer, args, start_iter)
-        lr_manager_ad = ExpDecayLR(optimizer_adaptor, args, start_iter)
-    elif "cosine" in args['train.lr_policy']:
-        lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
-        lr_manager_ad = CosineAnnealRestartLR(optimizer_adaptor, args, start_iter)
-
-    # defining the summary writer
-    writer = SummaryWriter(checkpointer.out_path)
-
-    # Training loop
-    max_iter = args['train.max_iter']
-    epoch_loss = {name: [] for name in trainsets}
-    epoch_kd_f_loss = {name: [] for name in trainsets}
-    epoch_kd_p_loss = {name: [] for name in trainsets}
-    epoch_acc = {name: [] for name in trainsets}
-    epoch_val_loss = {name: [] for name in valsets}
-    epoch_val_acc = {name: [] for name in valsets}
     config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
+        # initialize datasets and loaders
+        trainsets, valsets, testsets = args['data.train'], args['data.val'], args['data.test']
+
+        train_loaders = []
+        num_train_classes = dict()
+        kd_weight_annealing = dict()
+        for t_indx, trainset in enumerate(trainsets):
+            train_loaders.append(MetaDatasetBatchReader('train', [trainset], valsets, testsets,
+                                              batch_size=BATCHSIZES[trainset]))
+            num_train_classes[trainset] = train_loaders[t_indx].num_classes('train')
+            # setting up knowledge distillation losses weights annealing
+            kd_weight_annealing[trainset] = WeightAnnealing(T=int(args['train.cosine_anneal_freq'] * KDANNEALING[trainset]))
+        val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets)
+
+        # initialize model and optimizer
+        model = get_model(list(num_train_classes.values()), args)
+        model_name_temp = args['model.name']
+        # KL-divergence loss
+        criterion_div = DistillKL(T=4)
+        # get a MTL model initialized by ImageNet pretrained model and deactivate the pretrained flag
+        args['model.pretrained']=False
+        optimizer = get_optimizer(model, args, params=model.get_parameters())
+        # adaptors for aligning features between MDL and SDL models
+        adaptors = adaptor(num_datasets=len(trainsets), dim_in=512, opt=args['adaptor.opt']).to(device)
+        optimizer_adaptor = torch.optim.Adam(adaptors.parameters(), lr=0.1, weight_decay=5e-4)
+
+        # loading single domain learning networks
+        extractor_domains = trainsets
+        dataset_models = DATASET_MODELS_DICT[args['model.backbone']]
+        embed_many = get_domain_extractors(extractor_domains, dataset_models, args, num_train_classes)
+
+        # restoring the last checkpoint
+        args['model.name'] = model_name_temp
+        checkpointer = CheckPointer(args, model, optimizer=optimizer)
+        if os.path.isfile(checkpointer.out_last_ckpt) and args['train.resume']:
+            start_iter, best_val_loss, best_val_acc =\
+                checkpointer.restore_out_model(ckpt='last')
+        else:
+            print('No checkpoint restoration')
+            best_val_loss = 999999999
+            best_val_acc = start_iter = 0
+
+        # define learning rate policy
+        if args['train.lr_policy'] == "step":
+            lr_manager = UniformStepLR(optimizer, args, start_iter)
+            lr_manager_ad = UniformStepLR(optimizer_adaptor, args, start_iter)
+        elif "exp_decay" in args['train.lr_policy']:
+            lr_manager = ExpDecayLR(optimizer, args, start_iter)
+            lr_manager_ad = ExpDecayLR(optimizer_adaptor, args, start_iter)
+        elif "cosine" in args['train.lr_policy']:
+            lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
+            lr_manager_ad = CosineAnnealRestartLR(optimizer_adaptor, args, start_iter)
+
+        # defining the summary writer
+        writer = SummaryWriter(checkpointer.out_path)
+
+        # Training loop
+        max_iter = args['train.max_iter']
+        epoch_loss = {name: [] for name in trainsets}
+        epoch_kd_f_loss = {name: [] for name in trainsets}
+        epoch_kd_p_loss = {name: [] for name in trainsets}
+        epoch_acc = {name: [] for name in trainsets}
+        epoch_val_loss = {name: [] for name in valsets}
+        epoch_val_acc = {name: [] for name in valsets}
         for i in tqdm(range(max_iter)):
             if i < start_iter:
                 continue
