@@ -279,10 +279,6 @@ def train():
                     else:
                         available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
 
-                        assert len(available_cluster_idxs) >= args['train.n_obj'], (
-                            f"pool: {num_imgs_clusters}, way {n_way} shot {n_shot}, avail: {available_cluster_idxs}"
-                        )
-
                         selected_cluster_idxs = sorted(np.random.choice(
                             available_cluster_idxs, args['train.n_obj'], replace=False))
                         # which is also devices idx
@@ -560,7 +556,8 @@ def train():
                             domain = v_indx
 
                             [enriched_context_features, enriched_target_features], _ = pmo(
-                                [context_images, target_images], gumbel=False)
+                                [context_images, target_images], torch.cat([context_images, target_images]),
+                                gumbel=False)
                             # enriched_context_features, _ = pmo(context_images, gumbel=False)
                             # enriched_target_features, _ = pmo(target_images, gumbel=False)
 

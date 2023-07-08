@@ -1319,30 +1319,41 @@ def available_setting(num_imgs_clusters, task_type, min_available_clusters=1, us
     :param use_max_shot: if True, return max_shot rather than random shot
     :return a valid setting.
     """
-    n_query = 10
+    while True:
+        n_query = 10
 
-    min_shot = 5 if task_type == '5shot' else 1
-    min_way = 5
-    max_way = sorted([len(num_images[num_images >= min_shot + n_query]) for num_images in num_imgs_clusters]
-                     )[::-1][min_available_clusters - 1]
+        min_shot = 5 if task_type == '5shot' else 1
+        min_way = 5
+        max_way = sorted([len(num_images[num_images >= min_shot + n_query]) for num_images in num_imgs_clusters]
+                         )[::-1][min_available_clusters - 1]
 
-    if max_way < min_way:
-        return -1, -1, -1   # do not satisfy the minimum requirement.
+        if max_way < min_way:
+            return -1, -1, -1   # do not satisfy the minimum requirement.
 
-    n_way = 5 if task_type == '1shot' else np.random.randint(min_way, max_way + 1)
+        n_way = 5 if task_type == '1shot' else np.random.randint(min_way, max_way + 1)
 
-    # shot depends on chosen n_way
-    available_shots = []
-    for num_images in num_imgs_clusters:
-        shots = sorted(num_images[num_images >= min_shot + n_query])[::-1][:n_way]
-        available_shots.append(0 if len(shots) == 0 else shots[-1] - n_query)
-    max_shot = np.min(sorted(available_shots)[::-1][:min_available_clusters])
+        # shot depends on chosen n_way
+        available_shots = []
+        for num_images in num_imgs_clusters:
+            shots = sorted(num_images[num_images >= min_shot + n_query])[::-1][:n_way]
+            available_shots.append(0 if len(shots) == 0 else shots[-1] - n_query)
+        max_shot = np.min(sorted(available_shots)[::-1][:min_available_clusters])
 
-    if max_shot < min_shot:
-        return -1, -1, -1   # do not satisfy the minimum requirement.
+        if max_shot < min_shot:
+            return -1, -1, -1   # do not satisfy the minimum requirement.
 
-    n_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else max_shot if (
-        use_max_shot) else np.random.randint(min_shot, max_shot + 1)
+        n_shot = 1 if task_type == '1shot' else 5 if task_type == '5shot' else max_shot if (
+            use_max_shot) else np.random.randint(min_shot, max_shot + 1)
+
+        available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
+
+        if len(available_cluster_idxs) < args['train.n_obj']:
+            print(f"available_setting error with information: \n"
+                  f"way [{min_way}, {max_way}]:{n_way} shot [{min_shot}, {max_shot}]:{n_shot}, \n"
+                  f"pool: {num_imgs_clusters}, \n"
+                  f"avail: {available_cluster_idxs}")
+        else:
+            break
 
     return n_way, n_shot, n_query
 
