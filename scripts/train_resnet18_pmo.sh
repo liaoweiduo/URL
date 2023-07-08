@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-moe-sele_sig-dot-cosann-lr5e-5"
+OUTNAME="pmo-onpure-lr5e-5"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 8 --model.backbone resnet18_moe \
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --train.max_iter=5000 --train.summary_freq=250 \
     --train.type=standard --train.freeze_backbone --train.loss_type=task+pure+hv+ce \
     --train.n_mo=5 --train.hv_coefficient=0.001 --train.mo_freq=5 \
-    --train.cosine_anneal_freq=100 --train.eval_freq=500 --train.eval_size 50 # \
+    --train.cosine_anneal_freq=100 --train.eval_freq=500 --train.eval_size 300 # \
 #    1> ../URL-experiments/out/$OUTNAME.out  # 2> ../URL-experiments/out/pmo.err
 #    2>&1
 
