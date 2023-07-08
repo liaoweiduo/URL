@@ -279,6 +279,10 @@ def train():
                     else:
                         available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
 
+                        assert len(available_cluster_idxs) >= args['train.n_obj'], (
+                            f"pool: {num_imgs_clusters}, way {n_way} shot {n_shot}, avail: {available_cluster_idxs}"
+                        )
+
                         selected_cluster_idxs = sorted(np.random.choice(
                             available_cluster_idxs, args['train.n_obj'], replace=False))
                         # which is also devices idx
