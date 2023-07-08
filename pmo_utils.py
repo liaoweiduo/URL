@@ -1365,5 +1365,21 @@ def check_available(num_imgs_clusters, n_way, n_shot, n_query):
     return available_cluster_idxs
 
 
+def task_to_device(task, d='numpy'):
+    new_task = {}
+    if d == 'numpy':
+        new_task['context_images'] = task['context_images'].cpu().numpy()
+        new_task['context_labels'] = task['context_labels'].cpu().numpy()
+        new_task['target_images'] = task['target_images'].cpu().numpy()
+        new_task['target_labels'] = task['target_labels'].cpu().numpy()
+    else:
+        new_task['context_images'] = torch.from_numpy(task['context_images']).to(d)
+        new_task['context_labels'] = torch.from_numpy(task['context_labels']).long().to(d)
+        new_task['target_images'] = torch.from_numpy(task['target_images']).to(d)
+        new_task['target_labels'] = torch.from_numpy(task['target_labels']).long().to(d)
+
+    return new_task
+
+
 if __name__ == '__main__':
     pass

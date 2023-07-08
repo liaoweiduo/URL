@@ -27,7 +27,7 @@ from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
 from pmo_utils import (Pool, Mixer,
-                       cal_hv_loss, cal_hv, draw_objs, draw_heatmap, available_setting, check_available)
+                       cal_hv_loss, cal_hv, draw_objs, draw_heatmap, available_setting, check_available, task_to_device)
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -187,8 +187,7 @@ def train():
                 # domain = t_indx
 
                 [enriched_context_features, enriched_target_features], _ = pmo(
-                    [context_images, target_images], gumbel=True)
-                # enriched_target_features, _ = pmo(target_images, gumbel=True)
+                    [context_images, target_images], torch.cat([context_images, target_images]), gumbel=True)
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -285,11 +284,11 @@ def train():
                         # which is also devices idx
                         # device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
 
+                        torch_tasks = []
                         '''sample pure tasks from clusters in selected_cluster_idxs'''
-                        numpy_tasks = []
                         for cluster_idx in selected_cluster_idxs:
-                            numpy_pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query)
-                            numpy_tasks.append(numpy_pure_task)
+                            pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+                            torch_tasks.append(pure_task)
 
                         '''sample mix tasks by mixer'''
                         for mix_id in range(args['train.n_mix']):
@@ -298,90 +297,72 @@ def train():
                                            for idx in selected_cluster_idxs],
                                 mix_id=mix_id
                             )
-                            numpy_tasks.append(numpy_mix_task)
+                            torch_tasks.append(task_to_device(numpy_mix_task, device))
 
-                        '''obtain ncc loss multi-obj matrix and put to last device'''
-                        ncc_losses_multi_obj = []    # [4, 2]
-                        for task_idx, task in enumerate(numpy_tasks):
+                        '''obtain ncc loss multi-obj matrix'''
+                        ncc_losses_multi_obj = []  # [4, 2]
 
-                            '''to device'''
-                            context_images = torch.from_numpy(task['context_images']).to(device)
-                            context_labels = torch.from_numpy(task['context_labels']).long().to(device)
-                            target_images = torch.from_numpy(task['target_images']).to(device)
-                            target_labels = torch.from_numpy(task['target_labels']).long().to(device)
-
-                            if 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']:
-                                features_selection_pairs = [
-                                    pmo([context_images, target_images], gumbel=True, selected_idx=selected_idx)
-                                    for selected_idx in selected_cluster_idxs]      # [obj_id][fea or sel]
-                                enriched_context_features_list = [t[0][0] for t in features_selection_pairs]
-                                enriched_target_features_list = [t[0][1] for t in features_selection_pairs]
-
-                                selection_list = [t[1] for t in features_selection_pairs]
-
+                        for task_idx, task in enumerate(torch_tasks):
+                            '''obtain task-specific selection'''
+                            if 'hv' in args['train.loss_type'] or (
+                                    task_idx < len(selected_cluster_idxs) and (
+                                    'pure' in args['train.loss_type'] or 'ce' in args['train.loss_type'])):
+                                selection, selection_info = pmo.selector(torch.mean(
+                                    pmo.embed(torch.cat([task['context_images'], task['target_images']])),
+                                    dim=0, keepdim=True
+                                ), gumbel=True)
                             else:
                                 with torch.no_grad():
-                                    features_selection_pairs = [
-                                        pmo([context_images, target_images], gumbel=True, selected_idx=selected_idx)
-                                        for selected_idx in selected_cluster_idxs]      # [obj_id][fea or sel]
-                                    enriched_context_features_list = [t[0][0] for t in features_selection_pairs]
-                                    enriched_target_features_list = [t[0][1] for t in features_selection_pairs]
+                                    selection, selection_info = pmo.selector(torch.mean(
+                                        pmo.embed(torch.cat([task['context_images'], task['target_images']])),
+                                        dim=0, keepdim=True
+                                    ), gumbel=True)
 
-                                    selection_list = [t[1] for t in features_selection_pairs]
+                            '''selection CE loss'''
+                            if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
+                                fn = torch.nn.CrossEntropyLoss()
+                                y_soft = selection_info['y_soft']   # [1, 8]
+                                select_idx = selected_cluster_idxs[task_idx]
+                                labels = torch.ones(
+                                    (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                                selection_ce_loss = fn(y_soft, labels)
 
-                                    # features_selection_pairs = [
-                                    #     pmo(context_images, gumbel=True, selected_idx=selected_idx)
-                                    #     for selected_idx in selected_cluster_idxs]
-                                    # enriched_context_features_list = [t[0] for t in features_selection_pairs]
-                                    # context_selection_list = [t[1] for t in features_selection_pairs]
-                                    # features_selection_pairs = [
-                                    #     pmo(target_images, gumbel=True, selected_idx=selected_idx)
-                                    #     for selected_idx in selected_cluster_idxs]
-                                    # enriched_target_features_list = [t[0] for t in features_selection_pairs]
-                                    # target_selection_list = [t[1] for t in features_selection_pairs]
+                                epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
 
-                            losses = []     # [2,]
-                            for obj_idx in range(len(selected_cluster_idxs)):       # obj_idx is the selected model
+                                # '''ce loss * 5'''
+                                # selection_ce_loss = selection_ce_loss * 10
+
+                                retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
+                                selection_ce_loss.backward(retain_graph=retain_graph)
+
+                            '''forward 2 pure tasks as 2 objs'''
+                            losses = []  # [2,]
+                            for obj_idx in range(len(selected_cluster_idxs)):
+                                context_images = torch_tasks[obj_idx]['context_images']
+                                target_images = torch_tasks[obj_idx]['target_images']
+                                context_labels = torch_tasks[obj_idx]['context_labels']
+                                target_labels = torch_tasks[obj_idx]['target_labels']
+                                if 'hv' in args['train.loss_type'] or (
+                                        'pure' in args['train.loss_type'] and task_idx == obj_idx):
+                                    context_features = pmo.embed(context_images, selection=selection)
+                                    target_features = pmo.embed(target_images, selection=selection)
+                                else:
+                                    with torch.no_grad():
+                                        context_features = pmo.embed(context_images, selection=selection)
+                                        target_features = pmo.embed(target_images, selection=selection)
+
                                 loss, stats_dict, _ = prototype_loss(
-                                    enriched_context_features_list[obj_idx], context_labels,
-                                    enriched_target_features_list[obj_idx], target_labels,
+                                    context_features, context_labels, target_features, target_labels,
                                     distance=args['test.distance'])
-
-                                # loss for all tasks on 1 model on 1 device. to last device
                                 losses.append(loss)
 
                                 epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])  # [2, 4]
                                 epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
-                                if task_idx < len(selected_cluster_idxs):       # [2, 2]
-                                    if task_idx == obj_idx and 'pure' in args['train.loss_type']:
+                                if task_idx == obj_idx and 'pure' in args['train.loss_type']:
 
-                                        '''selection CE loss'''
-                                        fn = torch.nn.CrossEntropyLoss()
-                                        '''
-                                        since gumbel, selection_info can be diff, but not related to selected_idx
-                                        we can both utilize these two random sampling
-                                        '''
-                                        y_soft = torch.cat([
-                                            selection_list[obj]['y_soft'] for obj in range(len(selected_cluster_idxs))])
-                                        # [2, 8]
-                                        # y_soft = torch.cat([
-                                        #     context_selection_list[obj_idx]['y_soft'],
-                                        #     target_selection_list[obj_idx]['y_soft']])
-                                        select_idx = selected_cluster_idxs[obj_idx]
-                                        labels = torch.ones(
-                                            (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                                        selection_ce_loss = fn(y_soft, labels)
-
-                                        epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
-
-                                        # '''ce loss * 5'''
-                                        # selection_ce_loss = selection_ce_loss * 10
-
-                                        selection_ce_loss.backward(retain_graph=True)
-
-                                        # backward pure loss on the corresponding model and cluster.
-                                        retain_graph = 'hv' in args['train.loss_type']
-                                        loss.backward(retain_graph=retain_graph)
+                                    # backward pure loss on the corresponding model and cluster.
+                                    retain_graph = 'hv' in args['train.loss_type']
+                                    loss.backward(retain_graph=retain_graph)
 
                             ncc_losses_multi_obj.append(torch.stack(losses))
                         ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
@@ -395,13 +376,13 @@ def train():
                         '''calculate HV value for mutli-obj loss and acc'''
                         obj = np.array([[
                             epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                            for task_idx in range(len(numpy_tasks))
+                            for task_idx in range(len(torch_tasks))
                         ] for obj_idx in range(len(selected_cluster_idxs))])
                         hv = cal_hv(obj, ref, target='loss')
                         epoch_loss['hv'].append(hv)
                         obj = np.array([[
                             epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                            for task_idx in range(len(numpy_tasks))
+                            for task_idx in range(len(torch_tasks))
                         ] for obj_idx in range(len(selected_cluster_idxs))])
                         hv = cal_hv(obj, 0, target='acc')
                         epoch_acc['hv'].append(hv)
@@ -535,8 +516,9 @@ def train():
 
                 if len(epoch_loss['hv/loss']) > 0:      # did mo process
                     '''write pure and mixed tasks'''
-                    for task_id, task in enumerate(numpy_tasks):
-                        imgs = np.concatenate([task['context_images'], task['target_images']])
+                    for task_id, task in enumerate(torch_tasks):
+                        imgs = np.concatenate([task['context_images'].cpu().numpy(),
+                                               task['target_images'].cpu().numpy()])
                         writer.add_images(f"train_image/task-{pop_labels[task_id]}", imgs, i+1)
 
                 if len(epoch_loss[f'pure/selection_ce_loss']) > 0:      # did selection loss on pure tasks
@@ -623,7 +605,8 @@ def train():
                                     )
 
                                     [enriched_context_features, enriched_target_features], _ = pmo(
-                                        [task['context_images'], task['target_images']], gumbel=False)
+                                        [task['context_images'], task['target_images']],
+                                        torch.cat([context_images, target_images]), gumbel=False)
 
                                     # enriched_context_features, _ = pmo(task['context_images'], gumbel=False)
                                     # enriched_target_features, _ = pmo(task['target_images'], gumbel=False)
