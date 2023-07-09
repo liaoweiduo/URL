@@ -1336,7 +1336,7 @@ def available_setting(num_imgs_clusters, task_type, min_available_clusters=1, us
         available_shots = []
         for num_images in num_imgs_clusters:
             shots = sorted(num_images[num_images >= min_shot + n_query])[::-1][:n_way]
-            available_shots.append(0 if len(shots) == 0 else shots[-1] - n_query)
+            available_shots.append(0 if len(shots) < n_way else (shots[-1] - n_query))
         max_shot = np.min(sorted(available_shots)[::-1][:min_available_clusters])
 
         if max_shot < min_shot:
