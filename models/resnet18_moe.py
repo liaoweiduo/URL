@@ -302,10 +302,11 @@ class Selector(nn.Module):
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
         # self.ones = torch.ones(self.prototype_shape)
 
-    def forward(self, inputs, gumbel=True):
+    def forward(self, inputs, gumbel=True, hard=True):
         """
         :param inputs: [batch_size, fea_embed], [bs,512]
         :param gumbel: whether to use gumbel softmax for selection
+        :param hard: whether to use hard selection.
         :return selection: hard selection [bs, n_class],
         """
         bs = inputs.shape[0]
@@ -326,10 +327,14 @@ class Selector(nn.Module):
             y_soft = F.softmax(dist, dim=dim)
         normal_soft = F.softmax(dist, dim=dim)
 
-        # hard trick
-        index = y_soft.max(dim, keepdim=True)[1]
-        y_hard = torch.zeros_like(dist, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
-        selection = y_hard - y_soft.detach() + y_soft
+        if hard:
+            # hard trick
+            index = y_soft.max(dim, keepdim=True)[1]
+            y_hard = torch.zeros_like(dist, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+            selection = y_hard - y_soft.detach() + y_soft
+        else:
+            selection = y_soft
+
         return selection, {
             'y_soft': y_soft,
             'normal_soft': normal_soft,
