@@ -1347,7 +1347,7 @@ def available_setting(num_imgs_clusters, task_type, min_available_clusters=1, us
 
         available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
 
-        if len(available_cluster_idxs) < args['train.n_obj']:
+        if len(available_cluster_idxs) < min_available_clusters:
             print(f"available_setting error with information: \n"
                   f"way [{min_way}, {max_way}]:{n_way} shot [{min_shot}, {max_shot}]:{n_shot}, \n"
                   f"pool: {num_imgs_clusters}, \n"
