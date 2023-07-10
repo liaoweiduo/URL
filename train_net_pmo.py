@@ -310,13 +310,13 @@ def train():
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
-                                ), gumbel=False, hard=False)
+                                ), gumbel=False, hard=True)
                             else:
                                 with torch.no_grad():
                                     selection, selection_info = pmo.selector(torch.mean(
                                         pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                         dim=0, keepdim=True
-                                    ), gumbel=False, hard=False)
+                                    ), gumbel=False, hard=True)
 
                             '''selection CE loss'''
                             if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
@@ -402,7 +402,7 @@ def train():
             update_step(i)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
-            if (i + 1) % args['train.summary_freq'] == 0 or i == 0:        # 5; 2 for DEBUG
+            if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
                 epoch_train_history = dict()

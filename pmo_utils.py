@@ -1319,7 +1319,8 @@ def available_setting(num_imgs_clusters, task_type, min_available_clusters=1, us
     :param use_max_shot: if True, return max_shot rather than random shot
     :return a valid setting.
     """
-    while True:
+    n_way, n_shot, n_query = -1, -1, -1
+    for _ in range(10):     # try 10 times, if still not available setting, return -1
         n_query = 10
 
         min_shot = 5 if task_type == '5shot' else 1
