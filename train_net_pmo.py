@@ -187,7 +187,8 @@ def train():
                 # domain = t_indx
 
                 [enriched_context_features, enriched_target_features], _ = pmo(
-                    [context_images, target_images], torch.cat([context_images, target_images]), gumbel=True)
+                    [context_images, target_images], torch.cat([context_images, target_images]),
+                    gumbel=True, hard=False)
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -310,13 +311,13 @@ def train():
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
-                                ), gumbel=False, hard=True)
+                                ), gumbel=True, hard=False)
                             else:
                                 with torch.no_grad():
                                     selection, selection_info = pmo.selector(torch.mean(
                                         pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                         dim=0, keepdim=True
-                                    ), gumbel=False, hard=True)
+                                    ), gumbel=True, hard=False)
 
                             '''selection CE loss'''
                             if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
@@ -557,7 +558,7 @@ def train():
 
                             [enriched_context_features, enriched_target_features], _ = pmo(
                                 [context_images, target_images], torch.cat([context_images, target_images]),
-                                gumbel=False)
+                                gumbel=False, hard=False)
                             # enriched_context_features, _ = pmo(context_images, gumbel=False)
                             # enriched_target_features, _ = pmo(target_images, gumbel=False)
 
@@ -607,7 +608,7 @@ def train():
 
                                     [enriched_context_features, enriched_target_features], _ = pmo(
                                         [task['context_images'], task['target_images']],
-                                        torch.cat([context_images, target_images]), gumbel=False)
+                                        torch.cat([context_images, target_images]), gumbel=False, hard=False)
 
                                     # enriched_context_features, _ = pmo(task['context_images'], gumbel=False)
                                     # enriched_target_features, _ = pmo(task['target_images'], gumbel=False)

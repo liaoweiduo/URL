@@ -162,13 +162,13 @@ class ResNet(nn.Module):
         # return nn.Sequential(*layers)
         return nn.ModuleList(layers)       # forward need head_idx, can not use Sequential
 
-    def forward(self, x_list, task_x, gumbel=True, selected_idx=None):
+    def forward(self, x_list, task_x, gumbel=True, hard=True, selected_idx=None):
         """task_x contains task image samples for task-conditioning."""
         if isinstance(x_list, torch.Tensor):
             x_list = [x_list]
         features = torch.mean(self.embed(task_x), dim=0, keepdim=True)        # [1, 512]
         # features = self.embed(x)        # forward backbone without film
-        selection, selection_info = self.selector(features, gumbel=gumbel)       # [1, n_clusters]
+        selection, selection_info = self.selector(features, gumbel=gumbel, hard=hard)       # [1, n_clusters]
 
         if selected_idx is not None:
             '''select specific film head to forward by ``hard trick`` rather than the argmax head'''
