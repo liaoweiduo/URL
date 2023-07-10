@@ -311,13 +311,13 @@ def train():
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
-                                ), gumbel=True, hard=False)
+                                ), gumbel=False, hard=True)
                             else:
                                 with torch.no_grad():
                                     selection, selection_info = pmo.selector(torch.mean(
                                         pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                         dim=0, keepdim=True
-                                    ), gumbel=True, hard=False)
+                                    ), gumbel=False, hard=True)
 
                             '''selection CE loss'''
                             if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
