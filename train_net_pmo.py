@@ -304,6 +304,8 @@ def train():
                         ncc_losses_multi_obj = []  # [4, 2]
 
                         for task_idx, task in enumerate(torch_tasks):
+                            gumbel = True
+                            hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
                             '''obtain task-specific selection'''
                             if 'hv' in args['train.loss_type'] or (
                                     task_idx < len(selected_cluster_idxs) and (
@@ -311,13 +313,13 @@ def train():
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
-                                ), gumbel=False, hard=False)
+                                ), gumbel=gumbel, hard=hard)
                             else:
                                 with torch.no_grad():
                                     selection, selection_info = pmo.selector(torch.mean(
                                         pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                         dim=0, keepdim=True
-                                    ), gumbel=False, hard=False)
+                                    ), gumbel=gumbel, hard=hard)
 
                             '''selection CE loss'''
                             if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
@@ -330,8 +332,8 @@ def train():
 
                                 epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
 
-                                # '''ce loss * 5'''
-                                # selection_ce_loss = selection_ce_loss * 10
+                                '''ce loss to average'''
+                                selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
 
                                 retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
                                 selection_ce_loss.backward(retain_graph=retain_graph)
@@ -360,6 +362,8 @@ def train():
                                 epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])  # [2, 4]
                                 epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
                                 if task_idx == obj_idx and 'pure' in args['train.loss_type']:
+                                    '''pure loss to average'''
+                                    loss = loss / args['train.n_mo'] / args['train.n_obj']
 
                                     # backward pure loss on the corresponding model and cluster.
                                     retain_graph = 'hv' in args['train.loss_type']
@@ -374,6 +378,17 @@ def train():
                         hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
                         epoch_loss['hv/loss'].append(hv_loss.item())
 
+                        if 'hv' in args['train.loss_type']:
+                            '''hv loss to average'''
+                            hv_loss = hv_loss / args['train.n_mo']
+
+                            '''step coefficient from 0 to hv_coefficient (default: 1.0)'''
+                            hv_loss = hv_loss * (args['train.hv_coefficient'] * i / max_iter)
+                            '''since no torch is saved in the pool, do not need to retain_graph'''
+                            # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
+                            # hv_loss.backward(retain_graph=retain_graph)
+                            hv_loss.backward()
+
                         '''calculate HV value for mutli-obj loss and acc'''
                         obj = np.array([[
                             epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
@@ -387,13 +402,6 @@ def train():
                         ] for obj_idx in range(len(selected_cluster_idxs))])
                         hv = cal_hv(obj, 0, target='acc')
                         epoch_acc['hv'].append(hv)
-
-                        if 'hv' in args['train.loss_type']:
-                            hv_loss = hv_loss * args['train.hv_coefficient']
-                            '''since no torch is saved in the pool, do not need to retain_graph'''
-                            # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
-                            # hv_loss.backward(retain_graph=retain_graph)
-                            hv_loss.backward()
 
             # '''try prototypes' grad * 1000'''
             # for k, p in pmo.named_parameters():

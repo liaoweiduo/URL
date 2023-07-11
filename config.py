@@ -111,7 +111,7 @@ parser.add_argument('--train.n_mix', type=int, default=2, metavar='N_MIX',
                     help='number of mixed tasks generated in 1 iter')
 parser.add_argument('--train.n_mix_source', type=int, default=2, metavar='N_MIX_SOURCE',
                     help='number of tasks used to generate 1 mixed task')
-parser.add_argument('--train.ref', type=int, default=2, metavar='REF',
+parser.add_argument('--train.ref', type=int, default=1, metavar='REF',
                     help='absolute reference point localtion for calculate hv.')
 
 # creating a database of features

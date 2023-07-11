@@ -1394,4 +1394,4 @@ def task_to_device(task, d='numpy'):
 
 
 if __name__ == '__main__':
-    pass
+    cal_hv_loss(np.array([[1,0], [0,1]]), 2)
