@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-clst10"
+OUTNAME="pmo-clst10-rand_init_film"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 10 --model.backbone resnet18_moe \
