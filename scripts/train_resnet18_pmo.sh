@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-ab-task-lr1e-2"
+OUTNAME="pmo-ab-task-pure-lr1e-5"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 10 --model.backbone resnet18_moe \
@@ -13,9 +13,9 @@ CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --data.train ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower \
     --data.val ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower mscoco \
     --data.test ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower traffic_sign mscoco mnist cifar10 cifar100 \
-    --train.optimizer=adam --train.learning_rate=1e-2 --train.weight_decay=5e-6 \
+    --train.optimizer=adam --train.learning_rate=1e-5 --train.weight_decay=5e-6 \
     --train.max_iter=500 --train.summary_freq=20 \
-    --train.type=standard --train.freeze_backbone --train.loss_type=task \
+    --train.type=standard --train.freeze_backbone --train.loss_type=task+pure \
     --train.n_mo=1 --train.hv_coefficient=1 --train.mo_freq=20 \
     --train.cosine_anneal_freq=100 --train.eval_freq=1000 --train.eval_size 50 # \
 #    1> ../URL-experiments/out/$OUTNAME.out  # 2> ../URL-experiments/out/pmo.err
