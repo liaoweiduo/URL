@@ -32,7 +32,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical'):
+    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical', buffer_size=200):
         """
         :param capacity: Number of clusters. Typically 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
@@ -50,6 +50,7 @@ class Pool(nn.Module):
         self.clusters: List[List[Dict[str, Any]]] = [[] for _ in range(self.capacity)]
         self.centers = None
         self.buffer = []
+        self.buffer_size = buffer_size
 
         self.cluster_device = device
         self.init(0)
@@ -227,11 +228,15 @@ class Pool(nn.Module):
                 '''need to remove one with smallest similarity: last one to satisfy max_num_classes'''
                 self.clusters[cluster_idx] = self.clusters[cluster_idx][:self.max_num_classes]
 
-    def put_buffer(self, images, info_dict):
+    def put_buffer(self, images, info_dict, maintain_size=True):
         """
         Put samples (batch of torch cpu images) into buffer.
             info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
+        If maintain_size, then check buffer size before put into buffer.
         """
+        if len(self.buffer) < self.buffer_size and maintain_size:     # do not exceed buffer size
+            return
+
         '''unpack'''
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
         similarities = info_dict['similarities']

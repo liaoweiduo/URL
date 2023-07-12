@@ -183,8 +183,8 @@ def train():
                 samples = train_loaders[trainset].get_train_task(session, d=device)
                 context_images, target_images = samples['context_images'], samples['target_images']
                 context_labels, target_labels = samples['context_labels'], samples['target_labels']
-                # context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
-                # domain = t_indx
+                context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
+                domain = t_indx
 
                 [enriched_context_features, enriched_target_features], _ = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
@@ -201,7 +201,15 @@ def train():
                 epoch_acc[f'task/{trainset}'].append(stats_dict['acc'])
                 # ilsvrc_2012 has 2 times larger len than others.
 
-                # del samples, context_images, target_images, task_loss
+                '''samples put to buffer'''
+                images = torch.cat([context_images, target_images]).cpu()
+                gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
+                domain = np.array([domain] * len(gt_labels))
+                similarities = np.array([0] * len(gt_labels))       # no use
+                pool.put_buffer(images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+
+                # todo: need to check how many classes in 1 samples and need a buffer size
+                print(f'num classes in buffer: {len(pool.buffer)}.')
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -210,62 +218,69 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                '''clear buffer and cluster'''
+                '''collect cluster'''
                 current_clusters = pool.clear_clusters()
-                pool.clear_buffer()
 
                 '''re-put samples into buffer'''
                 current_clusters = [cls for clses in current_clusters for cls in clses]       # cat all clusters
+                current_clusters.extend([cls for cls in pool.buffer])
+                pool.clear_buffer()
+
                 if len(current_clusters) > 0:
                     images = torch.from_numpy(np.concatenate([cls['images'] for cls in current_clusters]))
                     gt_labels = np.array([cls['label'][0] for cls in current_clusters for img in cls['images']])
                     domain = np.array([cls['label'][1] for cls in current_clusters for img in cls['images']])
+
+                    # todo: need to check num of images, maybe need to reshape to batch to calculate
+                    print(f'num images in buffer (cal sim): {len(images)}.')
 
                     with torch.no_grad():
                         _, selection_info = pmo.selector(
                             pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
-                    pool.put_buffer(images, {
-                        'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+                    # ignore buffer size and put into buffer
+                    pool.put_buffer(images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
+                                    maintain_size=False)
 
-                '''fill pool from train_loaders'''
-                for t in tqdm(range(args['train.max_sampling_iter_for_pool']), ncols=100):
-                    for t_indx, trainset in enumerate(trainsets):
-                        num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
-                        for _ in range(num_task_per_batch):
-                            samples = train_loaders[trainset].get_train_task(session, d='cpu')
-                            images = torch.cat([samples['context_images'], samples['target_images']])
-                            # re_labels = torch.cat([samples['context_labels'], samples['target_labels']]).numpy()
-                            gt_labels = torch.cat([samples['context_gt'], samples['target_gt']]).numpy()
-                            domain = np.array([t_indx] * len(gt_labels))
-
-                            # put in sequence
-                            # '''obtain selection vec for images'''
-                            # with torch.no_grad():
-                            #     _, selection_info = pmo.selector(
-                            #         pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
-                            #     similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                            #     cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
-                            #     similarities = selection_info['normal_soft'].detach().cpu().numpy()
-                            #     # using gumbel to determine which cluster to put, but similarity use normal softmax
-                            #
-                            # pool.put_batch(
-                            #     images, cluster_idxs, {
-                            #         'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
-
-                            # put to buffer then put to cluster
-                            '''obtain selection vec for images'''
-                            with torch.no_grad():
-                                _, selection_info = pmo.selector(
-                                    pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
-                                similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-                            pool.put_buffer(images, {
-                                'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+                # '''fill pool from train_loaders'''
+                # for t in tqdm(range(args['train.max_sampling_iter_for_pool']), ncols=100):
+                #     for t_indx, trainset in enumerate(trainsets):
+                #         num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
+                #         for _ in range(num_task_per_batch):
+                #             samples = train_loaders[trainset].get_train_task(session, d='cpu')
+                #             images = torch.cat([samples['context_images'], samples['target_images']])
+                #             # re_labels = torch.cat([samples['context_labels'], samples['target_labels']]).numpy()
+                #             gt_labels = torch.cat([samples['context_gt'], samples['target_gt']]).numpy()
+                #             domain = np.array([t_indx] * len(gt_labels))
+                #
+                #             # put in sequence
+                #             # '''obtain selection vec for images'''
+                #             # with torch.no_grad():
+                #             #     _, selection_info = pmo.selector(
+                #             #         pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
+                #             #     similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                #             #     cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
+                #             #     similarities = selection_info['normal_soft'].detach().cpu().numpy()
+                #             #     # using gumbel to determine which cluster to put, but similarity use normal softmax
+                #             #
+                #             # pool.put_batch(
+                #             #     images, cluster_idxs, {
+                #             #         'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+                #
+                #             # put to buffer then put to cluster
+                #             '''obtain selection vec for images'''
+                #             with torch.no_grad():
+                #                 _, selection_info = pmo.selector(
+                #                     pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
+                #                 similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                #
+                #             pool.put_buffer(images, {
+                #                 'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
                 '''buffer -> clusters'''
                 pool.buffer2cluster()
+                pool.clear_buffer()
 
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
 
