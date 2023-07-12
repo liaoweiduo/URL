@@ -234,7 +234,7 @@ class Pool(nn.Module):
             info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
         If maintain_size, then check buffer size before put into buffer.
         """
-        if len(self.buffer) < self.buffer_size and maintain_size:     # do not exceed buffer size
+        if len(self.buffer) >= self.buffer_size and maintain_size:     # do not exceed buffer size
             return
 
         '''unpack'''
