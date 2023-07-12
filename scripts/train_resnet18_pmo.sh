@@ -4,7 +4,7 @@ export META_DATASET_ROOT=../meta-dataset
 export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
-OUTNAME="pmo-try"
+OUTNAME="pmo-ab-task"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 10 --model.backbone resnet18_moe \
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --train.max_iter=500 --train.summary_freq=20 \
     --train.type=standard --train.freeze_backbone --train.loss_type=task \
     --train.n_mo=1 --train.hv_coefficient=1 --train.mo_freq=20 \
-    --train.cosine_anneal_freq=1000 --train.eval_freq=1000 --train.eval_size 50 # \
+    --train.cosine_anneal_freq=100 --train.eval_freq=1000 --train.eval_size 50 # \
 #    1> ../URL-experiments/out/$OUTNAME.out  # 2> ../URL-experiments/out/pmo.err
 #    2>&1
 

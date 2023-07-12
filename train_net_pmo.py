@@ -168,24 +168,35 @@ def train():
             zero_grad()
             model_train()
 
+            '''obtain tasks from train_loaders'''
+            p = np.ones(len(trainsets))
+            if 'ilsvrc_2012' in trainsets:
+                p[trainsets.index('ilsvrc_2012')] = 2.0
+            p = p / sum(p)
+            t_indx = np.random.choice(len(trainsets), p=p)
+            trainset = trainsets[t_indx]
+
+            samples = train_loaders[trainset].get_train_task(session, d=device)
+            context_images, target_images = samples['context_images'], samples['target_images']
+            context_labels, target_labels = samples['context_labels'], samples['target_labels']
+            context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
+            domain = t_indx
+
+            '''samples put to buffer'''
+            images = torch.cat([context_images, target_images]).cpu()
+            gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
+            domain = np.array([domain] * len(gt_labels))
+            similarities = np.array([0] * len(gt_labels))       # no use
+            pool.put_buffer(images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+
+            # need to check how many classes in 1 samples and need a buffer size
+            # about 10 iters can obtain 200 classes
+            # print(f'num classes in buffer: {len(pool.buffer)}.')
+
             '''----------------'''
             '''Task Train Phase'''
             '''----------------'''
             if 'task' in args['train.loss_type']:
-                '''obtain tasks from train_loaders'''
-                p = np.ones(len(trainsets))
-                if 'ilsvrc_2012' in trainsets:
-                    p[trainsets.index('ilsvrc_2012')] = 2.0
-                p = p / sum(p)
-                t_indx = np.random.choice(len(trainsets), p=p)
-                trainset = trainsets[t_indx]
-
-                samples = train_loaders[trainset].get_train_task(session, d=device)
-                context_images, target_images = samples['context_images'], samples['target_images']
-                context_labels, target_labels = samples['context_labels'], samples['target_labels']
-                context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
-                domain = t_indx
-
                 [enriched_context_features, enriched_target_features], _ = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
@@ -200,16 +211,6 @@ def train():
                 epoch_loss[f'task/{trainset}'].append(stats_dict['loss'])
                 epoch_acc[f'task/{trainset}'].append(stats_dict['acc'])
                 # ilsvrc_2012 has 2 times larger len than others.
-
-                '''samples put to buffer'''
-                images = torch.cat([context_images, target_images]).cpu()
-                gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
-                domain = np.array([domain] * len(gt_labels))
-                similarities = np.array([0] * len(gt_labels))       # no use
-                pool.put_buffer(images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
-
-                # todo: need to check how many classes in 1 samples and need a buffer size
-                print(f'num classes in buffer: {len(pool.buffer)}.')
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -231,8 +232,9 @@ def train():
                     gt_labels = np.array([cls['label'][0] for cls in current_clusters for img in cls['images']])
                     domain = np.array([cls['label'][1] for cls in current_clusters for img in cls['images']])
 
-                    # todo: need to check num of images, maybe need to reshape to batch to calculate
-                    print(f'num images in buffer (cal sim): {len(images)}.')
+                    # need to check num of images, maybe need to reshape to batch to calculate
+                    # less than 1w images for 200 classes
+                    # print(f'num images in buffer (cal sim): {len(images)}.')
 
                     with torch.no_grad():
                         _, selection_info = pmo.selector(
