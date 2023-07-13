@@ -77,7 +77,9 @@ def train():
         # pmo model load from url
         pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
 
-        optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_parameters())
+        optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_selector_parameters())    # for selector
+        optimizer_film = torch.optim.Adam(pmo.get_trainable_film_parameters(), lr=args['train.film_learning_rate'],
+                                          weight_decay=5e-4)
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
@@ -86,10 +88,13 @@ def train():
             print('No checkpoint restoration for pmo.')
         if args['train.lr_policy'] == "step":
             lr_manager = UniformStepLR(optimizer, args, start_iter)
+            lr_manager_film = UniformStepLR(optimizer_film, args, start_iter)
         elif "exp_decay" in args['train.lr_policy']:
             lr_manager = ExpDecayLR(optimizer, args, start_iter)
+            lr_manager_film = ExpDecayLR(optimizer_film, args, start_iter)
         elif "cosine" in args['train.lr_policy']:
             lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
+            lr_manager_film = CosineAnnealRestartLR(optimizer_film, args, start_iter)
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
@@ -146,15 +151,18 @@ def train():
 
         def zero_grad():
             optimizer.zero_grad()
+            optimizer_film.zero_grad()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.zero_grad()
 
         def update_step(idx):
             optimizer.step()
+            optimizer_film.step()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.step()
 
             lr_manager.step(idx)
+            lr_manager_film.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.lr_manager.step(idx)
 
@@ -353,7 +361,7 @@ def train():
                                 selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
 
                                 '''ce loss coefficient'''
-                                selection_ce_loss = selection_ce_loss * 1000
+                                # selection_ce_loss = selection_ce_loss * 1000
                                 retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
                                 selection_ce_loss.backward(retain_graph=retain_graph)
 

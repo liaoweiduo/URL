@@ -267,6 +267,14 @@ class ResNet(nn.Module):
         return [v for k, v in self.named_parameters()
                 if v.requires_grad]
 
+    def get_trainable_film_parameters(self):
+        return [v for k, v in self.named_parameters()
+                if v.requires_grad and 'film' in k]
+
+    def get_trainable_selector_parameters(self):
+        return [v for k, v in self.named_parameters()
+                if v.requires_grad and 'selector' in k]
+
 
 def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=False, **kwargs):
     """
