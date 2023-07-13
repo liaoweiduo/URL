@@ -353,7 +353,7 @@ def train():
                                 selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
 
                                 '''ce loss coefficient'''
-                                selection_ce_loss = selection_ce_loss * 2
+                                selection_ce_loss = selection_ce_loss * 0.01
                                 retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
                                 selection_ce_loss.backward(retain_graph=retain_graph)
 
