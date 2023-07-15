@@ -79,7 +79,7 @@ def train():
 
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
         optimizer_selector = torch.optim.Adadelta(pmo.get_trainable_selector_parameters(False),
-                                                  lr=args['selector_learning_rate'])
+                                                  lr=args['train.selector_learning_rate'])
         optimizer_cc = torch.optim.Adadelta(pmo.get_trainable_cluster_center_parameters(),
                                             lr=args['train.cluster_center_learning_rate'])
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
