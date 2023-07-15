@@ -139,7 +139,7 @@ class ResNet(nn.Module):
         self.outplanes = 512
 
         # selector
-        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)     # cosine
+        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='dot', tau=tau)     # cosine
 
         # handle classifier creation
         if num_classes is not None:

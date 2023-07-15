@@ -292,8 +292,34 @@ def train():
                 pool.buffer2cluster()
                 pool.clear_buffer()
 
-                num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
+                '''selection CE loss on all clusters'''
+                if 'ce' in args['train.loss_type']:
+                    numpy_images = pool.current_images()
+                    image_batch = torch.from_numpy(
+                        np.concatenate([np.concatenate(cluster) for cluster in numpy_images if len(cluster) > 0])
+                    ).to(device)
+                    cluster_labels = torch.from_numpy(
+                        np.array([
+                            cluster_idx
+                            for cluster_idx, cluster in enumerate(numpy_images)
+                            for cls in cluster
+                            for _ in range(cls.shape[0])])
+                    ).long().to(device)
+                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                    fn = torch.nn.CrossEntropyLoss()
+                    y_soft = selection_info['y_soft']  # [img_size, 8]
+                    # select_idx = selected_cluster_idxs[task_idx]
+                    # labels = torch.ones(
+                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                    selection_ce_loss = fn(y_soft, cluster_labels)
 
+                    epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
+
+                    '''ce loss coefficient'''
+                    # selection_ce_loss = selection_ce_loss * 1000
+                    selection_ce_loss.backward()
+
+                num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
@@ -329,28 +355,6 @@ def train():
                         ncc_losses_multi_obj = []  # [4, 2]
 
                         for task_idx, task in enumerate(torch_tasks):
-                            '''selection CE loss for pure tasks'''
-                            if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
-                                _, selection_info = pmo.selector(
-                                    pmo.embed(torch.cat([task['context_images'], task['target_images']])),
-                                    gumbel=True)
-                                fn = torch.nn.CrossEntropyLoss()
-                                y_soft = selection_info['y_soft']   # [img_size, 8]
-                                select_idx = selected_cluster_idxs[task_idx]
-                                labels = torch.ones(
-                                    (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                                selection_ce_loss = fn(y_soft, labels)
-
-                                epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
-
-                                '''ce loss to average w.r.t. iter'''
-                                selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
-
-                                '''ce loss coefficient'''
-                                # selection_ce_loss = selection_ce_loss * 1000
-                                retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
-                                selection_ce_loss.backward(retain_graph=retain_graph)
-
                             '''obtain task-specific selection'''
                             gumbel = True
                             hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
@@ -530,7 +534,7 @@ def train():
                     if len(cluster) > 0:
                         sim_in_cluster = np.stack(cluster)  # [num_cls, 8]
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
-                        writer.add_figure(f"train_image/pool-{cluster_id}-sim", figure, i+1)
+                        writer.add_figure(f"train_image/pool-sim-{cluster_id}", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
