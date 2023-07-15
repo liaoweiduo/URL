@@ -77,9 +77,11 @@ def train():
         # pmo model load from url
         pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
 
-        optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_selector_parameters())    # for selector
-        optimizer_film = torch.optim.Adam(pmo.get_trainable_film_parameters(), lr=args['train.film_learning_rate'],
-                                          weight_decay=5e-4)
+        optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
+        optimizer_selector = torch.optim.Adadelta(pmo.get_trainable_selector_parameters(False),
+                                                  lr=args['selector_learning_rate'])
+        optimizer_cc = torch.optim.Adadelta(pmo.get_trainable_cluster_center_parameters(),
+                                            lr=args['train.cluster_center_learning_rate'])
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
@@ -88,13 +90,10 @@ def train():
             print('No checkpoint restoration for pmo.')
         if args['train.lr_policy'] == "step":
             lr_manager = UniformStepLR(optimizer, args, start_iter)
-            lr_manager_film = UniformStepLR(optimizer_film, args, start_iter)
         elif "exp_decay" in args['train.lr_policy']:
             lr_manager = ExpDecayLR(optimizer, args, start_iter)
-            lr_manager_film = ExpDecayLR(optimizer_film, args, start_iter)
         elif "cosine" in args['train.lr_policy']:
             lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
-            lr_manager_film = CosineAnnealRestartLR(optimizer_film, args, start_iter)
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
@@ -151,18 +150,19 @@ def train():
 
         def zero_grad():
             optimizer.zero_grad()
-            optimizer_film.zero_grad()
+            optimizer_selector.zero_grad()
+            optimizer_cc.zero_grad()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.zero_grad()
 
         def update_step(idx):
             optimizer.step()
-            optimizer_film.step()
+            optimizer_selector.step()
+            optimizer_cc.step()
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.step()
 
             lr_manager.step(idx)
-            lr_manager_film.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.lr_manager.step(idx)
 
@@ -329,12 +329,34 @@ def train():
                         ncc_losses_multi_obj = []  # [4, 2]
 
                         for task_idx, task in enumerate(torch_tasks):
+                            '''selection CE loss for pure tasks'''
+                            if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
+                                _, selection_info = pmo.selector(
+                                    pmo.embed(torch.cat([task['context_images'], task['target_images']])),
+                                    gumbel=True)
+                                fn = torch.nn.CrossEntropyLoss()
+                                y_soft = selection_info['y_soft']   # [img_size, 8]
+                                select_idx = selected_cluster_idxs[task_idx]
+                                labels = torch.ones(
+                                    (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                                selection_ce_loss = fn(y_soft, labels)
+
+                                epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
+
+                                '''ce loss to average w.r.t. iter'''
+                                selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
+
+                                '''ce loss coefficient'''
+                                # selection_ce_loss = selection_ce_loss * 1000
+                                retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
+                                selection_ce_loss.backward(retain_graph=retain_graph)
+
+                            '''obtain task-specific selection'''
                             gumbel = True
                             hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
-                            '''obtain task-specific selection'''
                             if 'hv' in args['train.loss_type'] or (
                                     task_idx < len(selected_cluster_idxs) and (
-                                    'pure' in args['train.loss_type'] or 'ce' in args['train.loss_type'])):
+                                    'pure' in args['train.loss_type'])):
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
@@ -345,25 +367,6 @@ def train():
                                         pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                         dim=0, keepdim=True
                                     ), gumbel=gumbel, hard=hard)
-
-                            '''selection CE loss'''
-                            if task_idx < len(selected_cluster_idxs) and 'ce' in args['train.loss_type']:
-                                fn = torch.nn.CrossEntropyLoss()
-                                y_soft = selection_info['y_soft']   # [1, 8]
-                                select_idx = selected_cluster_idxs[task_idx]
-                                labels = torch.ones(
-                                    (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                                selection_ce_loss = fn(y_soft, labels)
-
-                                epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
-
-                                '''ce loss to average'''
-                                selection_ce_loss = selection_ce_loss / args['train.n_mo'] / args['train.n_obj']
-
-                                '''ce loss coefficient'''
-                                # selection_ce_loss = selection_ce_loss * 1000
-                                retain_graph = 'hv' in args['train.loss_type'] or 'pure' in args['train.loss_type']
-                                selection_ce_loss.backward(retain_graph=retain_graph)
 
                             '''forward 2 pure tasks as 2 objs'''
                             losses = []  # [2,]

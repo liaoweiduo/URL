@@ -139,7 +139,7 @@ class ResNet(nn.Module):
         self.outplanes = 512
 
         # selector
-        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='dot', tau=tau)      # cosine
+        self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)     # cosine
 
         # handle classifier creation
         if num_classes is not None:
@@ -271,9 +271,17 @@ class ResNet(nn.Module):
         return [v for k, v in self.named_parameters()
                 if v.requires_grad and 'film' in k]
 
-    def get_trainable_selector_parameters(self):
+    def get_trainable_selector_parameters(self, include_cluster_center=True):
+        if include_cluster_center:
+            return [v for k, v in self.named_parameters()
+                    if v.requires_grad and 'selector' in k]
+        else:
+            return [v for k, v in self.named_parameters()
+                    if v.requires_grad and ('selector' in k and 'prototypes' not in k)]
+
+    def get_trainable_cluster_center_parameters(self):
         return [v for k, v in self.named_parameters()
-                if v.requires_grad and 'selector' in k]
+                if v.requires_grad and 'selector.prototypes' in k]
 
 
 def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=False, **kwargs):
@@ -301,7 +309,7 @@ class Selector(nn.Module):
     """
     Selector tasks feature vector ([bs, 512]) as input.
     """
-    def __init__(self, input_dim=512, rep_dim=64, num_clusters=8, opt='linear', metric='dot', tau=1.0):
+    def __init__(self, input_dim=512, rep_dim=64, num_clusters=8, opt='linear', metric='cosine', tau=1.0):
         super(Selector, self).__init__()
         self.input_dim = input_dim
         self.rep_dim = rep_dim
