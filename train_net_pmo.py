@@ -114,7 +114,7 @@ def train():
         max_iter = args['train.max_iter']
 
         def init_train_log():
-            epoch_loss = {}
+            epoch_loss = {'task/sim': []}
             if 'task' in args['train.loss_type']:
                 epoch_loss.update({f'task/{name}': [] for name in trainsets})
             # epoch_loss['task/rec'] = []
@@ -125,6 +125,8 @@ def train():
                     f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                 } for obj_idx in range(args['train.n_obj'])})
             epoch_loss[f'pure/selection_ce_loss'] = []
+            epoch_loss.update({
+                f'pure/C{cluster_idx}': [] for cluster_idx in range(args['model.num_clusters'])})
 
             epoch_acc = {}
             if 'task' in args['train.loss_type']:
@@ -136,6 +138,9 @@ def train():
                 f'hv/obj{obj_idx}': {
                     f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                 } for obj_idx in range(args['train.n_obj'])})
+            epoch_acc.update({
+                f'pure/C{cluster_idx}': [] for cluster_idx in range(args['model.num_clusters'])})
+
             return epoch_loss, epoch_acc
 
         def model_train():
@@ -205,7 +210,7 @@ def train():
             '''Task Train Phase'''
             '''----------------'''
             if 'task' in args['train.loss_type']:
-                [enriched_context_features, enriched_target_features], _ = pmo(
+                [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
 
@@ -219,6 +224,9 @@ def train():
                 epoch_loss[f'task/{trainset}'].append(stats_dict['loss'])
                 epoch_acc[f'task/{trainset}'].append(stats_dict['acc'])
                 # ilsvrc_2012 has 2 times larger len than others.
+
+                '''log task sim (softmax not gumbel)'''
+                epoch_loss[f'task/sim'].append(selection_info['normal_soft'].detach().cpu().numpy())    # [1,8]
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -313,6 +321,7 @@ def train():
                     #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
                     selection_ce_loss = fn(y_soft, cluster_labels)
 
+                    '''log ce loss'''
                     epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
 
                     '''ce loss coefficient'''
@@ -320,6 +329,35 @@ def train():
                     selection_ce_loss.backward()
 
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
+                '''pure loss on all clusters'''
+                if 'pure' in args['train.loss_type']:
+                    for cluster_idx in range(len(num_imgs_clusters)):
+                        n_way, n_shot, n_query = available_setting([num_imgs_clusters[cluster_idx]],
+                                                                   args['train.type'])
+                        if n_way == -1:
+                            continue    # not enough samples to construct a task
+                        else:
+                            pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+                            context_images, target_images = pure_task['context_images'], pure_task['target_images']
+                            context_labels, target_labels = pure_task['context_labels'], pure_task['target_labels']
+
+                            [enriched_context_features, enriched_target_features], _ = pmo(
+                                [context_images, target_images], torch.cat([context_images, target_images]),
+                                gumbel=True, hard=True)
+
+                            pure_loss, stats_dict, _ = prototype_loss(
+                                enriched_context_features, context_labels,
+                                enriched_target_features, target_labels,
+                                distance=args['test.distance'])
+
+                            '''pure_loss to average'''
+                            pure_loss = pure_loss / len(num_imgs_clusters)
+                            pure_loss.backward()
+
+                            '''log pure loss'''
+                            epoch_loss[f'pure/C{cluster_idx}'].append(stats_dict['loss'])
+                            epoch_acc[f'pure/C{cluster_idx}'].append(stats_dict['acc'])
+
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
@@ -358,9 +396,7 @@ def train():
                             '''obtain task-specific selection'''
                             gumbel = True
                             hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
-                            if 'hv' in args['train.loss_type'] or (
-                                    task_idx < len(selected_cluster_idxs) and (
-                                    'pure' in args['train.loss_type'])):
+                            if 'hv' in args['train.loss_type']:
                                 selection, selection_info = pmo.selector(torch.mean(
                                     pmo.embed(torch.cat([task['context_images'], task['target_images']])),
                                     dim=0, keepdim=True
@@ -379,8 +415,7 @@ def train():
                                 target_images = torch_tasks[obj_idx]['target_images']
                                 context_labels = torch_tasks[obj_idx]['context_labels']
                                 target_labels = torch_tasks[obj_idx]['target_labels']
-                                if 'hv' in args['train.loss_type'] or (
-                                        'pure' in args['train.loss_type'] and task_idx == obj_idx):
+                                if 'hv' in args['train.loss_type']:
                                     context_features = pmo.embed(context_images, selection=selection)
                                     target_features = pmo.embed(target_images, selection=selection)
                                 else:
@@ -395,13 +430,6 @@ def train():
 
                                 epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])  # [2, 4]
                                 epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
-                                if task_idx == obj_idx and 'pure' in args['train.loss_type']:
-                                    '''pure loss to average'''
-                                    loss = loss / args['train.n_mo'] / args['train.n_obj']
-
-                                    # backward pure loss on the corresponding model and cluster.
-                                    retain_graph = 'hv' in args['train.loss_type']
-                                    loss.backward(retain_graph=retain_graph)
 
                             ncc_losses_multi_obj.append(torch.stack(losses))
                         ncc_losses_multi_obj = torch.stack(ncc_losses_multi_obj)   # shape [num_tasks, num_objs], [4, 2]
@@ -443,7 +471,7 @@ def train():
             #         p.grad = p.grad * 1000
 
             update_step(i)
-            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], i+1)
+            writer.add_scalar('train_image/learning_rate', optimizer.param_groups[0]['lr'], i+1)
 
             if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
@@ -524,7 +552,7 @@ def train():
                 images = pool.current_images(single_image=True)
                 for cluster_id, cluster in enumerate(images):
                     if len(cluster) > 0:
-                        writer.add_image(f"train_image/pool-{cluster_id}", cluster, i+1)
+                        writer.add_image(f"pool-image/{cluster_id}", cluster, i+1)
                     #     img_in_cluster = np.concatenate(cluster)
                     #     writer.add_images(f"train_image/pool-{cluster_id}", img_in_cluster, i+1)
 
@@ -534,7 +562,13 @@ def train():
                     if len(cluster) > 0:
                         sim_in_cluster = np.stack(cluster)  # [num_cls, 8]
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
-                        writer.add_figure(f"train_image/pool-sim-{cluster_id}", figure, i+1)
+                        writer.add_figure(f"pool-sim/{cluster_id}", figure, i+1)
+
+                '''write task similarities'''
+                if len(epoch_loss[f'task/sim']) > 0:
+                    similarities = np.concatenate(epoch_loss[f'task/sim'])      # [num_tasks, 8]
+                    figure = draw_heatmap(similarities, verbose=False)
+                    writer.add_figure(f"train_image/task-sim", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
@@ -562,11 +596,20 @@ def train():
                     for task_id, task in enumerate(torch_tasks):
                         imgs = np.concatenate([task['context_images'].cpu().numpy(),
                                                task['target_images'].cpu().numpy()])
-                        writer.add_images(f"train_image/task-{pop_labels[task_id]}", imgs, i+1)
+                        writer.add_images(f"mo-image/{pop_labels[task_id]}", imgs, i+1)
 
+                '''log pure ce loss'''
                 if len(epoch_loss[f'pure/selection_ce_loss']) > 0:      # did selection loss on pure tasks
                     writer.add_scalar('train_loss/selection_ce_loss',
                                       np.mean(epoch_loss[f'pure/selection_ce_loss']), i+1)
+
+                '''log pure ncc loss'''
+                for cluster_idx in range(len(num_imgs_clusters)):
+                    if f'pure/C{cluster_idx}' in epoch_loss.keys() and len(epoch_loss[f'pure/C{cluster_idx}']) > 0:
+                        writer.add_scalar(f'train_loss/pure/C{cluster_idx}',
+                                          np.mean(epoch_loss[f'pure/C{cluster_idx}']), i+1)
+                        writer.add_scalar(f'train_accuracy/pure/C{cluster_idx}',
+                                          np.mean(epoch_acc[f'pure/C{cluster_idx}']), i+1)
 
                 epoch_loss, epoch_acc = init_train_log()
 

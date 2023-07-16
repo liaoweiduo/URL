@@ -1400,3 +1400,5 @@ def task_to_device(task, d='numpy'):
 
 if __name__ == '__main__':
     cal_hv_loss(np.array([[1,0], [0,1]]), 2)
+
+    _n_way, _n_shot, _n_query = available_setting([np.array([20,20,20,20,20]), np.array([])], task_type='standard')

@@ -36,7 +36,7 @@ def template_exp_sh(target, path, name, params, out_path='../avalanche-experimen
         param_str = ''
         for key, value in param.items():
             if type(value) is not bool:
-                param_str += f" --{key} '{value}'"
+                param_str += f" --{key} {value}"
             elif value is True:
                 param_str += f" --{key}"
         # param_str = ' '.join([f"--{key} {value}" for key, value in params.items() if type(value) is not bool])
@@ -219,22 +219,42 @@ common_args = {
 params = []
 
 """
-exp: effect of frequency on ce loss. 
+exp: use pure loss on all clusters and try different film lr. 
 """
 common_args.update({
-    'tag': 'pmo-ab-task-ce-pure-hv',
-    'train.loss_type': 'task+ce+pure+hv',
+    'tag': 'pmo-ab-task-ce-pure',
+    'train.loss_type': 'task+ce+pure',
     'train.max_iter': 100, 'train.summary_freq': 10,
+    'train.mo_freq': 1,
 })
 param_grid = {
-    'train.mo_freq': [1, 10],
-    'train.cluster_center_learning_rate': [1, 10],
+    'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
 }
 exp_name_template = common_args['tag'] + \
-                    '-freq{train.mo_freq}' + \
-                    '-cclr{train.cluster_center_learning_rate}'
+                    '-filmlr{train.learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
 params.extend(params_temp)
+
+
+"""
+exp: effect of frequency on ce loss. 
+"""
+# common_args.update({
+#     'tag': 'pmo-ab-task-ce-pure-hv',
+#     'train.loss_type': 'task+ce+pure+hv',
+#     'train.max_iter': 100, 'train.summary_freq': 10,
+# })
+# param_grid = {
+#     'train.mo_freq': [1, 10],
+#     'train.cluster_center_learning_rate': [1, 10],
+# }
+# exp_name_template = common_args['tag'] + \
+#                     '-freq{train.mo_freq}' + \
+#                     '-cclr{train.cluster_center_learning_rate}'
+# params_temp = generate_params(common_args, param_grid, exp_name_template)
+# params.extend(params_temp)
 
 
 """
