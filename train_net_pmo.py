@@ -114,7 +114,9 @@ def train():
         max_iter = args['train.max_iter']
 
         def init_train_log():
-            epoch_loss = {'task/sim': []}
+            epoch_loss = {}
+            epoch_loss['task/sim'] = []
+            epoch_loss[f'task/selection_ce_loss'] = []
             if 'task' in args['train.loss_type']:
                 epoch_loss.update({f'task/{name}': [] for name in trainsets})
             # epoch_loss['task/rec'] = []
@@ -124,7 +126,6 @@ def train():
                 f'hv/obj{obj_idx}': {
                     f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                 } for obj_idx in range(args['train.n_obj'])})
-            epoch_loss[f'pure/selection_ce_loss'] = []
             epoch_loss.update({
                 f'pure/C{cluster_idx}': [] for cluster_idx in range(args['model.num_clusters'])})
 
@@ -213,6 +214,7 @@ def train():
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
+                task_cluster_idx = torch.argmax(selection_info['normal_soft'], dim=1).squeeze()         #
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -227,6 +229,26 @@ def train():
 
                 '''log task sim (softmax not gumbel)'''
                 epoch_loss[f'task/sim'].append(selection_info['normal_soft'].detach().cpu().numpy())    # [1,8]
+
+                '''selection CE loss'''
+                if 'ce' in args['train.loss_type']:
+                    image_batch = torch.cat([context_images, target_images])
+                    cluster_labels = torch.ones_like(
+                        torch.cat([context_labels, target_labels])).long() * task_cluster_idx
+                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                    fn = torch.nn.CrossEntropyLoss()
+                    y_soft = selection_info['y_soft']  # [img_size, 8]
+                    # select_idx = selected_cluster_idxs[task_idx]
+                    # labels = torch.ones(
+                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                    selection_ce_loss = fn(y_soft, cluster_labels)
+
+                    '''log ce loss'''
+                    epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
+
+                    '''ce loss coefficient'''
+                    # selection_ce_loss = selection_ce_loss * 1000
+                    selection_ce_loss.backward()
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -300,35 +322,36 @@ def train():
                 pool.buffer2cluster()
                 pool.clear_buffer()
 
-                '''selection CE loss on all clusters'''
-                if 'ce' in args['train.loss_type']:
-                    numpy_images = pool.current_images()
-                    image_batch = torch.from_numpy(
-                        np.concatenate([np.concatenate(cluster) for cluster in numpy_images if len(cluster) > 0])
-                    ).to(device)
-                    cluster_labels = torch.from_numpy(
-                        np.array([
-                            cluster_idx
-                            for cluster_idx, cluster in enumerate(numpy_images)
-                            for cls in cluster
-                            for _ in range(cls.shape[0])])
-                    ).long().to(device)
-                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
-                    fn = torch.nn.CrossEntropyLoss()
-                    y_soft = selection_info['y_soft']  # [img_size, 8]
-                    # select_idx = selected_cluster_idxs[task_idx]
-                    # labels = torch.ones(
-                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                    selection_ce_loss = fn(y_soft, cluster_labels)
-
-                    '''log ce loss'''
-                    epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
-
-                    '''ce loss coefficient'''
-                    # selection_ce_loss = selection_ce_loss * 1000
-                    selection_ce_loss.backward()
+                # '''selection CE loss on all clusters'''
+                # if 'ce' in args['train.loss_type']:
+                #     numpy_images = pool.current_images()
+                #     image_batch = torch.from_numpy(
+                #         np.concatenate([np.concatenate(cluster) for cluster in numpy_images if len(cluster) > 0])
+                #     ).to(device)
+                #     cluster_labels = torch.from_numpy(
+                #         np.array([
+                #             cluster_idx
+                #             for cluster_idx, cluster in enumerate(numpy_images)
+                #             for cls in cluster
+                #             for _ in range(cls.shape[0])])
+                #     ).long().to(device)
+                #     _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                #     fn = torch.nn.CrossEntropyLoss()
+                #     y_soft = selection_info['y_soft']  # [img_size, 8]
+                #     # select_idx = selected_cluster_idxs[task_idx]
+                #     # labels = torch.ones(
+                #     #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                #     selection_ce_loss = fn(y_soft, cluster_labels)
+                #
+                #     '''log ce loss'''
+                #     epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
+                #
+                #     '''ce loss coefficient'''
+                #     # selection_ce_loss = selection_ce_loss * 1000
+                #     selection_ce_loss.backward()
 
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
+
                 '''pure loss on all clusters'''
                 if 'pure' in args['train.loss_type']:
                     for cluster_idx in range(len(num_imgs_clusters)):
@@ -599,12 +622,12 @@ def train():
                         writer.add_images(f"mo-image/{pop_labels[task_id]}", imgs, i+1)
 
                 '''log pure ce loss'''
-                if len(epoch_loss[f'pure/selection_ce_loss']) > 0:      # did selection loss on pure tasks
+                if len(epoch_loss[f'task/selection_ce_loss']) > 0:      # did selection loss on pure tasks
                     writer.add_scalar('train_loss/selection_ce_loss',
-                                      np.mean(epoch_loss[f'pure/selection_ce_loss']), i+1)
+                                      np.mean(epoch_loss[f'task/selection_ce_loss']), i+1)
 
                 '''log pure ncc loss'''
-                for cluster_idx in range(len(num_imgs_clusters)):
+                for cluster_idx in range(args['model.num_clusters']):
                     if f'pure/C{cluster_idx}' in epoch_loss.keys() and len(epoch_loss[f'pure/C{cluster_idx}']) > 0:
                         writer.add_scalar(f'train_loss/pure/C{cluster_idx}',
                                           np.mean(epoch_loss[f'pure/C{cluster_idx}']), i+1)

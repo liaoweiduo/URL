@@ -219,23 +219,39 @@ common_args = {
 params = []
 
 """
-exp: use pure loss on all clusters and try different film lr. 
+exp: ce loss on training task not on pool; use cosine to calculate sim
 """
 common_args.update({
-    'tag': 'pmo-ab-task-ce-pure',
-    'train.loss_type': 'task+ce+pure',
+    'tag': 'pmo-ce_train',
+    'train.loss_type': 'task+ce',
     'train.max_iter': 100, 'train.summary_freq': 10,
     'train.mo_freq': 1,
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
 }
-exp_name_template = common_args['tag'] + \
-                    '-filmlr{train.learning_rate}'
+exp_name_template = common_args['tag']
 params_temp = generate_params(common_args, param_grid, exp_name_template)
-for p in params_temp:
-    p['train.weight_decay'] = p['train.learning_rate'] / 50
 params.extend(params_temp)
+
+
+"""
+exp: use pure loss on all clusters and try different film lr. 
+"""
+# common_args.update({
+#     'tag': 'pmo-ab-task-ce-pure',
+#     'train.loss_type': 'task+ce+pure',
+#     'train.max_iter': 100, 'train.summary_freq': 10,
+#     'train.mo_freq': 1,
+# })
+# param_grid = {
+#     'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
+# }
+# exp_name_template = common_args['tag'] + \
+#                     '-filmlr{train.learning_rate}'
+# params_temp = generate_params(common_args, param_grid, exp_name_template)
+# for p in params_temp:
+#     p['train.weight_decay'] = p['train.learning_rate'] / 50
+# params.extend(params_temp)
 
 
 """
