@@ -595,10 +595,13 @@ def train():
                         writer.add_figure(f"pool-sim/{cluster_id}", figure, i+1)
 
                 '''write task similarities'''
-                if len(epoch_loss[f'task/sim']) > 0:
-                    similarities = np.concatenate(epoch_loss[f'task/sim'])      # [num_tasks, 8]
+                if len(epoch_loss[f'task/gumbel_sim']) > 0:
+                    similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'])      # [num_tasks, 8]
                     figure = draw_heatmap(similarities, verbose=False)
-                    writer.add_figure(f"train_image/task-sim", figure, i+1)
+                    writer.add_figure(f"train_image/task-gumbel-sim", figure, i+1)
+                    similarities = np.concatenate(epoch_loss[f'task/softmax_sim'])      # [num_tasks, 8]
+                    figure = draw_heatmap(similarities, verbose=False)
+                    writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
