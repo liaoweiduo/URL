@@ -219,16 +219,16 @@ common_args = {
 params = []
 
 """
-exp: ce loss on training task not on pool; use cosine to calculate sim
+exp: ce loss on training task not on pool (supervision: gumbel softmax); use cosine to calculate sim
 """
 common_args.update({
-    'tag': 'pmo-ce_train',
+    'tag': 'pmo-ce_train_gumbel',
     'train.loss_type': 'task+ce',
     'train.max_iter': 100, 'train.summary_freq': 10,
     'train.mo_freq': 1,
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-2, 1e-1, 1, 10],
+    'train.selector_learning_rate': [1e-2, 5e-2, 1e-1, 5e-1, 1, 5, 10, 50],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}'

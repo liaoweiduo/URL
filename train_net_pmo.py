@@ -214,7 +214,8 @@ def train():
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
-                task_cluster_idx = torch.argmax(selection_info['normal_soft'], dim=1).squeeze()         #
+                task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
+                # supervision to be gumbel softmax for CE loss
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -228,7 +229,8 @@ def train():
                 # ilsvrc_2012 has 2 times larger len than others.
 
                 '''log task sim (softmax not gumbel)'''
-                epoch_loss[f'task/sim'].append(selection_info['normal_soft'].detach().cpu().numpy())    # [1,8]
+                epoch_loss[f'task/gumbel_sim'].append(selection_info['y_soft'].detach().cpu().numpy())    # [1,8]
+                epoch_loss[f'task/softmax_sim'].append(selection_info['normal_soft'].detach().cpu().numpy())    # [1,8]
 
             '''selection CE loss'''
             if 'ce' in args['train.loss_type']:

@@ -324,7 +324,7 @@ class Selector(nn.Module):
         self.prot_shape = (1, 1)
         self.prototype_shape = (self.n_class, self.rep_dim, *self.prot_shape)
         self.prototypes = nn.Parameter(torch.rand(self.prototype_shape))
-        self.logit_scale = nn.Parameter(torch.ones([]))     # 1
+        self.logit_scale = nn.Parameter(torch.ones([]) * 1)     # 1
         # self.logit_scale = torch.ones([])     # 1
         # self.cluster_centers = nn.Parameter(torch.randn((num_clusters, emb_dim)))
 
