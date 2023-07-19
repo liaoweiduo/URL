@@ -230,25 +230,25 @@ def train():
                 '''log task sim (softmax not gumbel)'''
                 epoch_loss[f'task/sim'].append(selection_info['normal_soft'].detach().cpu().numpy())    # [1,8]
 
-                '''selection CE loss'''
-                if 'ce' in args['train.loss_type']:
-                    image_batch = torch.cat([context_images, target_images])
-                    cluster_labels = torch.ones_like(
-                        torch.cat([context_labels, target_labels])).long() * task_cluster_idx
-                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
-                    fn = torch.nn.CrossEntropyLoss()
-                    y_soft = selection_info['y_soft']  # [img_size, 8]
-                    # select_idx = selected_cluster_idxs[task_idx]
-                    # labels = torch.ones(
-                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                    selection_ce_loss = fn(y_soft, cluster_labels)
+            '''selection CE loss'''
+            if 'ce' in args['train.loss_type']:
+                image_batch = torch.cat([context_images, target_images])
+                cluster_labels = torch.ones_like(
+                    torch.cat([context_labels, target_labels])).long() * task_cluster_idx
+                _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                fn = torch.nn.CrossEntropyLoss()
+                y_soft = selection_info['y_soft']  # [img_size, 8]
+                # select_idx = selected_cluster_idxs[task_idx]
+                # labels = torch.ones(
+                #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                selection_ce_loss = fn(y_soft, cluster_labels)
 
-                    '''log ce loss'''
-                    epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
+                '''log ce loss'''
+                epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
 
-                    '''ce loss coefficient'''
-                    # selection_ce_loss = selection_ce_loss * 1000
-                    selection_ce_loss.backward()
+                '''ce loss coefficient'''
+                # selection_ce_loss = selection_ce_loss * 1000
+                selection_ce_loss.backward()
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -494,7 +494,11 @@ def train():
             #         p.grad = p.grad * 1000
 
             update_step(i)
-            writer.add_scalar('train_image/learning_rate', optimizer.param_groups[0]['lr'], i+1)
+
+            '''log iter-wise params change'''
+            writer.add_scalar('params/learning_rate', optimizer.param_groups[0]['lr'], i+1)
+            writer.add_scalar('params/gumbel_tau', pmo.selector.tau.item(), i+1)
+            writer.add_scalar('params/sim_logit_scale', pmo.selector.logit_scale.item(), i+1)
 
             if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
                 print(f">> Iter: {i + 1}, train summary:")
