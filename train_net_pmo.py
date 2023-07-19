@@ -115,7 +115,8 @@ def train():
 
         def init_train_log():
             epoch_loss = {}
-            epoch_loss['task/sim'] = []
+            epoch_loss[f'task/gumbel_sim'] = []
+            epoch_loss[f'task/softmax_sim'] = []
             epoch_loss[f'task/selection_ce_loss'] = []
             if 'task' in args['train.loss_type']:
                 epoch_loss.update({f'task/{name}': [] for name in trainsets})
