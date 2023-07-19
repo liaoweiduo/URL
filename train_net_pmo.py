@@ -243,12 +243,12 @@ def train():
                 #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
                 selection_ce_loss = fn(y_soft, cluster_labels)
 
-                '''log ce loss'''
-                epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
-
                 '''ce loss coefficient'''
                 # selection_ce_loss = selection_ce_loss * 1000
                 selection_ce_loss.backward()
+
+                '''log ce loss'''
+                epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
 
             '''----------------'''
             '''MO Train Phase  '''

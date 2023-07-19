@@ -228,14 +228,13 @@ common_args.update({
     'train.mo_freq': 1,
 })
 param_grid = {
-    'lr': [1e-2, 1e-1, 1, 10],
+    'train.selector_learning_rate': [1e-2, 1e-1, 1, 10],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{lr}'
+                    '-slr{train.selector_learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
-    p['train.selector_learning_rate'] = p['lr']
-    p['train.cluster_center_learning_rate'] = p['lr']
+    p['train.cluster_center_learning_rate'] = p['train.selector_learning_rate']
 params.extend(params_temp)
 
 

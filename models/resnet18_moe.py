@@ -316,7 +316,7 @@ class Selector(nn.Module):
         self.n_class = num_clusters
         self.opt = opt
         self.metric = metric
-        self.tau = nn.Parameter(torch.ones([])) * tau       # learnable tau
+        self.tau = nn.Parameter(torch.ones([]) * tau)       # learnable tau
 
         self.encoder = adaptor(num_datasets=1, dim_in=input_dim, dim_out=rep_dim, opt=opt)
         # self.hierarchical_net()
