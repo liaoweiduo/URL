@@ -211,26 +211,26 @@ common_args = {
     'train.loss_type': 'task+ce+pure+hv',
     'train.optimizer': 'adam', 'train.learning_rate': 1e-5, 'train.weight_decay': 2e-7,
     'train.selector_learning_rate': 1, 'train.cluster_center_learning_rate': 1,
-    'train.max_iter': 100, 'train.summary_freq': 10,
-    'train.mo_freq': 1, 'train.n_mo': 1, 'train.hv_coefficient': 1,
-    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
+    'train.max_iter': 100, 'train.batch_size': 10, 'train.summary_freq': 10, 'train.pool_freq': 1,
+    'train.mo_freq': 10, 'train.n_mo': 1, 'train.hv_coefficient': 1,
+    'train.cosine_anneal_freq': 100, 'train.eval_freq': 200, 'train.eval_size': 50,
 }
 
 params = []
 
 """
-exp: tune slr and cclr
+exp: use 2 pools, 'train.pool_freq': 1,
 """
 common_args.update({
-    'tag': 'pmo-ce_train_gumbel',
+    'tag': 'pmo-2pool',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 1000, 'train.summary_freq': 100,
-    'train.mo_freq': 100,
+    'train.max_iter': 100, 'train.summary_freq': 10,
+    'train.mo_freq': 10, 'train.pool_freq': 1,
     'train.eval_freq': 2000,    # no eval
 })
 param_grid = {
     'train.selector_learning_rate': [1e-1, 3e-1, 6e-1, 1],
-    'train.cluster_center_learning_rate': [1, 10, 100],
+    'train.cluster_center_learning_rate': [1, 10],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}' + \

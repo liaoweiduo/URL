@@ -235,7 +235,7 @@ class Pool(nn.Module):
         If maintain_size, then check buffer size before put into buffer.
         """
         if len(self.buffer) >= self.buffer_size and maintain_size:     # do not exceed buffer size
-            return
+            return False
 
         '''unpack'''
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
@@ -272,6 +272,8 @@ class Pool(nn.Module):
 
             '''put into buffer'''
             self.buffer.append(class_dict)
+
+        return True
 
     def buffer2cluster(self):
         """

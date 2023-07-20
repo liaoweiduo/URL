@@ -33,8 +33,9 @@ parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5sh
                     help="standard varying number of ways and shots as in Meta-Dataset, "
                          "1shot for five-way-one-shot "
                          "and 5shot for varying-way-five-shot evaluation.")
-parser.add_argument('--train.batch_size', type=int, default=16, metavar='BS',
-                    help='number of images in a batch')
+parser.add_argument('--train.batch_size', type=int, default=10, metavar='BS',
+                    help='number of images in a batch. '
+                         'In episodic setting, it is the batch size for tasks.')
 parser.add_argument('--train.max_iter', type=int, default=500000, metavar='NEPOCHS',
                     help='number of epochs to train (default: 10000)')
 parser.add_argument('--train.weight_decay', type=float, default=7e-4, metavar='WD',
@@ -89,10 +90,11 @@ parser.add_argument('--train.gumbel_tau', type=float, default=2, metavar='GUMBEL
 parser.add_argument('--train.loss_type', type=str, default='task+pure+hv+ce', metavar='LOSS_TYPE',
                     help='backward losses.'
                          'can be any combination of task, hv, task+pure+hv, pure, pure+hv')
+parser.add_argument('--train.pool_freq', type=int, default=1, metavar='POOL_FREQ',
+                    help='How often to update pool. ')
 parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ',
                     help='How often to apply mo train phase. '
-                         'Usually equals to train.summary_freq, that do mo train at the last iter before summary'
-                         'If train.loss_type does not contain `hv`, just ignore.')
+                         'Usually equals to train.summary_freq, that do mo train at the last iter before summary.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
 parser.add_argument('--train.hv_coefficient', type=float, default=1, metavar='HV_COEFFICIENT',
