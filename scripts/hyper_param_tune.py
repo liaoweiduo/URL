@@ -213,28 +213,31 @@ common_args = {
     'train.selector_learning_rate': 1, 'train.cluster_center_learning_rate': 1,
     'train.max_iter': 100, 'train.summary_freq': 10,
     'train.mo_freq': 1, 'train.n_mo': 1, 'train.hv_coefficient': 1,
-    'train.cosine_anneal_freq': 100, 'train.eval_freq': 100, 'train.eval_size': 50,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
 }
 
 params = []
 
 """
-exp: ce loss on training task not on pool (supervision: gumbel softmax); use cosine to calculate sim
+exp: tune slr and cclr
 """
 common_args.update({
     'tag': 'pmo-ce_train_gumbel',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 100, 'train.summary_freq': 10,
-    'train.mo_freq': 1,
+    'train.max_iter': 1000, 'train.summary_freq': 100,
+    'train.mo_freq': 100,
+    'train.eval_freq': 2000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-2, 5e-2, 1e-1, 5e-1, 1, 5, 10, 50],
+    'train.selector_learning_rate': [1e-1, 3e-1, 6e-1, 1],
+    'train.cluster_center_learning_rate': [1, 10, 100],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}'
+                    '-slr{train.selector_learning_rate}' + \
+                    '-cclr{train.cluster_center_learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
-for p in params_temp:
-    p['train.cluster_center_learning_rate'] = p['train.selector_learning_rate']
+# for p in params_temp:
+#     p['train.cluster_center_learning_rate'] = p['train.selector_learning_rate']
 params.extend(params_temp)
 
 
