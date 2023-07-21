@@ -82,7 +82,7 @@ parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes
                     help='use kmeans(average) or hierarchical clustering net.')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
-parser.add_argument('--train.gumbel_tau', type=float, default=1, metavar='GUMBEL_TAU',
+parser.add_argument('--train.gumbel_tau', type=float, default=0, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. (default: 1)'
                          'use exp(tau) to ensure positive, so 1 means e.')
 parser.add_argument('--train.loss_type', type=str, default='task+pure+hv+ce', metavar='LOSS_TYPE',

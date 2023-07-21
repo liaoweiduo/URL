@@ -221,15 +221,16 @@ params = []
 """
 exp: use 2 pools, adam on selector, tune selector lr
 """
+num_runs_1sh = 3        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ab-tc',
+    'tag': 'pmo-ab-tc-tau0',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.max_iter': 5000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 100, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 20000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-3, 1e-2, 1e-1, 1],
+    'train.selector_learning_rate': [1e-4, 5e-4, 1e-3],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}'
