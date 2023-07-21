@@ -210,55 +210,33 @@ common_args = {
     'train.freeze_backbone': True,
     'train.loss_type': 'task+ce+pure+hv',
     'train.optimizer': 'adam', 'train.learning_rate': 1e-5, 'train.weight_decay': 2e-7,
-    'train.selector_learning_rate': 1, 'train.cluster_center_learning_rate': 1,
-    'train.max_iter': 100, 'train.batch_size': 10, 'train.summary_freq': 10, 'train.pool_freq': 1,
-    'train.mo_freq': 10, 'train.n_mo': 1, 'train.hv_coefficient': 1,
-    'train.cosine_anneal_freq': 100, 'train.eval_freq': 200, 'train.eval_size': 50,
+    'train.selector_learning_rate': 1,
+    'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.mo_freq': 100, 'train.n_mo': 10, 'train.hv_coefficient': 1,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
 }
 
 params = []
 
 """
-exp: use 2 pools, 'train.pool_freq': 1,
+exp: use 2 pools, adam on selector, tune selector lr
 """
 common_args.update({
-    'tag': 'pmo-2pool',
+    'tag': 'pmo-ab-tc',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 100, 'train.summary_freq': 10,
-    'train.mo_freq': 10, 'train.pool_freq': 1,
-    'train.eval_freq': 2000,    # no eval
+    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.mo_freq': 100, 'train.n_mo': 1,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 20000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [10, 100],
-    'train.cluster_center_learning_rate': [10, 30, 60, 100],
+    'train.selector_learning_rate': [1e-3, 1e-2, 1e-1, 1],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}' + \
-                    '-cclr{train.cluster_center_learning_rate}'
+                    '-slr{train.selector_learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 # for p in params_temp:
-#     p['train.cluster_center_learning_rate'] = p['train.selector_learning_rate']
-params.extend(params_temp)
-
-
-"""
-exp: use pure loss on all clusters and try different film lr. 
-"""
-# common_args.update({
-#     'tag': 'pmo-ab-task-ce-pure',
-#     'train.loss_type': 'task+ce+pure',
-#     'train.max_iter': 100, 'train.summary_freq': 10,
-#     'train.mo_freq': 1,
-# })
-# param_grid = {
-#     'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-filmlr{train.learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# for p in params_temp:
 #     p['train.weight_decay'] = p['train.learning_rate'] / 50
-# params.extend(params_temp)
+params.extend(params_temp)
 
 
 """

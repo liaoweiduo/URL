@@ -76,8 +76,6 @@ parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN
 # pmo training
 parser.add_argument('--train.selector_learning_rate', type=float, default=0.03, metavar='LR',
                     help='learning rate (default: 0.0001)')
-parser.add_argument('--train.cluster_center_learning_rate', type=float, default=0.03, metavar='LR',
-                    help='learning rate (default: 0.0001)')
 parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze resnet18 backbone when using MOE")
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
                     choices=['kmeans', 'hierarchical', 'prototypes'],
