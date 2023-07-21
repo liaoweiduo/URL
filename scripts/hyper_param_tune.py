@@ -229,8 +229,8 @@ common_args.update({
     'train.eval_freq': 2000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-1, 3e-1, 6e-1, 1],
-    'train.cluster_center_learning_rate': [1, 10],
+    'train.selector_learning_rate': [10, 100],
+    'train.cluster_center_learning_rate': [10, 30, 60, 100],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}' + \

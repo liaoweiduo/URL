@@ -347,6 +347,7 @@ def train():
                     gt_labels = np.concatenate([gt_labels, current_gt_labels])
                     similarities = np.concatenate([similarities, current_similarities])
 
+                if len(buffer_samples) > 0:
                     # ignore buffer size and put into buffer
                     center_pool.put_buffer(
                         images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
