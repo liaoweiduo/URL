@@ -342,7 +342,7 @@ def train():
                         current_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
                     '''cat into pool's buffer samples'''
-                    images = np.concatenate([images, current_images])
+                    images = torch.cat([images, current_images])
                     domain = np.concatenate([domain, current_domain])
                     gt_labels = np.concatenate([gt_labels, current_gt_labels])
                     similarities = np.concatenate([similarities, current_similarities])
