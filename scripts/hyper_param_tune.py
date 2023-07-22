@@ -210,7 +210,7 @@ common_args = {
     'train.freeze_backbone': True,
     'train.loss_type': 'task+ce+pure+hv',
     'train.optimizer': 'adam', 'train.learning_rate': 1e-5, 'train.weight_decay': 2e-7,
-    'train.selector_learning_rate': 1,
+    'train.selector_learning_rate': 1e-3,
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 100, 'train.n_mo': 10, 'train.hv_coefficient': 1,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
@@ -219,24 +219,24 @@ common_args = {
 params = []
 
 """
-exp: use 2 pools, adam on selector, tune selector lr
+exp: ce on both pool and task; task+ce+pure; tune on film lr. MO gumbel=False
 """
-num_runs_1sh = 3        # num of runs in 1 sh file
+num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ab-tc-tau0',
-    'train.loss_type': 'task+ce',
-    'train.max_iter': 5000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 100, 'train.n_mo': 1,
+    'tag': 'pmo-ab-tcp',
+    'train.loss_type': 'task+ce+pure',
+    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 5,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 20000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-4, 5e-4, 1e-3],
+    'train.learning_rate': [1e-5, 5e-5, 1e-4, 5e-4],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}'
+                    '-slr{train.learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
-# for p in params_temp:
-#     p['train.weight_decay'] = p['train.learning_rate'] / 50
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
 params.extend(params_temp)
 
 

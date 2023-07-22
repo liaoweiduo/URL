@@ -124,7 +124,8 @@ def train():
             epoch_loss = {}
             epoch_loss[f'task/gumbel_sim'] = []
             epoch_loss[f'task/softmax_sim'] = []
-            epoch_loss[f'selection_ce_loss'] = []
+            epoch_loss[f'task/selection_ce_loss'] = []
+            epoch_loss[f'pool/selection_ce_loss'] = []
             if 'task' in args['train.loss_type']:
                 epoch_loss.update({f'task/{name}': [] for name in trainsets})
             # epoch_loss['task/rec'] = []
@@ -214,6 +215,7 @@ def train():
             verbose = True
             if not not_full and verbose:  # full buffer
                 print(f'Buffer is full at iter: {i}.')
+                verbose = False
 
             # need to check how many classes in 1 samples and need a buffer size
             # about 10 iters can obtain 200 classes
@@ -343,7 +345,7 @@ def train():
                     selection_ce_loss = fn(y_soft, cluster_labels)
 
                     '''log ce loss'''
-                    epoch_loss[f'selection_ce_loss'].append(selection_ce_loss.item())
+                    epoch_loss[f'pool/selection_ce_loss'].append(selection_ce_loss.item())
 
                     '''ce loss coefficient'''
                     # selection_ce_loss = selection_ce_loss * 1000
@@ -374,25 +376,25 @@ def train():
                 epoch_loss[f'task/gumbel_sim'].append(selection_info['y_soft'].detach().cpu().numpy())    # [1,8]
                 epoch_loss[f'task/softmax_sim'].append(selection_info['normal_soft'].detach().cpu().numpy())
 
-                # '''selection CE loss'''
-                # if 'ce' in args['train.loss_type']:
-                #     image_batch = torch.cat([context_images, target_images])
-                #     cluster_labels = torch.ones_like(
-                #         torch.cat([context_labels, target_labels])).long() * task_cluster_idx
-                #     _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
-                #     fn = torch.nn.CrossEntropyLoss()
-                #     y_soft = selection_info['y_soft']  # [img_size, 8]
-                #     # select_idx = selected_cluster_idxs[task_idx]
-                #     # labels = torch.ones(
-                #     #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                #     selection_ce_loss = fn(y_soft, cluster_labels)
-                #
-                #     '''ce loss coefficient'''
-                #     # selection_ce_loss = selection_ce_loss * 1000
-                #     selection_ce_loss.backward()
-                #
-                #     '''log ce loss'''
-                #     epoch_loss[f'selection_ce_loss'].append(selection_ce_loss.item())
+                '''selection CE loss on training task'''
+                if 'ce' in args['train.loss_type']:
+                    image_batch = torch.cat([context_images, target_images])
+                    cluster_labels = torch.ones_like(
+                        torch.cat([context_labels, target_labels])).long() * task_cluster_idx
+                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                    fn = torch.nn.CrossEntropyLoss()
+                    y_soft = selection_info['y_soft']  # [img_size, 8]
+                    # select_idx = selected_cluster_idxs[task_idx]
+                    # labels = torch.ones(
+                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                    selection_ce_loss = fn(y_soft, cluster_labels)
+
+                    '''ce loss coefficient'''
+                    # selection_ce_loss = selection_ce_loss * 1000
+                    selection_ce_loss.backward()
+
+                    '''log ce loss'''
+                    epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -417,7 +419,7 @@ def train():
 
                             [enriched_context_features, enriched_target_features], _ = pmo(
                                 [context_images, target_images], torch.cat([context_images, target_images]),
-                                gumbel=True, hard=True)
+                                gumbel=False, hard=True)
 
                             pure_loss, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -468,7 +470,7 @@ def train():
 
                         for task_idx, task in enumerate(torch_tasks):
                             '''obtain task-specific selection'''
-                            gumbel = True
+                            gumbel = False
                             hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
                             if 'hv' in args['train.loss_type']:
                                 selection, selection_info = pmo.selector(torch.mean(
@@ -691,10 +693,15 @@ def train():
                                                task['target_images'].cpu().numpy()])
                         writer.add_images(f"mo-image/{pop_labels[task_id]}", imgs, i+1)
 
-                '''log pure ce loss'''
-                if len(epoch_loss[f'selection_ce_loss']) > 0:      # did selection loss on pure tasks
-                    writer.add_scalar('train_loss/selection_ce_loss',
-                                      np.mean(epoch_loss[f'selection_ce_loss']), i+1)
+                '''log pool ce loss'''
+                if len(epoch_loss[f'pool/selection_ce_loss']) > 0:      # did selection loss on pool samples
+                    writer.add_scalar('train_loss/pool/selection_ce_loss',
+                                      np.mean(epoch_loss[f'pool/selection_ce_loss']), i+1)
+
+                '''log task ce loss'''
+                if len(epoch_loss[f'task/selection_ce_loss']) > 0:      # did selection loss on training tasks
+                    writer.add_scalar('train_loss/task/selection_ce_loss',
+                                      np.mean(epoch_loss[f'task/selection_ce_loss']), i+1)
 
                 '''log pure ncc loss'''
                 for cluster_idx in range(args['model.num_clusters']):
