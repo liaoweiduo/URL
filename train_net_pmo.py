@@ -695,12 +695,12 @@ def train():
 
                 '''log pool ce loss'''
                 if len(epoch_loss[f'pool/selection_ce_loss']) > 0:      # did selection loss on pool samples
-                    writer.add_scalar('train_loss/pool/selection_ce_loss',
+                    writer.add_scalar('train_loss/selection_ce_loss/pool',
                                       np.mean(epoch_loss[f'pool/selection_ce_loss']), i+1)
 
                 '''log task ce loss'''
                 if len(epoch_loss[f'task/selection_ce_loss']) > 0:      # did selection loss on training tasks
-                    writer.add_scalar('train_loss/task/selection_ce_loss',
+                    writer.add_scalar('train_loss/selection_ce_loss/task',
                                       np.mean(epoch_loss[f'task/selection_ce_loss']), i+1)
 
                 '''log pure ncc loss'''
