@@ -78,12 +78,12 @@ def train():
         pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
 
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
-        optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
-                                              lr=args['train.selector_learning_rate'],
-                                              weight_decay=args['train.selector_learning_rate'] / 50
-                                              )
-        # optimizer_cc = torch.optim.Adadelta(pmo.get_trainable_cluster_center_parameters(),
-        #                                     lr=args['train.cluster_center_learning_rate'])
+        # optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
+        #                                       lr=args['train.selector_learning_rate'],
+        #                                       weight_decay=args['train.selector_learning_rate'] / 50
+        #                                       )
+        optimizer_selector = torch.optim.Adadelta(pmo.get_trainable_selector_parameters(True),
+                                                  lr=args['train.selector_learning_rate'])
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
@@ -92,13 +92,13 @@ def train():
             print('No checkpoint restoration for pmo.')
         if args['train.lr_policy'] == "step":
             lr_manager = UniformStepLR(optimizer, args, start_iter)
-            lr_manager_selector = UniformStepLR(optimizer_selector, args, start_iter)
+            # lr_manager_selector = UniformStepLR(optimizer_selector, args, start_iter)
         elif "exp_decay" in args['train.lr_policy']:
             lr_manager = ExpDecayLR(optimizer, args, start_iter)
-            lr_manager_selector = ExpDecayLR(optimizer_selector, args, start_iter)
+            # lr_manager_selector = ExpDecayLR(optimizer_selector, args, start_iter)
         elif "cosine" in args['train.lr_policy']:
             lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
-            lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, start_iter)
+            # lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, start_iter)
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
@@ -176,7 +176,7 @@ def train():
                 pool.optimizer.step()
 
             lr_manager.step(idx)
-            lr_manager_selector.step(idx)
+            # lr_manager_selector.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.lr_manager.step(idx)
 
@@ -215,7 +215,6 @@ def train():
             verbose = True
             if not not_full and verbose:  # full buffer
                 print(f'Buffer is full at iter: {i}.')
-                verbose = False
 
             # need to check how many classes in 1 samples and need a buffer size
             # about 10 iters can obtain 200 classes
@@ -336,7 +335,7 @@ def train():
                             for cls in cluster
                             for _ in range(cls.shape[0])])
                     ).long().to(device)
-                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False)
                     fn = torch.nn.CrossEntropyLoss()
                     y_soft = selection_info['y_soft']  # [img_size, 8]
                     # select_idx = selected_cluster_idxs[task_idx]
@@ -381,7 +380,7 @@ def train():
                     image_batch = torch.cat([context_images, target_images])
                     cluster_labels = torch.ones_like(
                         torch.cat([context_labels, target_labels])).long() * task_cluster_idx
-                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=True)
+                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False)
                     fn = torch.nn.CrossEntropyLoss()
                     y_soft = selection_info['y_soft']  # [img_size, 8]
                     # select_idx = selected_cluster_idxs[task_idx]

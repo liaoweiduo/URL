@@ -241,18 +241,18 @@ exp: ce on both pool and task; task+ce+pure; tune on film lr. MO gumbel=False
 
 
 """
-exp: ce on both pool and task; task+ce
+exp: ce on both pool and task (no gumbel); task+ce
 """
-num_runs_1sh = 3        # num of runs in 1 sh file
+num_runs_1sh = 2        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ab-tc-task_ce',
+    'tag': 'pmo-ab-tc-ce_nogumbel-adadelta',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 100, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 200, 'train.eval_freq': 20000,    # no eval
+    'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 10,
+    'train.mo_freq': 50, 'train.n_mo': 1,
+    'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
 })
 param_grid = {
-    'train.learning_rate': [0.0001, 0.0005, 0.001],
+    'train.selector_learning_rate': [1, 10],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}'
