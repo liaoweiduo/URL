@@ -243,19 +243,21 @@ exp: ce on both pool and task; task+ce+pure; tune on film lr. MO gumbel=False
 """
 exp: ce on both pool and task (no gumbel); task+ce
 """
-num_runs_1sh = 2        # num of runs in 1 sh file
+num_runs_1sh = 6        # num of runs in 1 sh file
 common_args.update({
     'tag': 'pmo-ab-tc-ce_nogumbel-adadelta',
     'train.loss_type': 'task+ce',
-    'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 10,
-    'train.mo_freq': 50, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
+    'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
+    'train.mo_freq': 500, 'train.n_mo': 1,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval
 })
 param_grid = {
-    'train.selector_learning_rate': [1, 10],
+    'train.selector_learning_rate': [0.01, 0.05],
+    'train.task_ce_coefficient': [5, 10, 50],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}'
+                    '-slr{train.selector_learning_rate}' + \
+                    '-taskce{train.task_ce_coefficient}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 # for p in params_temp:
 #     p['train.weight_decay'] = p['train.learning_rate'] / 50

@@ -389,7 +389,7 @@ def train():
                     selection_ce_loss = fn(y_soft, cluster_labels)
 
                     '''ce loss coefficient'''
-                    # selection_ce_loss = selection_ce_loss * 1000
+                    selection_ce_loss = selection_ce_loss * args['train.task_ce_coefficient']
                     selection_ce_loss.backward()
 
                     '''log ce loss'''
@@ -657,10 +657,10 @@ def train():
 
                 '''write task similarities'''
                 if len(epoch_loss[f'task/gumbel_sim']) > 0:
-                    similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'])      # [num_tasks, 8]
+                    similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'][-10:])      # [num_tasks, 8]
                     figure = draw_heatmap(similarities, verbose=False)
                     writer.add_figure(f"train_image/task-gumbel-sim", figure, i+1)
-                    similarities = np.concatenate(epoch_loss[f'task/softmax_sim'])      # [num_tasks, 8]
+                    similarities = np.concatenate(epoch_loss[f'task/softmax_sim'][-10:])      # [num_tasks, 8]
                     figure = draw_heatmap(similarities, verbose=False)
                     writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
 

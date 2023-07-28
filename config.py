@@ -95,8 +95,10 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
                          'Usually equals to train.summary_freq, that do mo train at the last iter before summary.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
+parser.add_argument('--train.task_ce_coefficient', type=float, default=1, metavar='CE_COEFFICIENT',
+                    help='coeffient for task ce loss.')
 parser.add_argument('--train.hv_coefficient', type=float, default=1, metavar='HV_COEFFICIENT',
-                    help='coeffient for hv loss .')
+                    help='coeffient for hv loss.')
 parser.add_argument('--train.max_sampling_iter_for_pool', type=int, default=1, metavar='ITER',
                     help='Number of sampling iteration for sampling tasks to put into pool.')
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
