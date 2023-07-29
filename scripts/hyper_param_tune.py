@@ -245,7 +245,7 @@ exp: ce on both pool and task (no gumbel); task+ce
 """
 num_runs_1sh = 3        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ab-tc-linear_encoder',
+    'tag': 'pmo-ab-tc-lin_enc',
     'train.loss_type': 'task+ce',
     'train.max_iter': 100, 'train.summary_freq': 10, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1,
