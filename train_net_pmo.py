@@ -357,8 +357,8 @@ def train():
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
-                task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
-                # supervision to be gumbel softmax for CE loss
+                task_cluster_idx = torch.argmax(selection_info['normal_soft'], dim=1).squeeze()
+                # supervision to be softmax for CE loss
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
