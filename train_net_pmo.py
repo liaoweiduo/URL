@@ -124,7 +124,7 @@ def train():
             epoch_loss = {}
             epoch_loss[f'task/gumbel_sim'] = []
             epoch_loss[f'task/softmax_sim'] = []
-            epoch_loss[f'task/selection_ce_loss'] = []
+            # epoch_loss[f'task/selection_ce_loss'] = []
             epoch_loss[f'pool/selection_ce_loss'] = []
             if 'task' in args['train.loss_type']:
                 epoch_loss.update({f'task/{name}': [] for name in trainsets})
@@ -205,12 +205,12 @@ def train():
             domain = t_indx
 
             '''samples put to buffer'''
-            images = torch.cat([context_images, target_images]).cpu()
+            task_images = torch.cat([context_images, target_images]).cpu()
             gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
             domain = np.array([domain] * len(gt_labels))
             similarities = np.array([0] * len(gt_labels))       # no use
             not_full = pool.put_buffer(
-                images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+                task_images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
             verbose = True
             if not not_full and verbose:  # full buffer
@@ -357,8 +357,8 @@ def train():
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
                     gumbel=True, hard=True)
-                task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
-                # supervision to be softmax for CE loss
+                # task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
+                # # supervision to be softmax for CE loss
 
                 task_loss, stats_dict, _ = prototype_loss(
                     enriched_context_features, context_labels,
@@ -371,29 +371,29 @@ def train():
                 epoch_acc[f'task/{trainset}'].append(stats_dict['acc'])
                 # ilsvrc_2012 has 2 times larger len than others.
 
-                '''log task sim (softmax not gumbel)'''
+                '''log task sim (softmax and gumbel)'''
                 epoch_loss[f'task/gumbel_sim'].append(selection_info['y_soft'].detach().cpu().numpy())    # [1,8]
                 epoch_loss[f'task/softmax_sim'].append(selection_info['normal_soft'].detach().cpu().numpy())
 
-                '''selection CE loss on training task'''
-                if 'ce' in args['train.loss_type']:
-                    image_batch = torch.cat([context_images, target_images])
-                    cluster_labels = torch.ones_like(
-                        torch.cat([context_labels, target_labels])).long() * task_cluster_idx
-                    _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False)
-                    fn = torch.nn.CrossEntropyLoss()
-                    y_soft = selection_info['y_soft']  # [img_size, 8]
-                    # select_idx = selected_cluster_idxs[task_idx]
-                    # labels = torch.ones(
-                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                    selection_ce_loss = fn(y_soft, cluster_labels)
-
-                    '''ce loss coefficient'''
-                    selection_ce_loss = selection_ce_loss * args['train.task_ce_coefficient']
-                    selection_ce_loss.backward()
-
-                    '''log ce loss'''
-                    epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
+                # '''selection CE loss on training task'''
+                # if 'ce' in args['train.loss_type']:
+                #     image_batch = torch.cat([context_images, target_images])
+                #     cluster_labels = torch.ones_like(
+                #         torch.cat([context_labels, target_labels])).long() * task_cluster_idx
+                #     _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False)
+                #     fn = torch.nn.CrossEntropyLoss()
+                #     y_soft = selection_info['y_soft']  # [img_size, 8]
+                #     # select_idx = selected_cluster_idxs[task_idx]
+                #     # labels = torch.ones(
+                #     #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
+                #     selection_ce_loss = fn(y_soft, cluster_labels)
+                #
+                #     '''ce loss coefficient'''
+                #     # selection_ce_loss = selection_ce_loss * args['train.task_ce_coefficient']
+                #     selection_ce_loss.backward()
+                #
+                #     '''log ce loss'''
+                #     epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -655,6 +655,19 @@ def train():
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
                         writer.add_figure(f"center_pool-sim/{cluster_id}", figure, i+1)
 
+                '''write task images'''
+                writer.add_images(f"task-image/image", task_images)     # task images
+                img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                    img_sim = selection_info['y_soft']        # [img_size, 10]
+                    _, selection_info = pmo.selector(torch.mean(img_features, dim=0, keepdim=True),
+                                                     gumbel=False, hard=False)
+                    tsk_sim = selection_info['y_soft']        # [1, 10]
+                sim = torch.cat([img_sim, tsk_sim]).cpu().numpy()
+                figure = draw_heatmap(sim, verbose=False)
+                writer.add_figure(f"task-image/sim", figure, i+1)
+
                 '''write task similarities'''
                 if len(epoch_loss[f'task/gumbel_sim']) > 0:
                     similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'][-10:])      # [num_tasks, 8]
@@ -697,10 +710,10 @@ def train():
                     writer.add_scalar('train_loss/selection_ce_loss/pool',
                                       np.mean(epoch_loss[f'pool/selection_ce_loss']), i+1)
 
-                '''log task ce loss'''
-                if len(epoch_loss[f'task/selection_ce_loss']) > 0:      # did selection loss on training tasks
-                    writer.add_scalar('train_loss/selection_ce_loss/task',
-                                      np.mean(epoch_loss[f'task/selection_ce_loss']), i+1)
+                # '''log task ce loss'''
+                # if len(epoch_loss[f'task/selection_ce_loss']) > 0:      # did selection loss on training tasks
+                #     writer.add_scalar('train_loss/selection_ce_loss/task',
+                #                       np.mean(epoch_loss[f'task/selection_ce_loss']), i+1)
 
                 '''log pure ncc loss'''
                 for cluster_idx in range(args['model.num_clusters']):
