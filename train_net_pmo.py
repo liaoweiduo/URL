@@ -656,7 +656,7 @@ def train():
                         writer.add_figure(f"center_pool-sim/{cluster_id}", figure, i+1)
 
                 '''write task images'''
-                writer.add_images(f"task-image/image", task_images)     # task images
+                writer.add_images(f"task-image/image", task_images, i+1)     # task images
                 img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
                 with torch.no_grad():
                     _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
@@ -664,7 +664,7 @@ def train():
                     _, selection_info = pmo.selector(torch.mean(img_features, dim=0, keepdim=True),
                                                      gumbel=False, hard=False)
                     tsk_sim = selection_info['y_soft']        # [1, 10]
-                sim = torch.cat([img_sim, *[tsk_sim]*10]).cpu().numpy()
+                sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
                 figure = draw_heatmap(sim, verbose=False)
                 writer.add_figure(f"task-image/sim", figure, i+1)
 
