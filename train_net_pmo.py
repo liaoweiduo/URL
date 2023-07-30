@@ -664,7 +664,7 @@ def train():
                     _, selection_info = pmo.selector(torch.mean(img_features, dim=0, keepdim=True),
                                                      gumbel=False, hard=False)
                     tsk_sim = selection_info['y_soft']        # [1, 10]
-                sim = torch.cat([img_sim, tsk_sim]).cpu().numpy()
+                sim = torch.cat([img_sim, *[tsk_sim]*10]).cpu().numpy()
                 figure = draw_heatmap(sim, verbose=False)
                 writer.add_figure(f"task-image/sim", figure, i+1)
 
