@@ -142,7 +142,7 @@ class ResNet(nn.Module):
         self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)     # cosine
 
         # handle classifier creation
-        if num_classes is not None:
+        if num_classes is not None and num_classes != 0:
             if classifier == 'linear':
                 self.cls_fn = nn.Linear(self.outplanes, num_classes)
             elif classifier == 'cosine':
@@ -282,6 +282,10 @@ class ResNet(nn.Module):
     def get_trainable_cluster_center_parameters(self):
         return [v for k, v in self.named_parameters()
                 if v.requires_grad and 'selector.prototypes' in k]
+
+    def get_trainable_classifier_parameters(self):
+        return [v for k, v in self.named_parameters()
+                if v.requires_grad and 'cls' in k]
 
 
 def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=False, **kwargs):

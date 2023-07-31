@@ -219,6 +219,27 @@ common_args = {
 params = []
 
 """
+exp: domain classifier
+"""
+target = 'train_net_domain_classifier.py'
+num_runs_1sh = 1        # num of runs in 1 sh file
+common_args.update({
+    'tag': 'url-domain_classifier',
+    'train.max_iter': 100, 'train.summary_freq': 10,
+    'train.cosine_anneal_freq': 20, 'train.eval_freq': 20,    # no eval
+})
+param_grid = {
+    'train.learning_rate': [1e-2, 1e-1, 1, 10],
+}
+exp_name_template = common_args['tag'] + \
+                    '-lr{train.learning_rate}'
+params_temp = generate_params(common_args, param_grid, exp_name_template)
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
+params.extend(params_temp)
+
+
+"""
 exp: ce on both pool and task; task+ce+pure; tune on film lr. MO gumbel=False
 """
 # num_runs_1sh = 4        # num of runs in 1 sh file
@@ -243,23 +264,23 @@ exp: ce on both pool and task; task+ce+pure; tune on film lr. MO gumbel=False
 """
 exp: ce on both pool and task (no gumbel); task+ce
 """
-num_runs_1sh = 1        # num of runs in 1 sh file
-common_args.update({
-    'tag': 'pmo-ab-tc-seetask-1000',
-    'train.loss_type': 'task+ce',
-    'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
-})
-param_grid = {
-    'train.selector_learning_rate': [1],
-}
-exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}'
-params_temp = generate_params(common_args, param_grid, exp_name_template)
-# for p in params_temp:
-#     p['train.learning_rate'] = p['train.selector_learning_rate']
-params.extend(params_temp)
+# num_runs_1sh = 1        # num of runs in 1 sh file
+# common_args.update({
+#     'tag': 'pmo-ab-tc-seetask-10000',
+#     'train.loss_type': 'task+ce',
+#     'train.max_iter': 10000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
+#     'train.mo_freq': 1000, 'train.n_mo': 1,
+#     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval
+# })
+# param_grid = {
+#     'train.selector_learning_rate': [1],
+# }
+# exp_name_template = common_args['tag'] + \
+#                     '-slr{train.selector_learning_rate}'
+# params_temp = generate_params(common_args, param_grid, exp_name_template)
+# # for p in params_temp:
+# #     p['train.learning_rate'] = p['train.selector_learning_rate']
+# params.extend(params_temp)
 
 
 """
