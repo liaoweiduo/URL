@@ -170,8 +170,8 @@ def train():
                     pickle.dump(epoch_train_history, f)
 
                 '''log task loss and accuracy'''
-                average_loss = np.mean(np.concatenate(epoch_loss['loss']))
-                average_accuracy = np.mean(np.concatenate(epoch_acc['acc']))
+                average_loss = np.mean(epoch_loss['loss'])
+                average_accuracy = np.mean(epoch_acc['acc'])
                 writer.add_scalar(f"loss", average_loss, i+1)
                 writer.add_scalar(f"accuracy", average_accuracy, i+1)
                 print(f"==>> loss {average_loss:.3f}, "
