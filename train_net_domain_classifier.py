@@ -135,7 +135,7 @@ def train():
             images = dict()
             labels = dict()
             # loading images and labels
-            for t_indx, (name, train_loader) in enumerate(zip(trainsets, train_loaders)):
+            for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
                 sample = train_loader.get_train_task(session, d=device)
                 samples.append(sample)
                 images[name] = torch.cat([sample['context_images'], sample['target_images']])
