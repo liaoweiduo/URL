@@ -227,6 +227,7 @@ common_args.update({
     'tag': 'url-domain_classifier',
     'train.max_iter': 100, 'train.summary_freq': 10,
     'train.cosine_anneal_freq': 20, 'train.eval_freq': 20,    # no eval
+    'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
 })
 param_grid = {
     'train.learning_rate': [1e-2, 1e-1, 1, 10],
