@@ -219,13 +219,13 @@ common_args = {
 params = []
 
 """
-exp: tcp see pure task selection
+exp: only pool ce
 """
-num_runs_1sh = 4        # num of runs in 1 sh file
+num_runs_1sh = 2        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ab-tcp-seetask500',
-    'train.loss_type': 'task+ce+pure',
-    'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 10,
+    'tag': 'pmo-ab-c',
+    'train.loss_type': 'ce',
+    'train.max_iter': 100, 'train.summary_freq': 10, 'train.pool_freq': 1,
     'train.mo_freq': 10, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
 })
@@ -238,6 +238,28 @@ params_temp = generate_params(common_args, param_grid, exp_name_template)
 # for p in params_temp:
 #     p['train.weight_decay'] = p['train.learning_rate'] / 50
 params.extend(params_temp)
+
+
+"""
+exp: tcp see pure task selection
+"""
+# num_runs_1sh = 1        # num of runs in 1 sh file
+# common_args.update({
+#     'tag': 'pmo-ab-tcp-seetask500',
+#     'train.loss_type': 'task+ce+pure',
+#     'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 10,
+#     'train.mo_freq': 10, 'train.n_mo': 1,
+#     'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
+# })
+# param_grid = {
+#     'train.selector_learning_rate': [1, 10],
+# }
+# exp_name_template = common_args['tag'] + \
+#                     '-slr{train.selector_learning_rate}'
+# params_temp = generate_params(common_args, param_grid, exp_name_template)
+# # for p in params_temp:
+# #     p['train.weight_decay'] = p['train.learning_rate'] / 50
+# params.extend(params_temp)
 
 
 """

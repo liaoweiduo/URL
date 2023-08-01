@@ -179,8 +179,8 @@ class ResNet(nn.Module):
         """task_x contains task image samples for task-conditioning."""
         if isinstance(x_list, torch.Tensor):
             x_list = [x_list]
-        features = torch.mean(self.embed(task_x), dim=0, keepdim=True)        # [1, 512]
-        # features = self.embed(x)        # forward backbone without film
+        # features = torch.mean(self.embed(task_x), dim=0, keepdim=True)        # [1, 512]
+        features = self.embed(task_x)        # [bs, 512] forward backbone without film
         selection, selection_info = self.selector(features, gumbel=gumbel, hard=hard)       # [1, n_clusters]
 
         if selected_idx is not None:
@@ -335,15 +335,19 @@ class Selector(nn.Module):
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
         # self.ones = torch.ones(self.prototype_shape)
 
-    def forward(self, inputs, gumbel=True, hard=True):
+    def forward(self, inputs, gumbel=True, hard=True, average=True):
         """
         :param inputs: [batch_size, fea_embed], [bs,512]
         :param gumbel: whether to use gumbel softmax for selection
         :param hard: whether to use hard selection.
-        :return selection: hard selection [bs, n_class],
+        :param average: whether to average after encoder.
+        :return selection: hard selection [bs, n_class] if not average, else [1, n_class]
         """
         bs = inputs.shape[0]
         embeddings = self.encoder([inputs])[0]     # [bs, 64]
+        if average:
+            embeddings = torch.mean(embeddings, dim=0, keepdim=True)      # [1, 64]
+            bs = 1
         embeddings = F.sigmoid(embeddings)          # apply sigmoid activation on embeddings
         embeddings = embeddings.view(bs, self.rep_dim, *self.prot_shape)    # [bs, 64, 1, 1]
 

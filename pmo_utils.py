@@ -844,7 +844,7 @@ class Pool(nn.Module):
             embeddings.append(embs)
         return embeddings
 
-    def current_similarities(self):
+    def current_similarities(self, image_wise=False):
         """
         first return raw list, [8 * [num_class_each_cluster * numpy [8,]]]
         """
@@ -852,7 +852,10 @@ class Pool(nn.Module):
         for cluster in self.clusters:
             similarity = []
             for cls in cluster:
-                similarity.append(cls['class_similarity'])      # cls['class_similarity'] shape [8,]
+                if image_wise:
+                    similarity.append(cls['similarities'])      # cls['similarities'] shape [num_img, 8]
+                else:
+                    similarity.append(cls['class_similarity'])      # cls['class_similarity'] shape [8,]
             similarities.append(similarity)
         return similarities
 
