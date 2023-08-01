@@ -126,8 +126,7 @@ def train():
             epoch_loss[f'task/softmax_sim'] = []
             # epoch_loss[f'task/selection_ce_loss'] = []
             epoch_loss[f'pool/selection_ce_loss'] = []
-            if 'task' in args['train.loss_type']:
-                epoch_loss.update({f'task/{name}': [] for name in trainsets})
+            epoch_loss.update({f'task/{name}': [] for name in trainsets})
             # epoch_loss['task/rec'] = []
             # if 'hv' in args['train.loss_type']:
             epoch_loss['hv/loss'], epoch_loss['hv'] = [], []
@@ -139,9 +138,8 @@ def train():
                 f'pure/C{cluster_idx}': [] for cluster_idx in range(args['model.num_clusters'])})
 
             epoch_acc = {}
-            if 'task' in args['train.loss_type']:
-                epoch_acc['task/avg'] = []     # average over all trainsets
-                epoch_acc.update({f'task/{name}': [] for name in trainsets})
+            epoch_acc['task/avg'] = []     # average over all trainsets
+            epoch_acc.update({f'task/{name}': [] for name in trainsets})
             # if 'hv' in args['train.loss_type']:
             epoch_acc['hv'] = []
             epoch_acc.update({
