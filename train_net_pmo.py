@@ -416,7 +416,7 @@ def train():
                             context_images, target_images = pure_task['context_images'], pure_task['target_images']
                             context_labels, target_labels = pure_task['context_labels'], pure_task['target_labels']
 
-                            [enriched_context_features, enriched_target_features], _ = pmo(
+                            [enriched_context_features, enriched_target_features], selection_info = pmo(
                                 [context_images, target_images], torch.cat([context_images, target_images]),
                                 gumbel=False, hard=True)
 
@@ -676,6 +676,24 @@ def train():
                     similarities = np.concatenate(epoch_loss[f'task/softmax_sim'][-10:])      # [num_tasks, 8]
                     figure = draw_heatmap(similarities, verbose=False)
                     writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
+
+                '''write pure similarities'''
+                numpy_images = pool.current_images()
+                for cluster_idx, cluster in enumerate(numpy_images):
+                    if len(cluster) > 0:
+                        image_batch = torch.from_numpy(
+                            np.concatenate(cluster)
+                        ).to(device)
+                        with torch.no_grad():
+                            img_features = pmo.embed(image_batch)    # [img_size, 512]
+                            _, selection_info = pmo.selector(img_features, gumbel=False)
+                            img_sim = selection_info['y_soft']        # [img_size, 10]
+                            _, selection_info = pmo.selector(torch.mean(img_features, dim=0, keepdim=True),
+                                                             gumbel=False, hard=False)
+                            tsk_sim = selection_info['y_soft']        # [1, 10]
+                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
+                        figure = draw_heatmap(sim, verbose=False)
+                        writer.add_figure(f"pure-image/sim{cluster_idx}", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
