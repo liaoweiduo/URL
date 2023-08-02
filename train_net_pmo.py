@@ -184,6 +184,7 @@ def train():
         epoch_val_acc = {}
 
         print(f'\n>>>> Train start from {start_iter}.')
+        verbose = True
         for i in tqdm(range(start_iter, max_iter), ncols=100):
 
             zero_grad()
@@ -194,30 +195,30 @@ def train():
             if 'ilsvrc_2012' in trainsets:
                 p[trainsets.index('ilsvrc_2012')] = 2.0
             p = p / sum(p)
-            while True:
-                t_indx = np.random.choice(len(trainsets), p=p)
-                trainset = trainsets[t_indx]
+            # while True:
+            t_indx = np.random.choice(len(trainsets), p=p)
+            trainset = trainsets[t_indx]
 
-                samples = train_loaders[trainset].get_train_task(session, d=device)
-                context_images, target_images = samples['context_images'], samples['target_images']
-                context_labels, target_labels = samples['context_labels'], samples['target_labels']
-                context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
-                domain = t_indx
+            samples = train_loaders[trainset].get_train_task(session, d=device)
+            context_images, target_images = samples['context_images'], samples['target_images']
+            context_labels, target_labels = samples['context_labels'], samples['target_labels']
+            context_gt_labels, target_gt_labels = samples['context_gt'], samples['target_gt']
+            domain = t_indx
 
-                '''samples put to buffer'''
-                task_images = torch.cat([context_images, target_images]).cpu()
-                gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
-                domain = np.array([domain] * len(gt_labels))
-                similarities = np.array([0] * len(gt_labels))       # no use
-                not_full = pool.put_buffer(
-                    task_images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
+            '''samples put to buffer'''
+            task_images = torch.cat([context_images, target_images]).cpu()
+            gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
+            domain = np.array([domain] * len(gt_labels))
+            similarities = np.array([0] * len(gt_labels))       # no use
+            not_full = pool.put_buffer(
+                task_images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
-                verbose = True
-                if not not_full and verbose:  # full buffer
-                    # print(f'Buffer is full at iter: {i}.')
-                    print(f'Buffer is full num classes in buffer: {len(pool.buffer)}..')
-                if not not_full:    # enough sampling
-                    break
+            if not not_full and verbose:  # full buffer
+                print(f'Buffer is full at iter: {i}.')
+                verbose = False
+                # print(f'Buffer is full num classes in buffer: {len(pool.buffer)}..')
+            # if not not_full:    # enough sampling
+            #     break
 
             # need to check how many classes in 1 samples and need a buffer size
             # about 10 iters can obtain 200 classes
