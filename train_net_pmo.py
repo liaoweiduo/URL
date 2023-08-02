@@ -54,6 +54,7 @@ def train():
         # print(f'Test on: {testsets}.')
 
         print(f'devices: {device}.')
+        assert (device != 'cpu'), f'device is cpu'
 
         train_loaders = dict()
         num_train_classes = dict()
@@ -78,12 +79,12 @@ def train():
         pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
 
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
-        # optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
-        #                                       lr=args['train.selector_learning_rate'],
-        #                                       weight_decay=args['train.selector_learning_rate'] / 50
-        #                                       )
-        optimizer_selector = torch.optim.Adadelta(pmo.get_trainable_selector_parameters(True),
-                                                  lr=args['train.selector_learning_rate'])
+        optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
+                                              lr=args['train.selector_learning_rate'],
+                                              weight_decay=args['train.selector_learning_rate'] / 50
+                                              )
+        # optimizer_selector = torch.optim.Adadelta(pmo.get_trainable_selector_parameters(True),
+        #                                           lr=args['train.selector_learning_rate'])
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
@@ -92,13 +93,13 @@ def train():
             print('No checkpoint restoration for pmo.')
         if args['train.lr_policy'] == "step":
             lr_manager = UniformStepLR(optimizer, args, start_iter)
-            # lr_manager_selector = UniformStepLR(optimizer_selector, args, start_iter)
+            lr_manager_selector = UniformStepLR(optimizer_selector, args, start_iter)
         elif "exp_decay" in args['train.lr_policy']:
             lr_manager = ExpDecayLR(optimizer, args, start_iter)
-            # lr_manager_selector = ExpDecayLR(optimizer_selector, args, start_iter)
+            lr_manager_selector = ExpDecayLR(optimizer_selector, args, start_iter)
         elif "cosine" in args['train.lr_policy']:
             lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
-            # lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, start_iter)
+            lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, start_iter)
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
@@ -174,7 +175,7 @@ def train():
                 pool.optimizer.step()
 
             lr_manager.step(idx)
-            # lr_manager_selector.step(idx)
+            lr_manager_selector.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.lr_manager.step(idx)
 
@@ -648,7 +649,7 @@ def train():
                     if len(cluster) > 0:
                         writer.add_image(f"center_pool-image/{cluster_id}", cluster, i+1)
 
-                '''write pool similarities'''
+                '''write pool similarities (class-wise)'''
                 similarities = pool.current_similarities()
                 for cluster_id, cluster in enumerate(similarities):
                     if len(cluster) > 0:
@@ -670,28 +671,7 @@ def train():
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
                         writer.add_figure(f"pool-img-sim/{cluster_id}", figure, i+1)
 
-                '''write task images'''
-                writer.add_images(f"task-image/image", task_images, i+1)     # task images
-                img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                    img_sim = selection_info['y_soft']        # [img_size, 10]
-                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-                    tsk_sim = selection_info['y_soft']        # [1, 10]
-                sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
-                figure = draw_heatmap(sim, verbose=False)
-                writer.add_figure(f"task-image/sim", figure, i+1)
-
-                '''write task similarities'''
-                if len(epoch_loss[f'task/gumbel_sim']) > 0:
-                    similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'][-10:])      # [num_tasks, 8]
-                    figure = draw_heatmap(similarities, verbose=False)
-                    writer.add_figure(f"train_image/task-gumbel-sim", figure, i+1)
-                    similarities = np.concatenate(epoch_loss[f'task/softmax_sim'][-10:])      # [num_tasks, 8]
-                    figure = draw_heatmap(similarities, verbose=False)
-                    writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
-
-                '''write pool similarities after update iter'''
+                '''write image similarities in the pool after update iter'''
                 numpy_images = pool.current_images()
                 for cluster_idx, cluster in enumerate(numpy_images):
                     if len(cluster) > 0:
@@ -707,6 +687,27 @@ def train():
                         sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
                         figure = draw_heatmap(sim, verbose=False)
                         writer.add_figure(f"pool-img-sim-re-cal/{cluster_idx}", figure, i+1)
+
+                '''write task images'''
+                writer.add_images(f"task-image/image", task_images, i+1)     # task images
+                img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                    img_sim = selection_info['y_soft']        # [img_size, 10]
+                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                    tsk_sim = selection_info['y_soft']        # [1, 10]
+                sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
+                figure = draw_heatmap(sim, verbose=False)
+                writer.add_figure(f"task-image/sim-re-cal", figure, i+1)
+
+                '''write task similarities'''
+                if len(epoch_loss[f'task/gumbel_sim']) > 0:
+                    similarities = np.concatenate(epoch_loss[f'task/gumbel_sim'][-10:])      # [num_tasks, 8]
+                    figure = draw_heatmap(similarities, verbose=False)
+                    writer.add_figure(f"train_image/task-gumbel-sim", figure, i+1)
+                    similarities = np.concatenate(epoch_loss[f'task/softmax_sim'][-10:])      # [num_tasks, 8]
+                    figure = draw_heatmap(similarities, verbose=False)
+                    writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
