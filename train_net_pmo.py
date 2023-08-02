@@ -690,8 +690,8 @@ def train():
 
                 '''write task images'''
                 writer.add_images(f"task-image/image", task_images, i+1)     # task images
-                img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
                 with torch.no_grad():
+                    img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
                     _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
                     img_sim = selection_info['y_soft']        # [img_size, 10]
                     _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)

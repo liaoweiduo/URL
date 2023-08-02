@@ -223,17 +223,16 @@ exp: try
 """
 num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-adam',
+    'tag': 'pmo-adam-iter500-cp',
     'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 1,
     'train.mo_freq': 50, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
+    'train.cosine_anneal_freq': 10, 'train.eval_freq': 20000,    # no eval
     'train.loss_type': 'ce+pure',
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
+    'train.selector_learning_rate': [1e-3, 5e-3, 1e-2, 5e-2],
 }
 exp_name_template = common_args['tag'] + \
-                    '-{train.loss_type}' + \
                     '-slr{train.selector_learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 # for p in params_temp:
