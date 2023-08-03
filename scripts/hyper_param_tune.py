@@ -219,6 +219,30 @@ common_args = {
 params = []
 
 """
+exp: try 1 iter = 1 tasks 
+"""
+num_runs_1sh = 4        # num of runs in 1 sh file
+common_args.update({
+    'tag': 'pmo-adam-tcp',
+    'train.max_iter': 2000, 'train.summary_freq': 200, 'train.pool_freq': 10,
+    'train.mo_freq': 200, 'train.n_mo': 1,
+    'train.cosine_anneal_freq': 2000, 'train.eval_freq': 20000,    # no eval
+    'train.loss_type': 'task+ce+pure',
+})
+param_grid = {
+    'train.selector_learning_rate': [1e-4, 1e-3],
+    'train.learning_rate': [1e-5, 1e-4],
+}
+exp_name_template = common_args['tag'] + \
+                    '-slr{train.selector_learning_rate}' + \
+                    '-flr{train.learning_rate}'
+params_temp = generate_params(common_args, param_grid, exp_name_template)
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
+params.extend(params_temp)
+
+
+"""
 exp: try 1 iter = many tasks until full buffer in the pool
 """
 # num_runs_1sh = 4        # num of runs in 1 sh file
@@ -238,28 +262,6 @@ exp: try 1 iter = many tasks until full buffer in the pool
 # # for p in params_temp:
 # #     p['train.weight_decay'] = p['train.learning_rate'] / 50
 # params.extend(params_temp)
-
-
-"""
-exp: try 1 iter = 1 tasks 
-"""
-num_runs_1sh = 4        # num of runs in 1 sh file
-common_args.update({
-    'tag': 'pmo-adam-c',
-    'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
-    'train.mo_freq': 500, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval
-    'train.loss_type': 'ce',
-})
-param_grid = {
-    'train.selector_learning_rate': [1e-4, 5e-4, 1e-3, 5e-3],
-}
-exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}'
-params_temp = generate_params(common_args, param_grid, exp_name_template)
-# for p in params_temp:
-#     p['train.weight_decay'] = p['train.learning_rate'] / 50
-params.extend(params_temp)
 
 
 """

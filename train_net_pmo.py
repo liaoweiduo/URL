@@ -330,14 +330,16 @@ def train():
                 if 'ce' in args['train.loss_type']:
                     numpy_images = pool.current_images()
                     '''random select a batch of samples'''
-                    batch_size_each_cluster = 50        # bs = 50*10
+                    # batch_size_each_cluster = 50        # bs = 50*10
                     image_batch, cluster_labels = [], []
                     for cluster_idx, cluster in enumerate(numpy_images):
                         if len(cluster) > 0:
                             imgs = np.concatenate(cluster)
-                            select_idxs = np.random.permutation(len(imgs))[:batch_size_each_cluster]
-                            image_batch.append(imgs[select_idxs])   # np
-                            cluster_labels.append([cluster_idx] * len(select_idxs))
+                            image_batch.append(imgs)   # np
+                            cluster_labels.append([cluster_idx] * imgs.shape[0])
+                            # select_idxs = np.random.permutation(len(imgs))[:batch_size_each_cluster]
+                            # image_batch.append(imgs[select_idxs])   # np
+                            # cluster_labels.append([cluster_idx] * len(select_idxs))
                     image_batch = torch.from_numpy(np.concatenate(image_batch)).to(device)
                     cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
                     # image_batch = torch.from_numpy(
