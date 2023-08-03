@@ -245,14 +245,14 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-adam-tcp',
+    'tag': 'pmo-adam-c',
     'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
     'train.mo_freq': 500, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval
-    'train.loss_type': 'task+ce+pure',
+    'train.loss_type': 'ce',
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-3, 5e-3, 1e-2, 5e-2],
+    'train.selector_learning_rate': [1e-4, 5e-4, 1e-3, 5e-3],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}'

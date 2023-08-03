@@ -329,16 +329,27 @@ def train():
                 '''selection CE loss on all clusters'''
                 if 'ce' in args['train.loss_type']:
                     numpy_images = pool.current_images()
-                    image_batch = torch.from_numpy(
-                        np.concatenate([np.concatenate(cluster) for cluster in numpy_images if len(cluster) > 0])
-                    ).to(device)
-                    cluster_labels = torch.from_numpy(
-                        np.array([
-                            cluster_idx
-                            for cluster_idx, cluster in enumerate(numpy_images)
-                            for cls in cluster
-                            for _ in range(cls.shape[0])])
-                    ).long().to(device)
+                    '''random select a batch of samples'''
+                    batch_size_each_cluster = 50        # bs = 50*10
+                    image_batch, cluster_labels = [], []
+                    for cluster_idx, cluster in enumerate(numpy_images):
+                        if len(cluster) > 0:
+                            imgs = np.concatenate(cluster)
+                            select_idxs = np.random.permutation(len(imgs))[:batch_size_each_cluster]
+                            image_batch.append(imgs[select_idxs])   # np
+                            cluster_labels.append([cluster_idx] * len(select_idxs))
+                    image_batch = torch.from_numpy(np.concatenate(image_batch)).to(device)
+                    cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
+                    # image_batch = torch.from_numpy(
+                    #     np.concatenate([np.concatenate(cluster) for cluster in numpy_images if len(cluster) > 0])
+                    # ).to(device)
+                    # cluster_labels = torch.from_numpy(
+                    #     np.array([
+                    #         cluster_idx
+                    #         for cluster_idx, cluster in enumerate(numpy_images)
+                    #         for cls in cluster
+                    #         for _ in range(cls.shape[0])])
+                    # ).long().to(device)
                     _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False, average=False)
                     fn = torch.nn.CrossEntropyLoss()
                     y_soft = selection_info['y_soft']  # [img_size, 8]
@@ -360,14 +371,14 @@ def train():
             if 'task' in args['train.loss_type']:
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], torch.cat([context_images, target_images]),
-                    gumbel=True, hard=True)
+                    gumbel=True, hard=False)
                 # task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
                 # # supervision to be softmax for CE loss
             else:
                 with torch.no_grad():
                     [enriched_context_features, enriched_target_features], selection_info = pmo(
                         [context_images, target_images], torch.cat([context_images, target_images]),
-                        gumbel=True, hard=True)
+                        gumbel=True, hard=False)
 
             task_loss, stats_dict, _ = prototype_loss(
                 enriched_context_features, context_labels,
@@ -385,6 +396,16 @@ def train():
             '''log task sim (softmax and gumbel)'''
             epoch_loss[f'task/gumbel_sim'].append(selection_info['y_soft'].detach().cpu().numpy())    # [1,8]
             epoch_loss[f'task/softmax_sim'].append(selection_info['normal_soft'].detach().cpu().numpy())
+
+            '''log img sim in the task'''
+            with torch.no_grad():
+                img_features = pmo.embed(torch.cat([context_images, target_images]))  # [img_size, 512]
+                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                img_sim = selection_info['y_soft']  # [img_size, 10]
+                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                tsk_sim = selection_info['y_soft']  # [1, 10]
+            sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
+            epoch_loss[f'task/image_softmax_sim'] = sim
 
             # '''selection CE loss on training task'''
             # if 'ce' in args['train.loss_type']:
@@ -691,6 +712,9 @@ def train():
 
                 '''write task images'''
                 writer.add_images(f"task-image/image", task_images, i+1)     # task images
+                sim = epoch_loss['task/image_softmax_sim']
+                figure = draw_heatmap(sim, verbose=False)
+                writer.add_figure(f"task-image/sim", figure, i+1)
                 with torch.no_grad():
                     img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
                     _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
@@ -788,7 +812,7 @@ def train():
 
                             [enriched_context_features, enriched_target_features], _ = pmo(
                                 [context_images, target_images], torch.cat([context_images, target_images]),
-                                gumbel=False, hard=True)
+                                gumbel=False, hard=False)
                             # enriched_context_features, _ = pmo(context_images, gumbel=False)
                             # enriched_target_features, _ = pmo(target_images, gumbel=False)
 
@@ -818,7 +842,6 @@ def train():
                                     'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
                             '''check if any cluster have sufficient class to construct 1 task'''
-
                             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
                                                  val_pool.current_classes()]
                             n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
