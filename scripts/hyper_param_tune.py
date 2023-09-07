@@ -202,7 +202,7 @@ common_args = {
     'model.dir': '../URL-experiments/saved_results/',   # need to add a folder name
     'model.num_clusters': 10, 'model.backbone': 'resnet18_moe',
     'model.pretrained': True, 'source': '../URL-experiments/saved_results/url',
-    'source_moe': '../URL-experiments/saved_results/mdl',
+    'source_moe': '../URL-experiments/saved_results/sdl',
     'data.train': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower mscoco',
     'data.test': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower '
