@@ -162,6 +162,8 @@ parser.add_argument('--out.dir', default='', type=str, metavar='PATH',
                     help='directory to output the result and checkpoints')
 parser.add_argument('--source', default='', type=str, metavar='PATH',
                     help='path of pretrained model')
+parser.add_argument('--source_moe', default='', type=str, metavar='PATH',
+                    help='path of pretrained model for moe.')
 
 # for jupyter
 parser.add_argument('-f', default='', type=str, metavar='F',

@@ -8,6 +8,63 @@ from models.models_dict import DATASET_MODELS_RESNET18, DATASET_MODELS_RESNET18_
 from utils import device
 
 
+def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=False):
+    train_classifier = args['model.classifier']
+    dropout_rate = args.get('model.dropout', 0)
+    if base_network_name is None:       # for fe before selector
+        base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
+    moe_base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
+
+    from models.resnet18_moe import resnet18 as resnet18_moe
+    if args['model.pretrained']:
+        '''load feature extractor'''
+        base_network_path = os.path.join(args['source_moe'], 'weights', moe_base_network_name, 'model_best.pth.tar')
+        model_fn = partial(resnet18_moe, dropout=dropout_rate,
+                           pretrained_model_path=base_network_path,
+                           film_head=args['model.num_clusters'],
+                           tau=args['train.gumbel_tau'],
+                           num_clusters=args['model.num_clusters'],
+                           opt=args['cluster.opt'],
+                           freeze_backbone=args['train.freeze_backbone'])
+    else:
+        model_fn = partial(resnet18_moe, dropout=dropout_rate,
+                           film_head=args['model.num_clusters'],
+                           tau=args['train.gumbel_tau'],
+                           num_clusters=args['model.num_clusters'],
+                           opt=args['cluster.opt'],
+                           freeze_backbone=False)
+
+    model = model_fn(classifier=train_classifier,
+                     num_classes=num_classes,
+                     global_pool=False)
+
+    from models.resnet18 import resnet18 as resnet18_fe
+    if args['model.pretrained']:
+        base_network_path = os.path.join(args['source'], 'weights', base_network_name,
+                                         'model_best.pth.tar')
+        model_fn = partial(resnet18_fe, dropout=dropout_rate,
+                           pretrained_model_path=base_network_path)
+    else:
+        model_fn = partial(resnet18_fe, dropout=dropout_rate)
+
+    model_fe = model_fn(classifier=train_classifier,
+                        num_classes=num_classes,
+                        global_pool=False)
+    model.feature_extractor = model_fe
+
+    if d is None:
+        d = device
+    model.to(d)
+    print(f'Move moe model to {d}.')
+
+    if freeze_fe:           # only classifier not freeze
+        for name, param in model.named_parameters():
+            if 'cls' not in name:       # cls_fn
+                param.requires_grad = False
+
+    return model
+
+
 def get_model(num_classes, args, base_network_name=None, d=None, freeze_fe=False):
     train_classifier = args['model.classifier']
     model_name = args['model.backbone']
@@ -29,24 +86,6 @@ def get_model(num_classes, args, base_network_name=None, d=None, freeze_fe=False
                            pretrained_model_path=base_network_path)
         else:
             model_fn = partial(resnet18, dropout=dropout_rate)
-    elif 'moe' in model_name:
-        from models.resnet18_moe import resnet18
-        if args['model.pretrained']:
-            base_network_path = os.path.join(args['source'], 'weights', base_network_name, 'model_best.pth.tar')
-            model_fn = partial(resnet18, dropout=dropout_rate,
-                               pretrained_model_path=base_network_path,
-                               film_head=args['model.num_clusters'],
-                               tau=args['train.gumbel_tau'],
-                               num_clusters=args['model.num_clusters'],
-                               opt=args['cluster.opt'],
-                               freeze_backbone=args['train.freeze_backbone'])
-        else:
-            model_fn = partial(resnet18, dropout=dropout_rate,
-                               film_head=args['model.num_clusters'],
-                               tau=args['train.gumbel_tau'],
-                               num_clusters=args['model.num_clusters'],
-                               opt=args['cluster.opt'],
-                               freeze_backbone=False)
     else:
         from models.resnet18 import resnet18
         if args['model.pretrained']:

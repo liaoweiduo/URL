@@ -22,7 +22,7 @@ from data.meta_dataset_reader import (MetaDatasetBatchReader, MetaDatasetEpisode
 from models.losses import cross_entropy_loss, prototype_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
-from models.model_helpers import get_model, get_optimizer
+from models.model_helpers import get_model, get_model_moe, get_optimizer
 from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
@@ -75,8 +75,8 @@ def train():
         '''initialize models and optimizer'''
         start_iter, best_val_loss, best_val_acc = 0, 999999999, 0
 
-        # pmo model load from url
-        pmo = get_model(None, args, base_network_name='url')    # resnet18_moe
+        # pmo model, fe load from url
+        pmo = get_model_moe(None, args, base_network_name='url')    # resnet18_moe
 
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
         optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),

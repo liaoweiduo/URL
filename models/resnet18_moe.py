@@ -140,6 +140,7 @@ class ResNet(nn.Module):
 
         # selector
         self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine', tau=tau)     # cosine
+        self.feature_extractor = None
 
         # handle classifier creation
         if num_classes is not None and num_classes != 0:
@@ -200,6 +201,12 @@ class ResNet(nn.Module):
         return results, selection_info
 
     def embed(self, x, selection=None, squeeze=True, param_dict=None):
+        if self.feature_extractor is None or selection is not None:
+            return self._embed(x, selection)
+        else:
+            return self.feature_extractor.embed(x)      # extract task feature
+
+    def _embed(self, x, selection=None):
         """
         selection is None: forward resnet18 backbone and skip films.
         """
@@ -300,7 +307,7 @@ def resnet18(pretrained=False, pretrained_model_path=None, freeze_backbone=False
         ckpt_dict = torch.load(pretrained_model_path, map_location=device)['state_dict']
         shared_state = {k: v for k, v in ckpt_dict.items() if 'cls' not in k}
         model.load_state_dict(shared_state, strict=False)
-        print('Loaded shared weights from {}'.format(pretrained_model_path))
+        print('MoE: Loaded shared weights from {}'.format(pretrained_model_path))
 
     # freeze backbone except film and cls
     if freeze_backbone:
