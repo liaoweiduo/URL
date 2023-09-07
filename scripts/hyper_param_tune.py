@@ -221,7 +221,7 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 4        # num of runs in 1 sh file
+num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
     'tag': 'pmo-adam-tcp',
     'train.max_iter': 2000, 'train.summary_freq': 200, 'train.pool_freq': 10,
