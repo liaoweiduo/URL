@@ -440,6 +440,7 @@ def train():
 
                 '''pure loss on all clusters'''
                 if 'pure' in args['train.loss_type']:
+                    epoch_loss[f'pool/task_softmax_sim'] = []
                     for cluster_idx in range(len(num_imgs_clusters)):
                         n_way, n_shot, n_query = available_setting([num_imgs_clusters[cluster_idx]],
                                                                    args['train.type'])
@@ -466,6 +467,10 @@ def train():
                             '''log pure loss'''
                             epoch_loss[f'pure/C{cluster_idx}'].append(stats_dict['loss'])
                             epoch_acc[f'pure/C{cluster_idx}'].append(stats_dict['acc'])
+
+                            '''log pure selection info for pure task'''
+                            epoch_loss[f'pool/task_softmax_sim'].append(
+                                selection_info['normal_soft'].detach().cpu().numpy())   # [1, 10]
 
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
@@ -735,6 +740,12 @@ def train():
                     similarities = np.concatenate(epoch_loss[f'task/softmax_sim'][-10:])      # [num_tasks, 8]
                     figure = draw_heatmap(similarities, verbose=False)
                     writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
+
+                '''write pure task similarities   10*10'''
+                if len(epoch_loss[f'pool/task_softmax_sim']) > 0:
+                    similarities = np.concatenate(epoch_loss[f'pool/task_softmax_sim'])
+                    figure = draw_heatmap(similarities, verbose=False)
+                    writer.add_figure(f"train_image/pure-task-softmax-sim", figure, i+1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes

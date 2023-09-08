@@ -231,8 +231,8 @@ common_args.update({
     'train.loss_type': 'task+ce+pure',
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-4, 1e-3],
-    'train.learning_rate': [1e-5, 1e-4],
+    'train.selector_learning_rate': [1e-3],
+    'train.learning_rate': [5e-4, 1e-3, 5e-2],
 }
 exp_name_template = common_args['tag'] + \
                     '-slr{train.selector_learning_rate}' + \
