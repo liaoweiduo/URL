@@ -378,15 +378,10 @@ def train():
                             continue    # not enough samples to construct a task
                         else:
                             pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
-                            context_images, target_images = pure_task['context_images'], pure_task['target_images']
-                            # context_labels, target_labels = pure_task['context_labels'], pure_task['target_labels']
-
-                            # [enriched_context_features, enriched_target_features], selection_info = pmo(
-                            #     [context_images, target_images], torch.cat([context_images, target_images]),
-                            #     gumbel=False, hard=True)
-
-                            _, selection_info = pmo.selector(pmo.embed(torch.cat([context_images, target_images])),
-                                                             gumbel=False, average=True)
+                            _, selection_info = pmo.selector(
+                                pmo.embed(
+                                    torch.cat([pure_task['context_images'], pure_task['target_images']])),
+                                gumbel=False, average=True)
                             y_soft = selection_info['y_soft']  # [1, 8]
                             labels = torch.ones(
                                 (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * cluster_idx
