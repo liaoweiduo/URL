@@ -471,6 +471,7 @@ def train():
                     epoch_loss[f'pure/task_softmax_sim'] = []
                     epoch_loss[f'pure/task_dist'] = []
                     epoch_loss[f'pure/image_softmax_sim'] = {}
+                    pure_task_images = {}
                     for cluster_idx in range(len(num_imgs_clusters)):
                         n_way, n_shot, n_query = available_setting([num_imgs_clusters[cluster_idx]],
                                                                    args['train.type'])
@@ -480,6 +481,7 @@ def train():
                             pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
                             context_images, target_images = pure_task['context_images'], pure_task['target_images']
                             context_labels, target_labels = pure_task['context_labels'], pure_task['target_labels']
+                            pure_task_images[cluster_idx] = torch.cat([context_images, target_images]).cpu()
 
                             [enriched_context_features, enriched_target_features], selection_info = pmo(
                                 [context_images, target_images], torch.cat([context_images, target_images]),
@@ -785,6 +787,7 @@ def train():
 
                 '''write pure task image sim'''
                 for cluster_idx, sim in epoch_loss[f'pure/image_softmax_sim'].items():
+                    writer.add_images(f"pure-image/image{cluster_idx}", pure_task_images[cluster_idx], i + 1)  # pure images
                     figure = draw_heatmap(sim, verbose=False)
                     writer.add_figure(f"pure-image/sim{cluster_idx}", figure, i + 1)
 
