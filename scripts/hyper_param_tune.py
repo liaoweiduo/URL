@@ -224,7 +224,7 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-visualpureimg',
+    'tag': 'pmo-recalimgsimbeforeupdate',
     'train.max_iter': 2000, 'train.summary_freq': 200, 'train.pool_freq': 10,
     'train.mo_freq': 200, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 2000, 'train.eval_freq': 20000,    # no eval

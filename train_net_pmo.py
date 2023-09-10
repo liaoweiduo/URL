@@ -516,6 +516,23 @@ def train():
                             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
                             epoch_loss[f'pure/image_softmax_sim'][cluster_idx] = sim
 
+                '''check pool image similarity'''
+                numpy_images = pool.current_images()
+                for cluster_idx, cluster in enumerate(numpy_images):
+                    if len(cluster) > 0:
+                        image_batch = torch.from_numpy(
+                            np.concatenate(cluster)
+                        ).to(device)
+                        with torch.no_grad():
+                            img_features = pmo.embed(image_batch)    # [img_size, 512]
+                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                            img_sim = selection_info['y_soft']        # [img_size, 10]
+                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                            tsk_sim = selection_info['y_soft']        # [1, 10]
+                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
+                        figure = draw_heatmap(sim, verbose=False)
+                        writer.add_figure(f"pool-img-sim-re-cal-before-update/{cluster_idx}", figure, i+1)
+
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
