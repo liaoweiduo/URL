@@ -352,6 +352,16 @@ def train():
                 '''check pool image similarity'''
                 # todo: for debug, remove
                 if (i + 1) % args['train.mo_freq'] == 0:    # only draw every 200 iter
+
+                    '''write image similarities in the pool'''
+                    similarities = pool.current_similarities(image_wise=True)
+                    for cluster_id, cluster in enumerate(similarities):
+                        if len(cluster) > 0:
+                            sim_in_cluster = np.concatenate(cluster)  # [num_cls*num_img, 8]
+                            figure = draw_heatmap(sim_in_cluster, verbose=False)
+                            writer.add_figure(f"pool-img-sim-in-the-pool/{cluster_id}", figure, i + 1)
+
+                    '''write re-called image similarities in the pool'''
                     numpy_images = pool.current_images()
                     for cluster_idx, cluster in enumerate(numpy_images):
                         if len(cluster) > 0:
