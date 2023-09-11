@@ -288,10 +288,31 @@ def train():
                             pmo.embed(images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
+                    # todo: track a specific image sample
+                    anchor_index = np.random.choice(len(images), p=p)
+                    anchor_img, anchor_gt_label = images[anchor_index], gt_labels[anchor_index]
+                    anchor_domain, anchor_sim = domain[anchor_index], similarities[anchor_index]
+                    anchor_label = np.array([anchor_gt_label, anchor_domain])
+                    print(f'debug: anchor img shape: {anchor_img.shape}, '
+                          f'label: {anchor_label}, '
+                          f'sim: {anchor_sim}. ')
+
                     # ignore buffer size and put into buffer
                     pool.put_buffer(
                         images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
                         maintain_size=False)
+
+                    # todo: track a specific image sample
+                    found = False
+                    for cls in pool.buffer:
+                        if cls['label'] == anchor_label:
+                            for i, img in enumerate(cls['images']):
+                                if img == anchor_img:
+                                    found_sim = cls['similarities'][i]
+                                    print(f'debug: find anchor img in the buffer with sim: {found_sim}.')
+                                    assert found_sim == anchor_sim, f'debug: sim does not match.'
+                                    found = True
+                    assert found, f'debug: do not find anchor img in the buffer.'
 
                 '''collect cluster'''
                 current_clusters = center_pool.clear_clusters()
