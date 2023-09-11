@@ -295,7 +295,7 @@ def train():
                     anchor_label = np.array([anchor_gt_label, anchor_domain])
                     print(f'debug: anchor img shape: {anchor_img.shape}, '
                           f'label: {anchor_label}, '
-                          f'sim: {anchor_sim}. ')
+                          f'\nsim: {anchor_sim}. ')
 
                     # ignore buffer size and put into buffer
                     pool.put_buffer(
@@ -309,8 +309,8 @@ def train():
                             for i, img in enumerate(cls['images']):
                                 if (img == anchor_img).all():
                                     found_sim = cls['similarities'][i]
-                                    print(f'debug: find anchor img in the buffer with sim: {found_sim}.')
-                                    assert found_sim == anchor_sim, f'debug: sim does not match.'
+                                    print(f'debug: find anchor img in the buffer with \nsim: {found_sim}.')
+                                    assert (found_sim == anchor_sim).all(), f'debug: sim does not match.'
                                     found = True
                     assert found, f'debug: do not find anchor img in the buffer {img.shape}; {anchor_img.shape}.'
 
