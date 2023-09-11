@@ -314,6 +314,22 @@ def train():
                                     found = True
                     assert found, f'debug: do not find anchor img in the buffer {img.shape}; {anchor_img.shape}.'
 
+                    # todo: check sim keeps the same
+                    pool.buffer_copy = copy.deepcopy(pool.buffer)
+                    for cls in pool.buffer:
+                        for image_idx, image in enumerate(cls['images']):
+                            sim = cls['similarities'][image_idx]
+                            label = cls['label']
+                            for img_idx, img in enumerate(images.numpy()):
+                                if (image == img).all():
+                                    assert ((label[0] == gt_labels[img_idx]
+                                             ) and label[1] == domain[img_idx] and (
+                                            sim == similarities[img_idx]).all()
+                                            ), f'incorrect info: gt_label {label[0]} vs {gt_labels[img_idx]}, ' \
+                                               f'domain {label[1]} vs {domain[img_idx]}, ' \
+                                               f'sim {sim} vs {similarities[img_idx]}.'
+
+
                 '''collect cluster'''
                 current_clusters = center_pool.clear_clusters()
                 current_clusters = [cls for clses in current_clusters for cls in clses]       # cat all clusters
@@ -377,6 +393,41 @@ def train():
                             sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
                             figure = draw_heatmap(sim, verbose=False)
                             writer.add_figure(f"pool-img-sim-re-cal-after-buffer2cluster/{cluster_idx}", figure, i+1)
+
+                    cases = []
+                    for _ in range(100):
+                        # todo: track a specific image sample
+                        anchor_cluster_index = np.random.choice(len(pool.clusters))
+                        anchor_cls_index = np.random.choice(len(pool.clusters[anchor_cluster_index]))
+                        anchor_img_index = np.random.choice(
+                            len(pool.clusters[anchor_cluster_index][anchor_cls_index]['images']))
+                        anchor_img = pool.clusters[anchor_cluster_index][anchor_cls_index]['images'][anchor_img_index]
+                        anchor_label = pool.clusters[anchor_cluster_index][anchor_cls_index]['label']
+                        anchor_sim = pool.clusters[anchor_cluster_index][anchor_cls_index]['similarities'][
+                            anchor_img_index]
+                        # print(f'debug: anchor img shape: {anchor_img.shape}, '
+                        #       f'label: {anchor_label}, '
+                        #       f'\nsim: {anchor_sim}. ')
+
+                        # todo: track a specific image sample
+                        found = False
+                        correct = False
+                        for cls in pool.buffer_copy:
+                            if (cls['label'] == anchor_label).all():
+                                for i, img in enumerate(cls['images']):
+                                    if (img == anchor_img).all():
+                                        found = True
+                                        found_sim = cls['similarities'][i]
+                                        # print(f'debug: find anchor img in the buffer with \nsim: {found_sim}.')
+                                        # assert (found_sim == anchor_sim).all(), f'debug: sim does not match.'
+                                        if (found_sim == anchor_sim).all():
+                                            correct = True
+
+                        cases.append([found, correct])
+
+                    assert (np.array(cases).sum(0) == np.array([100, 100])).all(), f'{np.array(cases).sum(0)}'
+
+
 
 
                 '''selection CE loss on all clusters'''
