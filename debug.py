@@ -140,6 +140,12 @@ gt_labels_dict = np.concatenate(gt_labels_dict)
 images_dict = np.concatenate(images_dict)
 similarities_dict = np.concatenate(similarities_dict)
 
+perm = np.random.permutation(len(domain_dict))
+domain_dict = domain_dict[perm]
+gt_labels_dict = gt_labels_dict[perm]
+images_dict = images_dict[perm]
+similarities_dict = similarities_dict[perm]
+
 pool.put_buffer(
     torch.from_numpy(images_dict), {'domain': domain_dict, 'gt_labels': gt_labels_dict, 'similarities': similarities_dict},
     maintain_size=False)

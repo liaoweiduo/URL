@@ -214,6 +214,35 @@ def train():
             not_full = pool.put_buffer(
                 task_images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
+
+
+            # todo: check label keeps the same
+            pool.buffer_during_sampling = copy.deepcopy(pool.buffer)
+            if not_full:        # have put into the buffer
+                for pre_img_idx, pre_img in enumerate(task_images.numpy()):
+                    pre_gt_label = gt_labels[pre_img_idx]
+                    pre_domain = domain[pre_img_idx]
+                    pre_sim = similarities[pre_img_idx]
+                    checked = False
+                    for cls in pool.buffer:
+                        for post_image_idx, post_image in enumerate(cls['images']):
+                            sim = cls['similarities'][post_image_idx]
+                            label = cls['label']
+                            if (pre_img == post_image).all():
+                                checked = True
+                                assert ((label[0] == pre_gt_label
+                                         ) and label[1] == pre_domain and (
+                                        sim == pre_sim).all()
+                                        ), f'put_during sampling: ' \
+                                           f'incorrect info: gt_label {label[0]} vs {pre_gt_label}, ' \
+                                           f'domain {label[1]} vs {pre_domain}, ' \
+                                           f'sim {sim} vs {pre_sim}.'
+                    assert checked, f'no img find in buffer.'
+
+
+
+
+
             if not not_full and verbose:  # full buffer
                 print(f'Buffer is full at iter: {i}.')
                 verbose = False
@@ -288,31 +317,10 @@ def train():
                             pmo.embed(images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
-                    # todo: track a specific image sample
-                    anchor_index = np.random.choice(len(images))
-                    anchor_img, anchor_gt_label = images[anchor_index].numpy(), gt_labels[anchor_index]
-                    anchor_domain, anchor_sim = domain[anchor_index], similarities[anchor_index]
-                    anchor_label = np.array([anchor_gt_label, anchor_domain])
-                    print(f'debug: anchor img shape: {anchor_img.shape}, '
-                          f'label: {anchor_label}, '
-                          f'\nsim: {anchor_sim}. ')
-
                     # ignore buffer size and put into buffer
                     pool.put_buffer(
                         images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
                         maintain_size=False)
-
-                    # todo: track a specific image sample
-                    found = False
-                    for cls in pool.buffer:
-                        if (cls['label'] == anchor_label).all():
-                            for i, img in enumerate(cls['images']):
-                                if (img == anchor_img).all():
-                                    found_sim = cls['similarities'][i]
-                                    print(f'debug: find anchor img in the buffer with \nsim: {found_sim}.')
-                                    assert (found_sim == anchor_sim).all(), f'debug: sim does not match.'
-                                    found = True
-                    assert found, f'debug: do not find anchor img in the buffer {img.shape}; {anchor_img.shape}.'
 
                     # todo: check sim keeps the same
                     pool.buffer_copy = copy.deepcopy(pool.buffer)
