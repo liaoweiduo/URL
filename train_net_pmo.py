@@ -289,7 +289,7 @@ def train():
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
                     # todo: track a specific image sample
-                    anchor_index = np.random.choice(len(images), p=p)
+                    anchor_index = np.random.choice(len(images))
                     anchor_img, anchor_gt_label = images[anchor_index], gt_labels[anchor_index]
                     anchor_domain, anchor_sim = domain[anchor_index], similarities[anchor_index]
                     anchor_label = np.array([anchor_gt_label, anchor_domain])
