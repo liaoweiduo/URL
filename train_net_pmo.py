@@ -327,6 +327,27 @@ def train():
                 center_pool.buffer2cluster()
                 center_pool.clear_buffer()
 
+
+                '''check pool image similarity'''
+                # todo: for debug, remove
+                if (i + 1) % args['train.mo_freq'] == 0:    # only draw every 200 iter
+                    numpy_images = pool.current_images()
+                    for cluster_idx, cluster in enumerate(numpy_images):
+                        if len(cluster) > 0:
+                            image_batch = torch.from_numpy(
+                                np.concatenate(cluster)
+                            ).to(device)
+                            with torch.no_grad():
+                                img_features = pmo.embed(image_batch)    # [img_size, 512]
+                                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                                img_sim = selection_info['y_soft']        # [img_size, 10]
+                                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                                tsk_sim = selection_info['y_soft']        # [1, 10]
+                            sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
+                            figure = draw_heatmap(sim, verbose=False)
+                            writer.add_figure(f"pool-img-sim-re-cal-after-buffer2cluster/{cluster_idx}", figure, i+1)
+
+
                 '''selection CE loss on all clusters'''
                 if 'ce' in args['train.loss_type']:
                     numpy_images = pool.current_images()
@@ -516,7 +537,10 @@ def train():
                             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
                             epoch_loss[f'pure/image_softmax_sim'][cluster_idx] = sim
 
+
+
                 '''check pool image similarity'''
+                # todo: for debug, remove
                 numpy_images = pool.current_images()
                 for cluster_idx, cluster in enumerate(numpy_images):
                     if len(cluster) > 0:
@@ -532,6 +556,8 @@ def train():
                         sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
                         figure = draw_heatmap(sim, verbose=False)
                         writer.add_figure(f"pool-img-sim-re-cal-before-update/{cluster_idx}", figure, i+1)
+
+
 
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):

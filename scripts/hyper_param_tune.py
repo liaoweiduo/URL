@@ -219,14 +219,15 @@ common_args = {
 
 params = []
 
+
 """
-exp: try 1 iter = 1 tasks 
+exp: try 200 iter for debug
 """
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-recalimgsimbeforeupdate',
-    'train.max_iter': 2000, 'train.summary_freq': 200, 'train.pool_freq': 10,
-    'train.mo_freq': 200, 'train.n_mo': 1,
+    'tag': 'pmo-debug-pool-sim-after-buffer2cluster',
+    'train.max_iter': 200, 'train.summary_freq': 20, 'train.pool_freq': 10,
+    'train.mo_freq': 20, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 2000, 'train.eval_freq': 20000,    # no eval
     'train.loss_type': 'task+ce+pure',
 })
@@ -241,6 +242,29 @@ params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
 params.extend(params_temp)
+
+"""
+exp: try 1 iter = 1 tasks 
+"""
+# num_runs_1sh = 1        # num of runs in 1 sh file
+# common_args.update({
+#     'tag': 'pmo-recalimgsimbeforeupdate',
+#     'train.max_iter': 2000, 'train.summary_freq': 200, 'train.pool_freq': 10,
+#     'train.mo_freq': 200, 'train.n_mo': 1,
+#     'train.cosine_anneal_freq': 2000, 'train.eval_freq': 20000,    # no eval
+#     'train.loss_type': 'task+ce+pure',
+# })
+# param_grid = {
+#     'train.selector_learning_rate': [1e-3],
+#     'train.learning_rate': [1e-3],
+# }
+# exp_name_template = common_args['tag'] + \
+#                     '-slr{train.selector_learning_rate}' + \
+#                     '-flr{train.learning_rate}'
+# params_temp = generate_params(common_args, param_grid, exp_name_template)
+# for p in params_temp:
+#     p['train.weight_decay'] = p['train.learning_rate'] / 50
+# params.extend(params_temp)
 
 
 """
