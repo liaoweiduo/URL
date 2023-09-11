@@ -290,7 +290,7 @@ def train():
 
                     # todo: track a specific image sample
                     anchor_index = np.random.choice(len(images))
-                    anchor_img, anchor_gt_label = images[anchor_index], gt_labels[anchor_index]
+                    anchor_img, anchor_gt_label = images[anchor_index].numpy(), gt_labels[anchor_index]
                     anchor_domain, anchor_sim = domain[anchor_index], similarities[anchor_index]
                     anchor_label = np.array([anchor_gt_label, anchor_domain])
                     print(f'debug: anchor img shape: {anchor_img.shape}, '
@@ -305,14 +305,14 @@ def train():
                     # todo: track a specific image sample
                     found = False
                     for cls in pool.buffer:
-                        if cls['label'] == anchor_label:
+                        if (cls['label'] == anchor_label).all():
                             for i, img in enumerate(cls['images']):
-                                if img == anchor_img:
+                                if (img == anchor_img).all():
                                     found_sim = cls['similarities'][i]
                                     print(f'debug: find anchor img in the buffer with sim: {found_sim}.')
                                     assert found_sim == anchor_sim, f'debug: sim does not match.'
                                     found = True
-                    assert found, f'debug: do not find anchor img in the buffer.'
+                    assert found, f'debug: do not find anchor img in the buffer {img.shape}; {anchor_img.shape}.'
 
                 '''collect cluster'''
                 current_clusters = center_pool.clear_clusters()
