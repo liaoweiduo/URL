@@ -459,7 +459,7 @@ def train():
                         with torch.no_grad():
                             img_features = pmo.embed(image_batch)    # [img_size, 512]
                             _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            post_sim = selection_info['y_soft']        # [img_size, 10]
+                            post_sim = selection_info['y_soft'].detach().cpu().numpy()        # [img_size, 10]
                         dif = np.sum((pre_sim - post_sim) ** 2)
                         print(f"iter {i}: pool img's dif: {dif}.")
 
