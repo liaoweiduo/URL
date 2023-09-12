@@ -241,17 +241,29 @@ class Pool(nn.Module):
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
         similarities = info_dict['similarities']
 
+        # todo: check label keeps the same
+        print(f'debug: \ndomains: {domains}, \ngt_labels: {gt_labels}')
+
         '''images for one class'''
         labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
+
+        # todo: check label keeps the same
+        print(f'debug: \nlabels: {labels} \nunique labels: {np.unique(labels, axis=0)}')
+
         for label in np.unique(labels, axis=0):     # unique along first axis
             mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
-            # assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
+            assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
+            assert gt_labels[mask][0] == label[0] and domains[mask][0] == label[1]
             class_images = images[mask].numpy()
             class_similarities = similarities[mask]
 
             '''pop stored images and cat new images'''
             position = self.find_label(label, target='buffer')
             if position != -1:  # find exist label, cat onto it and re-put
+
+                # todo: check label keeps the same
+                print(f'find exist cls in buffer at position: {position} for label: {label}')
+
                 stored = self.buffer.pop(position)
                 assert (stored['label'] == label).all()
                 stored_images = np.concatenate([stored['images'], class_images])
@@ -264,6 +276,9 @@ class Pool(nn.Module):
             stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
             stored_similarities = stored_similarities[img_idxes]
 
+            # todo: check label keeps the same
+            print(f'find same image with img_idxs: {img_idxes} for label: {label}')
+
             class_dict = {
                 'images': stored_images, 'label': label,  # 'selection': stored_selection,
                 'similarities': stored_similarities,
@@ -272,6 +287,28 @@ class Pool(nn.Module):
 
             '''put into buffer'''
             self.buffer.append(class_dict)
+
+
+        # todo: check label keeps the same
+        for img_idx, pre_img in enumerate(images.numpy()):
+            pre_domain = domains[img_idx]
+            pre_gt_label = gt_labels[img_idx]
+            pre_sim = similarities[img_idx]
+            checked = False
+            for cls in self.buffer:
+                for post_image_idx, post_image in enumerate(cls['images']):
+                    sim = cls['similarities'][post_image_idx]
+                    label = cls['label']
+                    if (pre_img == post_image).all():
+                        checked = True
+                        assert ((label[0] == pre_gt_label
+                                 ) and label[1] == pre_domain and (
+                                sim == pre_sim).all()
+                                ), f'put_during sampling: ' \
+                                   f'incorrect info: gt_label {label[0]} vs {pre_gt_label}, ' \
+                                   f'domain {label[1]} vs {pre_domain}, ' \
+                                   f'sim {sim} vs {pre_sim}.'
+            assert checked, f'no img find in buffer.'
 
         return True
 

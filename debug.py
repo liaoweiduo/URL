@@ -125,6 +125,13 @@ domain_dict = []
 gt_labels_dict = []
 images_dict = []
 similarities_dict = []
+for task_id in range(10):
+    for cls_id in range(10):
+        domain = np.array([0 for _ in range(30)])
+        gt_labels = np.array([cls_id for _ in range(30)])
+        images = np.random.randn(30, 3, 5, 5)
+
+
 for cls_id in range(100):
     domain = np.array([cls_id for _ in range(30)])
     gt_labels = np.array([cls_id for _ in range(30)])
