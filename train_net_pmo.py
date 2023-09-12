@@ -211,6 +211,15 @@ def train():
             gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
             domain = np.array([domain] * len(gt_labels))
             similarities = np.array([0] * len(gt_labels))       # no use
+
+
+            # todo: check label keeps the same
+            task_images_copy = copy.deepcopy(task_images)
+            gt_labels_copy = copy.deepcopy(gt_labels)
+            domain_copy = copy.deepcopy(domain)
+            similarities_copy = copy.deepcopy(similarities)
+
+
             not_full = pool.put_buffer(
                 task_images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
 
@@ -219,16 +228,17 @@ def train():
             # todo: check label keeps the same
             pool.buffer_during_sampling = copy.deepcopy(pool.buffer)
             if not_full:        # have put into the buffer
-                for pre_img_idx, pre_img in enumerate(task_images.numpy()):
-                    pre_gt_label = gt_labels[pre_img_idx]
-                    pre_domain = domain[pre_img_idx]
-                    pre_sim = similarities[pre_img_idx]
+                for pre_img_idx, pre_img in enumerate(task_images_copy.numpy()):
+                    pre_gt_label = gt_labels_copy[pre_img_idx]
+                    pre_domain = domain_copy[pre_img_idx]
+                    pre_sim = similarities_copy[pre_img_idx]
                     checked = False
                     for cls in pool.buffer:
                         for post_image_idx, post_image in enumerate(cls['images']):
                             sim = cls['similarities'][post_image_idx]
                             label = cls['label']
                             if (pre_img == post_image).all():
+                                assert not checked, f'duplicated img in the buffer.'
                                 checked = True
                                 assert ((label[0] == pre_gt_label
                                          ) and label[1] == pre_domain and (
@@ -317,10 +327,19 @@ def train():
                             pmo.embed(images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
+
+                    # todo: check label keeps the same
+                    images_copy = copy.deepcopy(images)
+                    gt_labels_copy = copy.deepcopy(gt_labels)
+                    domain_copy = copy.deepcopy(domain)
+                    similarities_copy = copy.deepcopy(similarities)
+
+
                     # ignore buffer size and put into buffer
                     pool.put_buffer(
                         images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
                         maintain_size=False)
+
 
                     # todo: check sim keeps the same
                     pool.buffer_copy = copy.deepcopy(pool.buffer)
@@ -328,14 +347,14 @@ def train():
                         for image_idx, image in enumerate(cls['images']):
                             sim = cls['similarities'][image_idx]
                             label = cls['label']
-                            for img_idx, img in enumerate(images.numpy()):
+                            for img_idx, img in enumerate(images_copy.numpy()):
                                 if (image == img).all():
-                                    assert ((label[0] == gt_labels[img_idx]
-                                             ) and label[1] == domain[img_idx] and (
-                                            sim == similarities[img_idx]).all()
-                                            ), f'incorrect info: gt_label {label[0]} vs {gt_labels[img_idx]}, ' \
-                                               f'domain {label[1]} vs {domain[img_idx]}, ' \
-                                               f'sim {sim} vs {similarities[img_idx]}.'
+                                    assert ((label[0] == gt_labels_copy[img_idx]
+                                             ) and label[1] == domain_copy[img_idx] and (
+                                            sim == similarities_copy[img_idx]).all()
+                                            ), f'incorrect info: gt_label {label[0]} vs {gt_labels_copy[img_idx]}, ' \
+                                               f'domain {label[1]} vs {domain_copy[img_idx]}, ' \
+                                               f'sim {sim} vs {similarities_copy[img_idx]}.'
 
 
                 '''collect cluster'''
@@ -376,7 +395,6 @@ def train():
                 '''check pool image similarity'''
                 # todo: for debug, remove
                 if (i + 1) % args['train.mo_freq'] == 0:    # only draw every 200 iter
-
                     '''write image similarities in the pool'''
                     similarities = pool.current_similarities(image_wise=True)
                     for cluster_id, cluster in enumerate(similarities):

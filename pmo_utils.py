@@ -248,7 +248,7 @@ class Pool(nn.Module):
         labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
 
         # todo: check label keeps the same
-        print(f'debug: \nlabels: {labels} \nunique labels: {np.unique(labels, axis=0)}')
+        print(f'debug: \nunique labels: {np.unique(labels, axis=0)}')
 
         for label in np.unique(labels, axis=0):     # unique along first axis
             mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
@@ -260,12 +260,15 @@ class Pool(nn.Module):
             '''pop stored images and cat new images'''
             position = self.find_label(label, target='buffer')
             if position != -1:  # find exist label, cat onto it and re-put
+                stored = self.buffer[position]
+                # stored = self.buffer.pop(position)
+                assert (stored['label'] == label).all()
 
                 # todo: check label keeps the same
-                print(f'find exist cls in buffer at position: {position} for label: {label}')
+                print(f'find exist cls in buffer at position: {position} for label: {label}, '
+                      f'with img len {len(stored["images"])} and sim len {len(stored["similarities"])}, '
+                      f'current img len{len(class_images)} and sim len {len(class_similarities)}')
 
-                stored = self.buffer.pop(position)
-                assert (stored['label'] == label).all()
                 stored_images = np.concatenate([stored['images'], class_images])
                 stored_similarities = np.concatenate([stored['similarities'], class_similarities])
             else:
@@ -274,10 +277,13 @@ class Pool(nn.Module):
 
             '''remove same image'''
             stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
-            stored_similarities = stored_similarities[img_idxes]
 
             # todo: check label keeps the same
-            print(f'find same image with img_idxs: {img_idxes} for label: {label}')
+            if len(stored_images) != len(stored_similarities):
+                print(f'after remove the same image and img_idxs: {img_idxes} for label: {label}'
+                      f'current len{len(stored_images)} and before len {len(stored_similarities)}')
+
+            stored_similarities = stored_similarities[img_idxes]
 
             class_dict = {
                 'images': stored_images, 'label': label,  # 'selection': stored_selection,
@@ -286,7 +292,10 @@ class Pool(nn.Module):
             }
 
             '''put into buffer'''
-            self.buffer.append(class_dict)
+            if position == -1:
+                self.buffer.append(class_dict)
+            else:
+                self.buffer[position] = class_dict
 
 
         # todo: check label keeps the same
@@ -300,6 +309,7 @@ class Pool(nn.Module):
                     sim = cls['similarities'][post_image_idx]
                     label = cls['label']
                     if (pre_img == post_image).all():
+                        assert not checked, f'duplicated img in the buffer.'
                         checked = True
                         assert ((label[0] == pre_gt_label
                                  ) and label[1] == pre_domain and (
@@ -309,6 +319,7 @@ class Pool(nn.Module):
                                    f'domain {label[1]} vs {pre_domain}, ' \
                                    f'sim {sim} vs {pre_sim}.'
             assert checked, f'no img find in buffer.'
+
 
         return True
 

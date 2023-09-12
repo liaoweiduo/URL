@@ -47,7 +47,7 @@ def template_exp_sh(target, path, name, params, out_path='../avalanche-experimen
         #     f"CUDA_VISIBLE_DEVICES={cuda} python3 {target}{param_str}" \
         #     f" >> {out_path} 2>&1\n"
         template_str += \
-            f"CUDA_VISIBLE_DEVICES={cuda} python3 {target}{param_str}\n"
+            f"CUDA_VISIBLE_DEVICES={cuda} python3 -u {target}{param_str}\n"
 
     '''Write to file'''
     with open(os.path.join(path, f'{name}.sh'), 'w', newline='') as f:
