@@ -464,7 +464,7 @@ def train():
                     assert checked, f'no img find in buffer.'
                 print(f"iter {i}: buffer img's dif: {dif}.  just before buffer2cluster")
 
-
+                pmo_backup = copy.deepcopy(pmo)
                 '''buffer -> clusters'''
                 pool.buffer2cluster()
                 pool.clear_buffer()
@@ -495,6 +495,7 @@ def train():
                             assert found, f'no img find in buffer match with this img in cluster.'
 
                 # todo: check cluster里的图片recal sim，和cluster里的sim一样
+                dif = 0
                 for cluster_id, cluster in enumerate(pool.clusters):
                     for cls_id, cls in enumerate(cluster):
                         pre_label = cls['label']
@@ -502,11 +503,11 @@ def train():
                         pre_images = cls['images']
 
                         with torch.no_grad():
-                            img_features = pmo.embed(torch.from_numpy(pre_images).cuda())    # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                            img_features = pmo_backup.embed(torch.from_numpy(pre_images).cuda())    # [img_size, 512]
+                            _, selection_info = pmo_backup.selector(img_features, gumbel=False, hard=False, average=False)
                             post_sims = selection_info['y_soft'].detach().cpu().numpy()        # [img_size, 10]
-                        dif = np.sum((pre_sims - post_sims) ** 2)
-                        print(f"iter {i}: pool img's dif: label{pre_label}: {dif}.")
+                        dif = dif + np.sum((pre_sims - post_sims) ** 2)
+                print(f"iter {i}: pool img's dif use pmo_backup: {dif}.")
 
 
 
@@ -528,7 +529,7 @@ def train():
                             _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
                             post_sim = selection_info['y_soft'].detach().cpu().numpy()        # [img_size, 10]
                         dif = np.sum((pre_sim - post_sim) ** 2)
-                        print(f"iter {i}: pool img's dif: {dif}.")
+                        print(f"iter {i}: pool img's dif use pmo: {dif}.")
 
                 '''write image similarities in the pool'''
                 similarities = pool.current_similarities(image_wise=True)
