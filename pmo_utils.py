@@ -257,12 +257,6 @@ class Pool(nn.Module):
                 stored = self.buffer[position]
                 # stored = self.buffer.pop(position)
                 assert (stored['label'] == label).all()
-
-                # todo: check label keeps the same
-                print(f'debug: find exist cls in buffer at position: {position} for label: {label}, '
-                      f'with img len {len(stored["images"])} and sim len {len(stored["similarities"])}, '
-                      f'current img len{len(class_images)} and sim len {len(class_similarities)}')
-
                 stored_images = np.concatenate([stored['images'], class_images])
                 stored_similarities = np.concatenate([stored['similarities'], class_similarities])
             else:
@@ -271,12 +265,6 @@ class Pool(nn.Module):
 
             '''remove same image'''
             stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
-
-            # todo: check label keeps the same
-            if len(stored_images) != len(stored_similarities):
-                print(f'debug: after remove the same image and img_idxs: {img_idxes} for label: {label}'
-                      f'current len{len(stored_images)} and before len {len(stored_similarities)}')
-
             stored_similarities = stored_similarities[img_idxes]
 
             class_dict = {

@@ -324,6 +324,14 @@ def train():
                         similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
 
+                    # todo: duplicate sim cal, check the output is the same, since no gumbel
+                    with torch.no_grad():
+                        _, selection_info = pmo.selector(
+                            pmo.embed(images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                        similarities_dup = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    assert(similarities == similarities_dup).all(), f"duplicate sim cal, sim are different."
+
+
                     # todo: check label keeps the same
                     images_copy = copy.deepcopy(images)
                     gt_labels_copy = copy.deepcopy(gt_labels)
@@ -413,8 +421,7 @@ def train():
                                                     ), f"debug: sim do not match: {pre_sim} vs {found_sim}."
                             assert found, f'no img find in buffer match with this img in cluster.'
 
-
-
+                # todo: for debug, remove
                 '''write image similarities in the pool'''
                 similarities = pool.current_similarities(image_wise=True)
                 for cluster_id, cluster in enumerate(similarities):
@@ -423,6 +430,7 @@ def train():
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
                         writer.add_figure(f"pool-img-sim-in-the-pool/{cluster_id}", figure, i + 1)
 
+                # todo: for debug, remove
                 '''write re-called image similarities in the pool'''
                 numpy_images = pool.current_images()
                 for cluster_idx, cluster in enumerate(numpy_images):
