@@ -241,14 +241,8 @@ class Pool(nn.Module):
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
         similarities = info_dict['similarities']
 
-        # todo: check label keeps the same
-        print(f'debug: \ndomains: {domains}, \ngt_labels: {gt_labels}')
-
         '''images for one class'''
         labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
-
-        # todo: check label keeps the same
-        print(f'debug: \nunique labels: {np.unique(labels, axis=0)}')
 
         for label in np.unique(labels, axis=0):     # unique along first axis
             mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
@@ -265,7 +259,7 @@ class Pool(nn.Module):
                 assert (stored['label'] == label).all()
 
                 # todo: check label keeps the same
-                print(f'find exist cls in buffer at position: {position} for label: {label}, '
+                print(f'debug: find exist cls in buffer at position: {position} for label: {label}, '
                       f'with img len {len(stored["images"])} and sim len {len(stored["similarities"])}, '
                       f'current img len{len(class_images)} and sim len {len(class_similarities)}')
 
@@ -280,7 +274,7 @@ class Pool(nn.Module):
 
             # todo: check label keeps the same
             if len(stored_images) != len(stored_similarities):
-                print(f'after remove the same image and img_idxs: {img_idxes} for label: {label}'
+                print(f'debug: after remove the same image and img_idxs: {img_idxes} for label: {label}'
                       f'current len{len(stored_images)} and before len {len(stored_similarities)}')
 
             stored_similarities = stored_similarities[img_idxes]
@@ -296,30 +290,6 @@ class Pool(nn.Module):
                 self.buffer.append(class_dict)
             else:
                 self.buffer[position] = class_dict
-
-
-        # todo: check label keeps the same
-        for img_idx, pre_img in enumerate(images.numpy()):
-            pre_domain = domains[img_idx]
-            pre_gt_label = gt_labels[img_idx]
-            pre_sim = similarities[img_idx]
-            checked = False
-            for cls in self.buffer:
-                for post_image_idx, post_image in enumerate(cls['images']):
-                    sim = cls['similarities'][post_image_idx]
-                    label = cls['label']
-                    if (pre_img == post_image).all():
-                        assert not checked, f'duplicated img in the buffer.'
-                        checked = True
-                        assert ((label[0] == pre_gt_label
-                                 ) and label[1] == pre_domain and (
-                                sim == pre_sim).all()
-                                ), f'put_during sampling: ' \
-                                   f'incorrect info: gt_label {label[0]} vs {pre_gt_label}, ' \
-                                   f'domain {label[1]} vs {pre_domain}, ' \
-                                   f'sim {sim} vs {pre_sim}.'
-            assert checked, f'no img find in buffer.'
-
 
         return True
 
