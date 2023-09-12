@@ -564,6 +564,46 @@ def train():
                 enriched_target_features, target_labels,
                 distance=args['test.distance'])
 
+
+            # todo: check if change img order, sim change
+            with torch.no_grad():
+                _pre_imgs = torch.cat([context_images, target_images])
+                _, selection_info = pmo.selector(
+                    pmo.embed(_pre_imgs),
+                    gumbel=False, average=False)  # [bs, n_clusters]
+                pre_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+            # todo: check sim keeps the same for different order
+            new_order = np.random.permutation(len(_pre_imgs))
+            with torch.no_grad():
+                _, selection_info = pmo.selector(
+                    pmo.embed(_pre_imgs[new_order]),
+                    gumbel=False, average=False)  # [bs, n_clusters]
+                post_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+            assert ((pre_similarities[new_order] == post_similarities).all()
+                    ), f"sim recal after put_buffer does not match. " \
+                       f"{pre_similarities[new_order]} vs {post_similarities} " \
+                       f"order is {new_order}."
+
+
+
+            for pre_img_idx, pre_img in enumerate(images_copy.numpy()):
+                pre_gt_label = gt_labels_copy[pre_img_idx]
+                pre_domain = domain_copy[pre_img_idx]
+                pre_sim = similarities_copy[pre_img_idx]
+
+                found = False
+                for post_img_idx, post_img in enumerate(_images.numpy()):
+                    post_sim = _similarities[post_img_idx]
+                    if (pre_gt_label == _gt_labels[post_img_idx] and pre_domain == _domain[post_img_idx]
+                    ) and (pre_img == post_img).all():
+                        assert not found, f"find dup img with same label"
+                        found = True
+                        assert (pre_sim == post_sim).all(), f"sim recal after put_buffer does not match" \
+                                                            f"{pre_sim} vs {post_sim}"
+                assert found, f'do not find matched img'
+
             if 'task' in args['train.loss_type']:
                 task_loss.backward()
 
