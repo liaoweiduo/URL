@@ -418,6 +418,53 @@ def train():
                         images, {'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities},
                         maintain_size=False)
 
+
+
+                # todo: recal sim for img in the buffer and check with origin
+                _images = torch.from_numpy(np.concatenate([cls['images'] for cls in pool.buffer]))
+                _gt_labels = np.array([cls['label'][0] for cls in pool.buffer for img in cls['images']])
+                _domain = np.array([cls['label'][1] for cls in pool.buffer for img in cls['images']])
+
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                    _similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+                # todo: check sim keeps the same
+                # pool.buffer_copy = copy.deepcopy(pool.buffer)
+                dif = 0
+                for pre_img_idx, pre_img in enumerate(images_copy.numpy()):
+                    pre_gt_label = gt_labels_copy[pre_img_idx]
+                    pre_domain = domain_copy[pre_img_idx]
+                    pre_sim = similarities_copy[pre_img_idx]
+
+                    found = False
+                    for post_img_idx, post_img in enumerate(_images.numpy()):
+                        post_sim = _similarities[post_img_idx]
+                        if (pre_gt_label == _gt_labels[post_img_idx] and pre_domain == _domain[post_img_idx]
+                        ) and (pre_img == post_img).all():
+                            assert not found, f"find dup img with same label"
+                            found = True
+                            dif = dif + np.sum((pre_sim - post_sim) ** 2)
+                            # assert (pre_sim == post_sim).all(), f"sim recal after put_buffer does not match" \
+                            #                                     f"{pre_sim} vs {post_sim}"
+                    assert found, f'do not find matched img'
+
+                    checked = False
+                    for cls in pool.buffer:
+                        if cls['label'][0] == pre_gt_label and cls['label'][1] == pre_domain:
+                            for post_image_idx, post_image in enumerate(cls['images']):
+                                sim = cls['similarities'][post_image_idx]
+                                if (pre_img == post_image).all():
+                                    assert not checked, f'duplicated img in the buffer.'
+                                    checked = True
+                                    assert ((sim == pre_sim).all()
+                                            ), f'put_after_cal_sim: ' \
+                                               f'incorrect info: sim {sim} vs {pre_sim}.'
+                    assert checked, f'no img find in buffer.'
+                print(f"iter {i}: buffer img's dif: {dif}.  just before buffer2cluster")
+
+
                 '''buffer -> clusters'''
                 pool.buffer2cluster()
                 pool.clear_buffer()
@@ -440,6 +487,7 @@ def train():
                                 if (cls_buffer['label'] == pre_label).all():
                                     for found_idx, found_img in enumerate(cls_buffer['images']):
                                         if (pre_img == found_img).all():
+                                            assert not found, f"find dup img with same label"
                                             found = True
                                             found_sim = cls_buffer['similarities'][found_idx]
                                             assert ((found_sim == pre_sim).all()
