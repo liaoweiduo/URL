@@ -495,6 +495,25 @@ def train():
                             assert found, f'no img find in buffer match with this img in cluster.'
 
                 # todo: check cluster里的图片recal sim，和cluster里的sim一样
+                for cluster_id, cluster in enumerate(pool.clusters):
+                    for cls_id, cls in enumerate(cluster):
+                        pre_label = cls['label']
+                        pre_sims = cls['similarities']
+                        pre_images = cls['images']
+
+                        with torch.no_grad():
+                            img_features = pmo.embed(torch.from_numpy(pre_images).cuda())    # [img_size, 512]
+                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                            post_sims = selection_info['y_soft'].detach().cpu().numpy()        # [img_size, 10]
+                        dif = np.sum((pre_sims - post_sims) ** 2)
+                        print(f"iter {i}: pool img's dif: label{pre_label}: {dif}.")
+
+
+
+
+
+
+                # todo: check cluster里的图片recal sim，和cluster里的sim一样; method 2
                 sims_in_pool = pool.current_similarities(image_wise=True)
                 numpy_images = pool.current_images()
                 for cluster_id in range(len(sims_in_pool)):     # for all clusters
