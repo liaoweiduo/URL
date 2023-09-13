@@ -202,10 +202,11 @@ class ResNet(nn.Module):
         return results, selection_info
 
     def embed(self, x, selection=None, squeeze=True, param_dict=None):
-        if self.feature_extractor is None or selection is not None:
-            return self._embed(x, selection)
-        else:
-            return self.feature_extractor.embed(x)      # extract task feature
+        return self._embed(x, selection)
+        # if self.feature_extractor is None or selection is not None:
+        #     return self._embed(x, selection)
+        # else:
+        #     return self.feature_extractor.embed(x)      # extract task feature
 
     def _embed(self, x, selection=None):
         """
