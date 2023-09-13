@@ -306,6 +306,30 @@ def train():
                 if verbose:
                     print(f'Buffer contains {len(pool.buffer)} classes.')
 
+                # todo: check different img combination will output same sim for corresponding img.
+                _images = task_images
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                    _similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+                order = np.random.permutation(len(_images))
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(_images[order].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                    reorder_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                dif = np.sum((_similarities[order] - reorder_similarities) ** 2)
+                print(f"iter {i}: track reorder img's dif: {dif} with num_imgs {len(order)}.")
+
+                sel = np.random.permutation(len(_images))[:len(_images)//2]
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(_images[sel].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                    sel_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                dif = np.sum((_similarities[sel] - sel_similarities) ** 2)
+                print(f"iter {i}: track select some img's dif: {dif} with num_imgs {len(sel)}.")
+
+
 
 
                 # todo: track images
