@@ -372,6 +372,9 @@ def train():
 
 
                 # todo: check cluster's image's sim is equal to that in pool.buffer_copy
+                dif = 0
+                count = 0
+                print_num = 1
                 for cluster_id, cluster in enumerate(pool.clusters):
                     for cls_id, cls in enumerate(cluster):
                         pre_label = cls['label']
@@ -379,7 +382,6 @@ def train():
                         pre_images = cls['images']
                         for pre_img_id, pre_img in enumerate(pre_images):
                             pre_sim = pre_sims[pre_img_id]
-
                             found = False
                             for cls_buffer in pool.buffer_copy:
                                 if (cls_buffer['label'] == pre_label).all():
@@ -390,7 +392,12 @@ def train():
                                             found_sim = cls_buffer['similarities'][found_idx]
                                             assert ((found_sim == pre_sim).all()
                                                     ), f"debug: sim do not match: {pre_sim} vs {found_sim}."
+                                            dif = dif + np.sum((found_sim - pre_sim) ** 2)
+                                            count = count + 1
+                                            if print_num > 0:
+                                                print(f'debug: pre_label: {pre_label}, pre_sim: {pre_sim}, found_sim: {found_sim}.')
                             assert found, f'no img find in buffer match with this img in cluster.'
+                print(f"iter {i}: pool img with buffer's dif: {dif} with num_imgs {count}.")
 
                 # todo: check cluster里的图片recal sim，和cluster里的sim一样
                 dif = 0
