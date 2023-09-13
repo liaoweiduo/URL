@@ -312,22 +312,34 @@ def train():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     _similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    _embeddings = selection_info['embeddings'].detach().cpu().numpy()
+                    _dist = selection_info['dist'].detach().cpu().numpy()
+                print(f"debug: _sim shape: {_similarities.shape}, "
+                      f"_emb.shape: {_embeddings.shape}, _dist.shape: {_dist.shape}")
 
                 order = np.random.permutation(len(_images))
                 with torch.no_grad():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images[order].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     reorder_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    reorder_embeddings = selection_info['embeddings'].detach().cpu().numpy()
+                    reorder_dist = selection_info['dist'].detach().cpu().numpy()
                 dif = np.sum((_similarities[order] - reorder_similarities) ** 2)
-                print(f"iter {i}: track reorder img's dif: {dif} with num_imgs {len(order)}.")
+                dif_e = np.sum((_embeddings[order] - reorder_embeddings) ** 2)
+                dif_d = np.sum((_dist[order] - reorder_dist) ** 2)
+                print(f"iter {i}: track reorder img's dif: {dif}, {dif_e}, {dif_d} with num_imgs {len(order)}.")
 
                 sel = np.random.permutation(len(_images))[:len(_images)//2]
                 with torch.no_grad():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images[sel].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     sel_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    sel_embeddings = selection_info['embeddings'].detach().cpu().numpy()
+                    sel_dist = selection_info['dist'].detach().cpu().numpy()
                 dif = np.sum((_similarities[sel] - sel_similarities) ** 2)
-                print(f"iter {i}: track select some img's dif: {dif} with num_imgs {len(sel)}.")
+                dif_e = np.sum((_embeddings[order] - sel_embeddings) ** 2)
+                dif_d = np.sum((_dist[order] - sel_dist) ** 2)
+                print(f"iter {i}: track select some img's dif: {dif}, {dif_e}, {dif_d} with num_imgs {len(sel)}.")
 
 
 
@@ -366,7 +378,7 @@ def train():
                 track_sims = np.stack(track_sims)
                 track_labels = np.stack(track_labels)
                 print(f"debug: track imgs shape: {track_imgs.shape}")
-                print(f"track_labels: \n{track_labels}")
+                # print(f"track_labels: \n{track_labels}")
                 print(f"track_sims: \n{track_sims}")
 
                 # todo: track images

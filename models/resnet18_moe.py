@@ -387,6 +387,7 @@ class Selector(nn.Module):
         return selection, {
             'y_soft': y_soft,
             'normal_soft': normal_soft,
+            'embeddings': embeddings,
             'dist': dist,
         }
 
