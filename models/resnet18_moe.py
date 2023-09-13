@@ -330,7 +330,15 @@ class Selector(nn.Module):
         self.metric = metric
         self.tau = nn.Parameter(torch.ones([]) * tau)       # learnable tau
 
-        self.encoder = adaptor(num_datasets=1, dim_in=input_dim, dim_out=rep_dim, opt=opt)
+        if opt == 'linear':
+            self.encoder = nn.Linear(input_dim, rep_dim)
+        else:
+            self.encoder = nn.Sequential(
+                nn.Linear(input_dim, input_dim // 4),   # 512 -> 128
+                torch.nn.ReLU(True),
+                nn.Linear(input_dim // 4, rep_dim),   # 128 -> 32
+            )
+        # self.encoder = adaptor(num_datasets=1, dim_in=input_dim, dim_out=rep_dim, opt=opt)
         # self.hierarchical_net()
 
         self.prot_shape = (1, 1)
@@ -353,7 +361,8 @@ class Selector(nn.Module):
         :return selection: hard selection [bs, n_class] if not average, else [1, n_class]
         """
         bs = inputs.shape[0]
-        embeddings = self.encoder([inputs])[0]     # [bs, 64]
+        embeddings = self.encoder(inputs)     # [bs, 64]
+        # embeddings = self.encoder([inputs])[0]     # [bs, 64]
         if average:
             embeddings = torch.mean(embeddings, dim=0, keepdim=True)      # [1, 64]
             bs = 1
