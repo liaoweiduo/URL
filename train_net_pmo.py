@@ -337,8 +337,8 @@ def train():
                     sel_embeddings = selection_info['embeddings'].detach().cpu().numpy()
                     sel_dist = selection_info['dist'].detach().cpu().numpy()
                 dif = np.sum((_similarities[sel] - sel_similarities) ** 2)
-                dif_e = np.sum((_embeddings[order] - sel_embeddings) ** 2)
-                dif_d = np.sum((_dist[order] - sel_dist) ** 2)
+                dif_e = np.sum((_embeddings[sel] - sel_embeddings) ** 2)
+                dif_d = np.sum((_dist[sel] - sel_dist) ** 2)
                 print(f"iter {i}: track select some img's dif: {dif}, {dif_e}, {dif_d} with num_imgs {len(sel)}.")
 
 
