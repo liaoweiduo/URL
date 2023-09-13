@@ -312,34 +312,39 @@ def train():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     _similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    _inputs = selection_info['inputs'].detach().cpu().numpy()
                     _embeddings = selection_info['embeddings'].detach().cpu().numpy()
                     _dist = selection_info['dist'].detach().cpu().numpy()
-                print(f"debug: _sim shape: {_similarities.shape}, "
-                      f"_emb.shape: {_embeddings.shape}, _dist.shape: {_dist.shape}")
+                print(f"debug: _sim: {_similarities.shape}, _inputs: {_inputs.shape}"
+                      f"_emb: {_embeddings.shape}, _dist: {_dist.shape}")
 
                 order = np.random.permutation(len(_images))
                 with torch.no_grad():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images[order].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     reorder_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    reorder_inputs = selection_info['inputs'].detach().cpu().numpy()
                     reorder_embeddings = selection_info['embeddings'].detach().cpu().numpy()
                     reorder_dist = selection_info['dist'].detach().cpu().numpy()
                 dif = np.sum((_similarities[order] - reorder_similarities) ** 2)
+                dif_i = np.sum((_inputs[order] - reorder_inputs) ** 2)
                 dif_e = np.sum((_embeddings[order] - reorder_embeddings) ** 2)
                 dif_d = np.sum((_dist[order] - reorder_dist) ** 2)
-                print(f"iter {i}: track reorder img's dif: {dif}, {dif_e}, {dif_d} with num_imgs {len(order)}.")
+                print(f"iter {i}: track reorder img's dif: {dif}, {dif_i}, {dif_e}, {dif_d} with num_imgs {len(order)}.")
 
                 sel = np.random.permutation(len(_images))[:len(_images)//2]
                 with torch.no_grad():
                     _, selection_info = pmo.selector(
                         pmo.embed(_images[sel].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
                     sel_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                    sel_inputs = selection_info['inputs'].detach().cpu().numpy()
                     sel_embeddings = selection_info['embeddings'].detach().cpu().numpy()
                     sel_dist = selection_info['dist'].detach().cpu().numpy()
                 dif = np.sum((_similarities[sel] - sel_similarities) ** 2)
+                dif_i = np.sum((_inputs[sel] - sel_inputs) ** 2)
                 dif_e = np.sum((_embeddings[sel] - sel_embeddings) ** 2)
                 dif_d = np.sum((_dist[sel] - sel_dist) ** 2)
-                print(f"iter {i}: track select some img's dif: {dif}, {dif_e}, {dif_d} with num_imgs {len(sel)}.")
+                print(f"iter {i}: track select some img's dif: {dif}, {dif_i}, {dif_e}, {dif_d} with num_imgs {len(sel)}.")
 
 
 
