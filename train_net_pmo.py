@@ -345,6 +345,16 @@ def train():
                 print(f"track_labels: \n{track_labels}")
                 print(f"track_sims: \n{track_sims}")
 
+                # todo: track images
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
+                        gumbel=False, average=False)  # [bs, n_clusters]
+                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                dif = np.sum((track_sims - post_track_similarities) ** 2)
+                print(f"iter {i}: track img's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
+                print(f"debug: post_track_similarities: \n{post_track_similarities}")
+
 
 
                 '''collect cluster for center_pool'''
@@ -370,6 +380,17 @@ def train():
                             'domain': current_domain, 'gt_labels': current_gt_labels,
                             'similarities': current_similarities},
                         maintain_size=False)
+
+
+                # todo: track images
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
+                        gumbel=False, average=False)  # [bs, n_clusters]
+                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                dif = np.sum((track_sims - post_track_similarities) ** 2)
+                print(f"iter {i}: track img's dif recal just after construct center pool's buffer: {dif} with num_imgs {len(post_track_similarities)}.")
+                print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
 
                 # todo: recal sim for img in the buffer and check with origin
@@ -422,7 +443,7 @@ def train():
                     for cls_id, cls in enumerate(cluster):
                         for track_idx, track_img in enumerate(track_imgs):
                             if (cls['label'] == track_labels[track_idx]).all():
-                                for img_id, img in enumerate(cls):
+                                for img_id, img in enumerate(cls['images']):
                                     if (img == track_img).all():
                                         print(f"debug: for label {cls['label']}, "
                                               f"sim in cluster: \n{cls['similarities'][img_id]}, "
