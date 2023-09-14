@@ -469,28 +469,28 @@ def train():
 
 
 
-                # todo: track images
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(
-                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
-                        gumbel=False, average=False)  # [bs, n_clusters]
-                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                dif = np.sum((track_sims - post_track_similarities) ** 2)
-                print(f"iter {i}: track img's dif recal after buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
-                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-
-                # find these track images in the pool
-                for cluster_id, cluster in enumerate(pool.clusters):
-                    for cls_id, cls in enumerate(cluster):
-                        for track_idx, track_img in enumerate(track_imgs):
-                            if (cls['label'] == track_labels[track_idx]).all():
-                                for img_id, img in enumerate(cls['images']):
-                                    if (img == track_img).all():
-                                        print(f"debug: for label {cls['label']}, "
-                                              f"sim in cluster: \n{cls['similarities'][img_id]}, "
-                                              f"\nsim tracked: \n{track_sims[track_idx]}.")
-                                        dif = np.sum((track_sims[track_idx] - cls['similarities'][img_id]) ** 2)
-                                        print(f"dif: {dif}.")
+                # # todo: track images
+                # with torch.no_grad():
+                #     _, selection_info = pmo.selector(
+                #         pmo.embed(torch.from_numpy(track_imgs).to(device)),
+                #         gumbel=False, average=False)  # [bs, n_clusters]
+                #     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                # dif = np.sum((track_sims - post_track_similarities) ** 2)
+                # print(f"iter {i}: track img's dif recal after buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
+                # # print(f"debug: post_track_similarities: \n{post_track_similarities}")
+                #
+                # # find these track images in the pool
+                # for cluster_id, cluster in enumerate(pool.clusters):
+                #     for cls_id, cls in enumerate(cluster):
+                #         for track_idx, track_img in enumerate(track_imgs):
+                #             if (cls['label'] == track_labels[track_idx]).all():
+                #                 for img_id, img in enumerate(cls['images']):
+                #                     if (img == track_img).all():
+                #                         print(f"debug: for label {cls['label']}, "
+                #                               f"sim in cluster: \n{cls['similarities'][img_id]}, "
+                #                               f"\nsim tracked: \n{track_sims[track_idx]}.")
+                #                         dif = np.sum((track_sims[track_idx] - cls['similarities'][img_id]) ** 2)
+                #                         print(f"dif: {dif}.")
 
 
 
