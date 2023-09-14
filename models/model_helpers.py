@@ -40,8 +40,10 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
 
     from models.resnet18 import resnet18 as resnet18_fe
     if args['model.pretrained']:
-        base_network_path = os.path.join(args['source'], 'weights', base_network_name,
-                                         'model_best.pth.tar')
+        # base_network_path = os.path.join(args['source'], 'weights', base_network_name,
+        #                                  'model_best.pth.tar')
+        base_network_path = os.path.join(args['source_moe'], 'weights', moe_base_network_name, 'model_best.pth.tar')
+
         model_fn = partial(resnet18_fe, dropout=dropout_rate,
                            pretrained_model_path=base_network_path)
     else:
