@@ -364,9 +364,9 @@ def train():
 
                     for cls in pool.buffer:
                         images = torch.from_numpy(cls['images'])
-                        features = pmo.embed(images.to(device))
 
                         with torch.no_grad():
+                            features = pmo.embed(images.to(device))
                             _, selection_info = pmo.selector(
                                 features, gumbel=False, average=False)  # [bs, n_clusters]
                             similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
@@ -377,7 +377,7 @@ def train():
                         # todo: track images
                         track_idx = np.random.permutation(len(images))[0]
                         track_imgs.append(images[track_idx].numpy())
-                        track_feas.append(features[track_idx].numpy())
+                        track_feas.append(features[track_idx].cpu().numpy())
                         track_sims.append(similarities[track_idx])
                         track_labels.append(cls['label'])
 
@@ -404,7 +404,7 @@ def train():
                 # todo: track images: start from features
                 with torch.no_grad():
                     _, selection_info = pmo.selector(
-                        track_feas, gumbel=False, average=False)  # [bs, n_clusters]
+                        torch.from_numpy(track_feas).cuda(), gumbel=False, average=False)  # [bs, n_clusters]
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track fea's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
