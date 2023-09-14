@@ -1108,7 +1108,7 @@ class Mixer:
                 mix_img[:, posiht: posiht + cuth, posiwt: posiwt + cutw] = fore
                 mix_imgs.append(mix_img)
                 fofs = task_list[fore_img_idx][set_nafs][img_idx][posifss: posifss + cutfs]
-                mix_fea[posifst: posifst + cuth] = fofs
+                mix_fea[posifst: posifst + cutfs] = fofs
                 mix_feas.append(mix_fea)
 
             # determine mix_lab  same as the chosen img
