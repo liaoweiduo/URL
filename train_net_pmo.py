@@ -213,43 +213,9 @@ def train():
             task_features = pmo.embed(torch.cat([context_images, target_images]))
             similarities = np.array([0] * len(gt_labels))       # no use
 
-
-            # todo: check label keeps the same
-            task_images_copy = copy.deepcopy(task_images)
-            gt_labels_copy = copy.deepcopy(gt_labels)
-            domain_copy = copy.deepcopy(domain)
-            similarities_copy = copy.deepcopy(similarities)
-
-
             not_full = pool.put_buffer(
                 task_images, {'domain': domain, 'gt_labels': gt_labels,
                               'similarities': similarities, 'features': task_features.cpu().numpy()})
-
-
-
-            # todo: check label keeps the same
-            pool.buffer_during_sampling = copy.deepcopy(pool.buffer)
-            if not_full:        # have put into the buffer
-                for pre_img_idx, pre_img in enumerate(task_images_copy.numpy()):
-                    pre_gt_label = gt_labels_copy[pre_img_idx]
-                    pre_domain = domain_copy[pre_img_idx]
-                    pre_sim = similarities_copy[pre_img_idx]
-                    checked = False
-                    for cls in pool.buffer:
-                        if cls['label'][0] == pre_gt_label and cls['label'][1] == pre_domain:
-                            for post_image_idx, post_image in enumerate(cls['images']):
-                                sim = cls['similarities'][post_image_idx]
-                                if (pre_img == post_image).all():
-                                    assert not checked, f'duplicated img in the buffer.'
-                                    checked = True
-                                    assert ((sim == pre_sim).all()
-                                            ), f'put_during sampling: ' \
-                                               f'incorrect info: sim {sim} vs {pre_sim}.'
-                    assert checked, f'no img find in buffer.'
-
-
-
-
 
             if not not_full and verbose:  # full buffer
                 print(f'Buffer is full at iter: {i}.')
@@ -308,56 +274,6 @@ def train():
                 if verbose:
                     print(f'Buffer contains {len(pool.buffer)} classes.')
 
-                # # todo: check different img combination will output same sim for corresponding img.
-                # _images = task_images
-                # with torch.no_grad():
-                #     _, selection_info = pmo.selector(
-                #         pmo.embed(_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
-                #     _similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                #     _inputs = selection_info['inputs'].detach().cpu().numpy()
-                #     _embeddings = selection_info['embeddings'].detach().cpu().numpy()
-                #     _dist = selection_info['dist'].detach().cpu().numpy()
-                # print(f"debug: _sim: {_similarities.shape}, _inputs: {_inputs.shape}"
-                #       f"_emb: {_embeddings.shape}, _dist: {_dist.shape}")
-                #
-                # order = np.random.permutation(len(_images))
-                # with torch.no_grad():
-                #     _, selection_info = pmo.selector(
-                #         pmo.embed(_images[order].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
-                #     reorder_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                #     reorder_inputs = selection_info['inputs'].detach().cpu().numpy()
-                #     reorder_embeddings = selection_info['embeddings'].detach().cpu().numpy()
-                #     reorder_dist = selection_info['dist'].detach().cpu().numpy()
-                # dif = np.sum((_similarities[order] - reorder_similarities) ** 2)
-                # dif_i = np.sum((_inputs[order] - reorder_inputs) ** 2)
-                # dif_e = np.sum((_embeddings[order] - reorder_embeddings) ** 2)
-                # dif_d = np.sum((_dist[order] - reorder_dist) ** 2)
-                # print(f"iter {i}: track reorder img's dif: {dif}, {dif_i}, {dif_e}, {dif_d} with num_imgs {len(order)}.")
-                #
-                # sel = np.random.permutation(len(_images))[:len(_images)//2]
-                # with torch.no_grad():
-                #     _, selection_info = pmo.selector(
-                #         pmo.embed(_images[sel].to(device)), gumbel=False, average=False)  # [bs, n_clusters]
-                #     sel_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                #     sel_inputs = selection_info['inputs'].detach().cpu().numpy()
-                #     sel_embeddings = selection_info['embeddings'].detach().cpu().numpy()
-                #     sel_dist = selection_info['dist'].detach().cpu().numpy()
-                # dif = np.sum((_similarities[sel] - sel_similarities) ** 2)
-                # dif_i = np.sum((_inputs[sel] - sel_inputs) ** 2)
-                # dif_e = np.sum((_embeddings[sel] - sel_embeddings) ** 2)
-                # dif_d = np.sum((_dist[sel] - sel_dist) ** 2)
-                # print(f"iter {i}: track select some img's dif: {dif}, {dif_i}, {dif_e}, {dif_d} with num_imgs {len(sel)}.")
-
-
-
-
-                # todo: track images
-                track_imgs = []
-                track_feas = []
-                track_sims = []
-                track_labels = []
-
-
                 '''re-cal sim and re-put samples into pool buffer'''
                 if len(pool.buffer) > 0:
                     # need to check num of images, maybe need to reshape to batch to calculate
@@ -376,45 +292,6 @@ def train():
                             similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
                         cls['similarities'] = similarities
-
-
-                        # todo: track images
-                        track_idx = np.random.permutation(len(images))[0]
-                        track_imgs.append(images[track_idx].numpy())
-                        track_feas.append(features[track_idx].cpu().numpy())
-                        track_sims.append(similarities[track_idx])
-                        track_labels.append(cls['label'])
-
-                # todo: track images
-                track_imgs = np.stack(track_imgs)
-                track_feas = np.stack(track_feas)
-                track_sims = np.stack(track_sims)
-                track_labels = np.stack(track_labels)
-                print(f"debug: track imgs shape: {track_imgs.shape}")
-                print(f"debug: track feas shape: {track_feas.shape}")
-                # print(f"track_labels: \n{track_labels}")
-                # print(f"track_sims: \n{track_sims}")
-
-                # todo: track images
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(
-                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
-                        gumbel=False, average=False)  # [bs, n_clusters]
-                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                dif = np.sum((track_sims - post_track_similarities) ** 2)
-                print(f"iter {i}: track img's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
-                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-
-                # todo: track images: start from features
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(
-                        torch.from_numpy(track_feas).cuda(), gumbel=False, average=False)  # [bs, n_clusters]
-                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                dif = np.sum((track_sims - post_track_similarities) ** 2)
-                print(f"iter {i}: track fea's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
-                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-
-
 
                 '''collect cluster for center_pool'''
                 current_clusters = center_pool.clear_clusters()
@@ -442,170 +319,11 @@ def train():
                             'similarities': current_similarities, 'features': current_features},
                         maintain_size=False)
 
-
-                # todo: track images
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(
-                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
-                        gumbel=False, average=False)  # [bs, n_clusters]
-                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                dif = np.sum((track_sims - post_track_similarities) ** 2)
-                print(f"iter {i}: track img's dif recal just after construct center pool's buffer: {dif} with num_imgs {len(post_track_similarities)}.")
-                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-
-
-                # todo: recal sim for img in the buffer and check with origin
-                dif = 0
-                pool.buffer_copy = copy.deepcopy(pool.buffer)
-                for cls in pool.buffer:
-                    current_images = torch.from_numpy(cls['images'])
-
-                    with torch.no_grad():
-                        _, selection_info = pmo.selector(
-                            pmo.embed(current_images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
-                        current_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-                    # check sim keeps the same
-                    dif = dif + np.sum((current_similarities - cls['similarities']) ** 2)
-                print(f"iter {i}: buffer img's dif recal: {dif} with num_cls {len(pool.buffer)}.")
-
-                # todo: track images
-                with torch.no_grad():
-                    _, selection_info = pmo.selector(
-                        pmo.embed(torch.from_numpy(track_imgs).to(device)),
-                        gumbel=False, average=False)  # [bs, n_clusters]
-                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                dif = np.sum((track_sims - post_track_similarities) ** 2)
-                print(f"iter {i}: track img's dif recal before buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
-                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-
-
-
                 '''buffer -> clusters'''
                 pool.buffer2cluster()
                 pool.clear_buffer()
                 center_pool.buffer2cluster()
                 center_pool.clear_buffer()
-
-
-
-                # # todo: track images
-                # with torch.no_grad():
-                #     _, selection_info = pmo.selector(
-                #         pmo.embed(torch.from_numpy(track_imgs).to(device)),
-                #         gumbel=False, average=False)  # [bs, n_clusters]
-                #     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                # dif = np.sum((track_sims - post_track_similarities) ** 2)
-                # print(f"iter {i}: track img's dif recal after buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
-                # # print(f"debug: post_track_similarities: \n{post_track_similarities}")
-                #
-                # # find these track images in the pool
-                # for cluster_id, cluster in enumerate(pool.clusters):
-                #     for cls_id, cls in enumerate(cluster):
-                #         for track_idx, track_img in enumerate(track_imgs):
-                #             if (cls['label'] == track_labels[track_idx]).all():
-                #                 for img_id, img in enumerate(cls['images']):
-                #                     if (img == track_img).all():
-                #                         print(f"debug: for label {cls['label']}, "
-                #                               f"sim in cluster: \n{cls['similarities'][img_id]}, "
-                #                               f"\nsim tracked: \n{track_sims[track_idx]}.")
-                #                         dif = np.sum((track_sims[track_idx] - cls['similarities'][img_id]) ** 2)
-                #                         print(f"dif: {dif}.")
-
-
-
-
-                # todo: check cluster's image's sim is equal to that in pool.buffer_copy
-                dif = 0
-                count = 0
-                print_num = 0
-                for cluster_id, cluster in enumerate(pool.clusters):
-                    for cls_id, cls in enumerate(cluster):
-                        pre_label = cls['label']
-                        pre_sims = cls['similarities']
-                        pre_images = cls['images']
-                        for pre_img_id, pre_img in enumerate(pre_images):
-                            pre_sim = pre_sims[pre_img_id]
-                            found = False
-                            for cls_buffer in pool.buffer_copy:
-                                if (cls_buffer['label'] == pre_label).all():
-                                    for found_idx, found_img in enumerate(cls_buffer['images']):
-                                        if (pre_img == found_img).all():
-                                            assert not found, f"find dup img with same label"
-                                            found = True
-                                            found_sim = cls_buffer['similarities'][found_idx]
-                                            assert ((found_sim == pre_sim).all()
-                                                    ), f"debug: sim do not match: {pre_sim} vs {found_sim}."
-                                            dif = dif + np.sum((found_sim - pre_sim) ** 2)
-                                            count = count + 1
-                                            if print_num > 0:
-                                                print(f'debug: pre_label: {pre_label}, pre_sim: \n{pre_sim}, \nfound_sim: \n{found_sim}.')
-                                                print_num -= 1
-                            assert found, f'no img find in buffer match with this img in cluster.'
-                print(f"iter {i}: pool img with buffer's dif: {dif} with num_imgs {count}.")
-
-                # todo: check cluster里的图片recal sim，和cluster里的sim一样
-                dif = 0
-                count = 0
-                for cluster_id, cluster in enumerate(pool.clusters):
-                    for cls_id, cls in enumerate(cluster):
-                        pre_label = cls['label']
-                        pre_sims = cls['similarities']
-                        pre_images = cls['images']
-
-                        with torch.no_grad():
-                            img_features = pmo.embed(torch.from_numpy(pre_images).cuda())    # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            post_sims = selection_info['y_soft'].detach().cpu().numpy()        # [img_size, 10]
-                        dif = dif + np.sum((pre_sims - post_sims) ** 2)
-                        count = count + 1
-                print(f"iter {i}: pool img's dif: {dif} with num_cls {count}.")
-
-                # todo: write image similarities in the pool
-                similarities = pool.current_similarities(image_wise=True)
-                for cluster_id, cluster in enumerate(similarities):
-                    if len(cluster) > 0:
-                        sim_in_cluster = np.concatenate(cluster)  # [num_cls*num_img, 8]
-                        figure = draw_heatmap(sim_in_cluster, verbose=False)
-                        writer.add_figure(f"pool-img-sim-in-the-pool/{cluster_id}", figure, i + 1)
-
-                # todo: write re-called image similarities in the pool
-                numpy_images = pool.current_images()
-                for cluster_idx, cluster in enumerate(numpy_images):
-                    if len(cluster) > 0:
-                        image_batch = torch.from_numpy(
-                            np.concatenate(cluster)
-                        ).to(device)
-                        with torch.no_grad():
-                            img_features = pmo.embed(image_batch)    # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            img_sim = selection_info['y_soft']        # [img_size, 10]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-                            tsk_sim = selection_info['y_soft']        # [1, 10]
-
-                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
-                        figure = draw_heatmap(sim, verbose=False)
-                        writer.add_figure(f"pool-img-sim-re-cal-after-buffer2cluster/{cluster_idx}", figure, i+1)
-
-                # todo: write re-called image similarities in the pool from features
-                for cluster_idx, cluster in enumerate(pool.clusters):
-                    if len(cluster) > 0:
-                        features_batch = torch.from_numpy(
-                            np.concatenate([cls['features'] for cls in cluster])
-                        ).to(device)
-                        with torch.no_grad():
-                            img_features = features_batch    # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            img_sim = selection_info['y_soft']        # [img_size, 10]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-                            tsk_sim = selection_info['y_soft']        # [1, 10]
-
-                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
-                        figure = draw_heatmap(sim, verbose=False)
-                        writer.add_figure(f"pool-features-sim-re-cal-after-buffer2cluster/{cluster_idx}", figure, i+1)
-
-
-
 
                 '''selection CE loss on all clusters'''
                 if 'ce' in args['train.loss_type']:
@@ -679,29 +397,6 @@ def train():
                 enriched_context_features, context_labels,
                 enriched_target_features, target_labels,
                 distance=args['test.distance'])
-
-
-            # todo: check if change img order, sim change
-            with torch.no_grad():
-                _pre_imgs = torch.cat([context_images, target_images])
-                _, selection_info = pmo.selector(
-                    pmo.embed(_pre_imgs),
-                    gumbel=False, average=False)  # [bs, n_clusters]
-                pre_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-            # todo: check sim keeps the same for different order
-            new_order = np.random.permutation(len(_pre_imgs))
-            with torch.no_grad():
-                _, selection_info = pmo.selector(
-                    pmo.embed(_pre_imgs[new_order]),
-                    gumbel=False, average=False)  # [bs, n_clusters]
-                post_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-            dif = np.sum((pre_similarities[new_order] - post_similarities) ** 2)
-            print(f"iter {i}: task img's dif when changing img order: {dif}.")
-
-
-
 
             if 'task' in args['train.loss_type']:
                 task_loss.backward()
@@ -805,28 +500,6 @@ def train():
                             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
                             epoch_loss[f'pure/image_softmax_sim'][cluster_idx] = sim
 
-
-
-                # todo: for debug, remove
-                '''check pool image similarity'''
-                numpy_images = pool.current_images()
-                for cluster_idx, cluster in enumerate(numpy_images):
-                    if len(cluster) > 0:
-                        image_batch = torch.from_numpy(
-                            np.concatenate(cluster)
-                        ).to(device)
-                        with torch.no_grad():
-                            img_features = pmo.embed(image_batch)    # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            img_sim = selection_info['y_soft']        # [img_size, 10]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-                            tsk_sim = selection_info['y_soft']        # [1, 10]
-                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
-                        figure = draw_heatmap(sim, verbose=False)
-                        writer.add_figure(f"pool-img-sim-re-cal-before-update/{cluster_idx}", figure, i+1)
-
-
-
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
@@ -844,6 +517,7 @@ def train():
                         # device_list = list(set([devices[idx] for idx in selected_cluster_idxs]))    # unique devices
 
                         torch_tasks = []
+                        epoch_loss[f'mo/image_softmax_sim'] = {}
                         '''sample pure tasks from clusters in selected_cluster_idxs'''
                         for cluster_idx in selected_cluster_idxs:
                             pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
@@ -879,6 +553,16 @@ def train():
                                     selection, selection_info = pmo.selector(
                                         torch_task_features,
                                         gumbel=gumbel, hard=hard)
+
+                            '''log img sim in the task'''
+                            with torch.no_grad():
+                                img_features = torch_task_features  # [img_size, 512]
+                                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                                img_sim = selection_info['y_soft']  # [img_size, 10]
+                                _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                                tsk_sim = selection_info['y_soft']  # [1, 10]
+                            sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
+                            epoch_loss[f'mo/image_softmax_sim'][task_idx] = sim
 
                             '''forward 2 pure tasks as 2 objs'''
                             losses = []  # [2,]
@@ -1115,6 +799,11 @@ def train():
                     similarities = np.concatenate(epoch_loss[f'pure/task_dist'])
                     figure = draw_heatmap(similarities, verbose=True)
                     writer.add_figure(f"train_image/pure-task-dist", figure, i+1)
+
+                '''write mo: (pure+mixed) task image sim'''
+                for task_id, sim in epoch_loss[f'mo/image_softmax_sim'].items():
+                    figure = draw_heatmap(sim, verbose=False)
+                    writer.add_figure(f"mo-image/{pop_labels[task_id]}/sim", figure, i + 1)
 
                 '''write cluster centers'''
                 centers = pmo.selector.prototypes
