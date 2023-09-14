@@ -351,6 +351,7 @@ def train():
 
                 # todo: track images
                 track_imgs = []
+                track_feas = []
                 track_sims = []
                 track_labels = []
 
@@ -363,10 +364,11 @@ def train():
 
                     for cls in pool.buffer:
                         images = torch.from_numpy(cls['images'])
+                        features = pmo.embed(images.to(device))
 
                         with torch.no_grad():
                             _, selection_info = pmo.selector(
-                                pmo.embed(images.to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                                features, gumbel=False, average=False)  # [bs, n_clusters]
                             similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
                         cls['similarities'] = similarities
@@ -375,14 +377,17 @@ def train():
                         # todo: track images
                         track_idx = np.random.permutation(len(images))[0]
                         track_imgs.append(images[track_idx].numpy())
+                        track_feas.append(features[track_idx].numpy())
                         track_sims.append(similarities[track_idx])
                         track_labels.append(cls['label'])
 
                 # todo: track images
                 track_imgs = np.stack(track_imgs)
+                track_feas = np.stack(track_feas)
                 track_sims = np.stack(track_sims)
                 track_labels = np.stack(track_labels)
                 print(f"debug: track imgs shape: {track_imgs.shape}")
+                print(f"debug: track feas shape: {track_feas.shape}")
                 # print(f"track_labels: \n{track_labels}")
                 # print(f"track_sims: \n{track_sims}")
 
@@ -394,6 +399,15 @@ def train():
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track img's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
+                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
+
+                # todo: track images: start from features
+                with torch.no_grad():
+                    _, selection_info = pmo.selector(
+                        track_feas, gumbel=False, average=False)  # [bs, n_clusters]
+                    post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+                dif = np.sum((track_sims - post_track_similarities) ** 2)
+                print(f"iter {i}: track fea's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
                 # print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
 
@@ -498,7 +512,7 @@ def train():
                 # todo: check cluster's image's sim is equal to that in pool.buffer_copy
                 dif = 0
                 count = 0
-                print_num = 1
+                print_num = 0
                 for cluster_id, cluster in enumerate(pool.clusters):
                     for cls_id, cls in enumerate(cluster):
                         pre_label = cls['label']
