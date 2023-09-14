@@ -304,6 +304,8 @@ class Pool(nn.Module):
                 indexes = np.argsort(cls['similarities'][:, cluster_idx])[::-1]     # descending order
                 chosen_images = cls['images'][indexes][:self.max_num_images]
                 remain_images = cls['images'][indexes][self.max_num_images:]
+                chosen_features = cls['features'][indexes][:self.max_num_images]
+                remain_features = cls['features'][indexes][self.max_num_images:]
                 # can be empty array([], shape=(0, 3, 84, 84)) len(remain_images) = 0
                 chosen_similarities = cls['similarities'][indexes][:self.max_num_images]
                 remain_similarities = cls['similarities'][indexes][self.max_num_images:]
@@ -311,6 +313,7 @@ class Pool(nn.Module):
                 # mean over max_num_img samples [n_clusters]
                 cls['remain_images'], cls['remain_similarities'] = remain_images, remain_similarities
                 cls['chosen_images'], cls['chosen_similarities'] = chosen_images, chosen_similarities
+                cls['chosen_features'], cls['remain_features'] = chosen_features, remain_features
                 cls['class_similarity'] = class_similarity
 
             self.buffer.sort(
@@ -321,10 +324,11 @@ class Pool(nn.Module):
                 self.clusters[cluster_idx].append({
                     'images': cls['chosen_images'], 'label': cls['label'],
                     'similarities': cls['chosen_similarities'],
+                    'features': cls['chosen_features'],
                     'class_similarity': cls['class_similarity'],
                 })
                 cls['images'], cls['similarities'] = cls['remain_images'], cls['remain_similarities']
-
+                cls['features'] = cls['remain_features']
             '''remove empty cls'''
             self.buffer = [cls for cls in self.buffer if len(cls['images']) > 0]
 
