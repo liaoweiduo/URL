@@ -176,6 +176,7 @@ class Pool(nn.Module):
         '''unpack'''
         domain, gt_labels = info_dict['domain'], info_dict['gt_labels']
         similarities = info_dict['similarities']
+        features = info_dict['features']
         # similarities, selection = info_dict['similarities'], info_dict['selection']
 
         for sample_idx in range(len(cluster_idxs)):
@@ -189,27 +190,32 @@ class Pool(nn.Module):
                 stored_images = np.concatenate([stored_images, images[sample_idx:sample_idx+1].numpy()])
                 stored_similarities = stored['similarities']
                 stored_similarities = np.concatenate([stored_similarities, similarities[sample_idx:sample_idx+1]])
+                stored_features = stored['features']
+                stored_features = np.concatenate([stored_features, features[sample_idx:sample_idx+1]])
                 # stored_selection = stored['selection']
                 # stored_selection = torch.cat([stored_selection, selection[sample_idx:sample_idx+1]])
             else:
                 stored_images = images[sample_idx:sample_idx+1].numpy()
                 stored_similarities = similarities[sample_idx:sample_idx+1]
+                stored_features = features[sample_idx:sample_idx+1]
                 # stored_selection = selection[sample_idx:sample_idx+1]
 
             '''sort within class '''
             indexs = np.argsort(stored_similarities[:, cluster_idx])[::-1]      # descending order
             stored_images = stored_images[indexs]
             stored_similarities = stored_similarities[indexs]
+            stored_features = stored_features[indexs]
 
             '''remove several images with smaller sim to satisfy max_num_images'''
             if stored_images.shape[0] > self.max_num_images:
                 stored_images = stored_images[:self.max_num_images]
                 stored_similarities = stored_similarities[:self.max_num_images]
+                stored_features = stored_features[:self.max_num_images]
                 # stored_selection = stored_selection[:self.max_num_images]
 
             '''put to cluster: cluster_idx'''
             self.clusters[cluster_idx].append({
-                'images': stored_images, 'label': label,    # 'selection': stored_selection,
+                'images': stored_images, 'features': stored_features, 'label': label,    # 'selection': stored_selection,
                 'similarities': stored_similarities,
                 'class_similarity': np.mean(stored_similarities, axis=0),       # mean over all samples [n_clusters]
             })
@@ -239,7 +245,7 @@ class Pool(nn.Module):
 
         '''unpack'''
         domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
-        similarities = info_dict['similarities']
+        similarities, features = info_dict['similarities'], info_dict['features']
 
         '''images for one class'''
         labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
@@ -249,6 +255,7 @@ class Pool(nn.Module):
             assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
             assert gt_labels[mask][0] == label[0] and domains[mask][0] == label[1]
             class_images = images[mask].numpy()
+            class_features = features[mask]
             class_similarities = similarities[mask]
 
             '''pop stored images and cat new images'''
@@ -258,18 +265,22 @@ class Pool(nn.Module):
                 # stored = self.buffer.pop(position)
                 assert (stored['label'] == label).all()
                 stored_images = np.concatenate([stored['images'], class_images])
+                stored_features = np.concatenate([stored['features'], class_features])
                 stored_similarities = np.concatenate([stored['similarities'], class_similarities])
             else:
                 stored_images = class_images
+                stored_features = class_features
                 stored_similarities = class_similarities
 
             '''remove same image'''
             stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
+            stored_features = stored_features[img_idxes]
             stored_similarities = stored_similarities[img_idxes]
 
             class_dict = {
                 'images': stored_images, 'label': label,  # 'selection': stored_selection,
                 'similarities': stored_similarities,
+                'features': stored_features,
                 # 'class_similarity': np.mean(stored_similarities, axis=0),  # mean over all samples [n_clusters]
             }
 
@@ -903,15 +914,19 @@ class Pool(nn.Module):
 
         selected_class_idxs = np.random.choice(candidate_class_idxs, n_way, replace=False)
         context_images, target_images, context_labels, target_labels, context_gt, target_gt = [], [], [], [], [], []
+        context_features, target_features = [], []
         # context_selection, target_selection = [], []
         for re_idx, idx in enumerate(selected_class_idxs):
             images = self.clusters[cluster_idx][idx]['images']              # [bs, c, h, w]
             tuple_label = self.clusters[cluster_idx][idx]['label']          # (gt_label, domain)
+            features = self.clusters[cluster_idx][idx]['features']
             # selection = self.clusters[cluster_idx][idx]['selection']        # [bs, n_clusters]
 
             perm_idxs = np.random.permutation(np.arange(len(images)))
             context_images.append(images[perm_idxs[:n_shot]])
             target_images.append(images[perm_idxs[n_shot:n_shot+n_query]])
+            context_features.append(features[perm_idxs[:n_shot]])
+            target_features.append(features[perm_idxs[n_shot:n_shot+n_query]])
             context_labels.append([re_idx for _ in range(n_shot)])
             target_labels.append([re_idx for _ in range(n_query)])
             context_gt.append([tuple_label for _ in range(n_shot)])         # [(gt_label, domain)*n_shot]
@@ -921,6 +936,8 @@ class Pool(nn.Module):
 
         context_images = np.concatenate(context_images)
         target_images = np.concatenate(target_images)
+        context_features = np.concatenate(context_features)
+        target_features = np.concatenate(target_features)
         context_labels = np.concatenate(context_labels)
         target_labels = np.concatenate(target_labels)
         context_gt = np.concatenate(context_gt)
@@ -934,14 +951,18 @@ class Pool(nn.Module):
         if d != 'numpy':
             context_images = torch.from_numpy(context_images).to(d)
             target_images = torch.from_numpy(target_images).to(d)
+            context_features = torch.from_numpy(context_features).to(d)
+            target_features = torch.from_numpy(target_features).to(d)
             context_labels = torch.from_numpy(context_labels).long().to(d)
             target_labels = torch.from_numpy(target_labels).long().to(d)
 
         task_dict = {
             'context_images': context_images,           # shape [n_shot*n_way, 3, 84, 84]
+            'context_features': context_features,       # shape [n_shot*n_way, 512]
             'context_labels': context_labels,           # shape [n_shot*n_way,]
             'context_gt': context_gt,                   # shape [n_shot*n_way, 2]: [local, domain]
             'target_images': target_images,             # shape [n_query*n_way, 3, 84, 84]
+            'target_features': target_features,         # shape [n_query*n_way, 512]
             'target_labels': target_labels,             # shape [n_query*n_way,]
             'target_gt': target_gt,                     # shape [n_query*n_way, 2]: [local, domain]
             'domain': cluster_idx,                      # 0-7: C0-C7, num_clusters
@@ -1017,8 +1038,10 @@ class Mixer:
         return:
         task_dict = {
             'context_images': context_images,           # shape [n_shot*n_way, 3, 84, 84]
+            'context_features': context_features,       # shape [n_shot*n_way, 512]
             'context_labels': context_labels,           # shape [n_shot*n_way,]
             'target_images': target_images,             # shape [n_query*n_way, 3, 84, 84]
+            'target_features': target_features,         # shape [n_query*n_way, 512]
             'target_labels': target_labels,             # shape [n_query*n_way,]
             }
         meta_info: {'probability': probability of chosen which background,
@@ -1026,6 +1049,7 @@ class Mixer:
         """
         # identify image size
         _, c, h, w = task_list[0]['context_images'].shape
+        _, fs = task_list[0]['context_features'].shape
         context_size_list = [task_list[idx]['context_images'].shape[0] for idx in range(len(task_list))]
         target_size_list = [task_list[idx]['target_images'].shape[0] for idx in range(len(task_list))]
         assert np.min(context_size_list) == np.max(context_size_list)   # assert all contexts have same size
@@ -1037,6 +1061,7 @@ class Mixer:
         # generate num_sources masks for imgs with size [c, h, w]
         cutmix_prop = 0.3   # for (84*84), cut region is int(84*0.3)= (25*25)
         cuth, cutw = int(h * cutmix_prop), int(w * cutmix_prop)  # 84*0.3 [25, 25]
+        cutfs = int(fs * cutmix_prop)  # 84*0.3 [25, 25]
 
         # generate lam, which is the index of img to be background. other imgs are foreground.
         # based on weight as probability.
@@ -1045,20 +1070,24 @@ class Mixer:
         # lam with shape [context_size+target_size,] is the decision to use which source as background.
 
         mix_imgs = []   # mix images batch
+        mix_feas = []   # mix features batch
         mix_labs = []   # mix relative labels batch, same [0,0,1,1,2,2,...]
         # mix_gtls = []   # mix gt labels batch, str((weighted local label, domain=-1))
         for idx in range(context_size+target_size):
             if idx < context_size:
                 set_name = 'context_images'
+                set_nafs = 'context_features'
                 lab_name = 'context_labels'
             else:
                 set_name = 'target_images'
+                set_nafs = 'target_features'
                 lab_name = 'target_labels'
             # gtl_name = 'context_gt' if img_idx < context_size else 'target_gt'
 
             img_idx = idx if idx < context_size else idx - context_size     # local img idx in context and target set.
             # mix img is first cloned with background.
             mix_img = task_list[lam[idx]][set_name][img_idx].copy()
+            mix_fea = task_list[lam[idx]][set_nafs][img_idx].copy()
 
             # for other foreground, cut the specific [posihs: posihs+cuth, posiws: posiws+cutw] region to
             # mix_img's [posiht: posiht+cuth, posiwt: posiwt+cutw] region
@@ -1068,11 +1097,15 @@ class Mixer:
                 posiws = np.random.randint(w - cutw)
                 posiht = np.random.randint(h - cuth)
                 posiwt = np.random.randint(w - cutw)
+                posifss = np.random.randint(fs - cutfs)
+                posifst = np.random.randint(fs - cutfs)
 
                 fore = task_list[fore_img_idx][set_name][img_idx][:, posihs: posihs + cuth, posiws: posiws + cutw]
                 mix_img[:, posiht: posiht + cuth, posiwt: posiwt + cutw] = fore
-
                 mix_imgs.append(mix_img)
+                fofs = task_list[fore_img_idx][set_nafs][img_idx][:, posifss: posifss + cutfs]
+                mix_fea[:, posifst: posifst + cuth] = fofs
+                mix_feas.append(mix_fea)
 
             # determine mix_lab  same as the chosen img
             mix_labs.append(task_list[lam[idx]][lab_name][img_idx])
@@ -1086,8 +1119,10 @@ class Mixer:
         # formulate to task
         task_dict = {
             'context_images': np.stack(mix_imgs[:context_size]),   # shape [n_shot*n_way, 3, 84, 84]
+            'context_features': np.stack(mix_feas[:context_size]),       # shape [n_shot*n_way, 512]
             'context_labels': np.array(mix_labs[:context_size]),   # shape [n_shot*n_way,]
             'target_images': np.stack(mix_imgs[context_size:]),     # shape [n_query*n_way, 3, 84, 84]
+            'target_features': np.stack(mix_feas[context_size:]),         # shape [n_query*n_way, 512]
             'target_labels': np.array(mix_labs[context_size:]),     # shape [n_query*n_way,]
         }
 

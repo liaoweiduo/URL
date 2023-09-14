@@ -181,8 +181,12 @@ class ResNet(nn.Module):
         """task_x contains task image samples for task-conditioning."""
         if isinstance(x_list, torch.Tensor):
             x_list = [x_list]
-        # features = torch.mean(self.embed(task_x), dim=0, keepdim=True)        # [1, 512]
-        features = self.embed(task_x)        # [bs, 512] forward backbone without film
+
+        if len(task_x.shape) == 2:
+            # task_x is features
+            features = task_x
+        else:
+            features = self.embed(task_x)        # [bs, 512] forward backbone without film
         selection, selection_info = self.selector(features, gumbel=gumbel, hard=hard)       # [1, n_clusters]
 
         if selected_idx is not None:
