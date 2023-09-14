@@ -432,7 +432,7 @@ def train():
                     with torch.no_grad():
                         # current_features = current_images.to(device)
                         _, selection_info = pmo.selector(
-                            pmo.embed(torch.from_numpy(current_features).to(device)), gumbel=False, average=False)  # [bs, n_clusters]
+                            torch.from_numpy(current_features).to(device), gumbel=False, average=False)  # [bs, n_clusters]
                         current_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
                     '''put current cases into center_pool.buffer'''
