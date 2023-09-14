@@ -225,8 +225,8 @@ exp: for debug
 """
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-debug-calsim-manytimes',
-    'train.max_iter': 10, 'train.summary_freq': 200, 'train.pool_freq': 10,
+    'tag': 'pmo-debug-',
+    'train.max_iter': 100, 'train.summary_freq': 200, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1,
     'train.cosine_anneal_freq': 2000, 'train.eval_freq': 20000,    # no eval
     'train.loss_type': 'task+ce+pure',

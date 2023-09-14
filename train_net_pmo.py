@@ -384,7 +384,7 @@ def train():
                 track_labels = np.stack(track_labels)
                 print(f"debug: track imgs shape: {track_imgs.shape}")
                 # print(f"track_labels: \n{track_labels}")
-                print(f"track_sims: \n{track_sims}")
+                # print(f"track_sims: \n{track_sims}")
 
                 # todo: track images
                 with torch.no_grad():
@@ -394,7 +394,7 @@ def train():
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track img's dif recal just after collect track imgs: {dif} with num_imgs {len(post_track_similarities)}.")
-                print(f"debug: post_track_similarities: \n{post_track_similarities}")
+                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
 
 
@@ -431,7 +431,7 @@ def train():
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track img's dif recal just after construct center pool's buffer: {dif} with num_imgs {len(post_track_similarities)}.")
-                print(f"debug: post_track_similarities: \n{post_track_similarities}")
+                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
 
                 # todo: recal sim for img in the buffer and check with origin
@@ -457,7 +457,7 @@ def train():
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track img's dif recal before buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
-                print(f"debug: post_track_similarities: \n{post_track_similarities}")
+                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
 
 
@@ -477,7 +477,7 @@ def train():
                     post_track_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
                 dif = np.sum((track_sims - post_track_similarities) ** 2)
                 print(f"iter {i}: track img's dif recal after buffer2cluster: {dif} with num_imgs {len(post_track_similarities)}.")
-                print(f"debug: post_track_similarities: \n{post_track_similarities}")
+                # print(f"debug: post_track_similarities: \n{post_track_similarities}")
 
                 # find these track images in the pool
                 for cluster_id, cluster in enumerate(pool.clusters):
