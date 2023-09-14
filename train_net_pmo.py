@@ -610,7 +610,7 @@ def train():
                 '''selection CE loss on all clusters'''
                 if 'ce' in args['train.loss_type']:
                     features_batch, cluster_labels = [], []
-                    for cluster_idx, cluster in enumerate(pool.cluster):
+                    for cluster_idx, cluster in enumerate(pool.clusters):
                         if len(cluster) > 0:
                             features = np.concatenate([cls['features'] for cls in cluster])
                             features_batch.append(features)
