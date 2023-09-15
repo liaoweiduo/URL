@@ -638,7 +638,7 @@ def train():
                                           *[layer[block_idx].film1_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
                                           *[layer[block_idx].film2_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
                                           ], dim=1)
-                assert _film_gammas.shape[0] == _film_betas.shape[0] == 0, f"_film_gammas shape {_film_gammas.shape}, _film_betas shape {_film_betas.shape}"
+                assert _film_gammas.shape[0] == _film_betas.shape[0] == 10, f"_film_gammas shape {_film_gammas.shape}, _film_betas shape {_film_betas.shape}"
 
                 _film_gammas_grad = torch.cat([pmo.film_normalize_gammas.grad,
                                           *[layer[block_idx].film1_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
