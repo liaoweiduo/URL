@@ -248,7 +248,7 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-test-filmupdate',
+    'tag': 'pmo-tcph-eval_mode',
     'train.max_iter': 10000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
     'train.mo_freq': 200, 'train.n_mo': 5,
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval

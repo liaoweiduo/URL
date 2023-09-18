@@ -155,7 +155,9 @@ def train():
 
         def model_train():
             # train mode
-            pmo.train()
+            pmo.eval()         # train()?
+            if pmo.feature_extractor is not None:
+                pmo.feature_extractor.eval()        # to extract task features
             pool.train()
 
         def model_eval():
@@ -627,52 +629,52 @@ def train():
             #         p.grad = p.grad * 1000
 
 
-            # todo: film param check
-            with torch.no_grad():
-                print(f"debug: iter {i}, train task gumbel sim {epoch_loss[f'task/gumbel_sim'][-1]}")
-                _film_gammas = torch.cat([pmo.film_normalize_gammas.data,
-                                          *[layer[block_idx].film1_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          *[layer[block_idx].film2_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          ], dim=1)
-                _film_betas = torch.cat([pmo.film_normalize_betas.data,
-                                          *[layer[block_idx].film1_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          *[layer[block_idx].film2_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          ], dim=1)
-                assert _film_gammas.shape[0] == _film_betas.shape[0] == 10, f"_film_gammas shape {_film_gammas.shape}, _film_betas shape {_film_betas.shape}"
-
-                _film_gammas_grad = torch.cat([pmo.film_normalize_gammas.grad,
-                                          *[layer[block_idx].film1_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          *[layer[block_idx].film2_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          ], dim=1)
-                _film_betas_grad = torch.cat([pmo.film_normalize_betas.grad,
-                                          *[layer[block_idx].film1_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          *[layer[block_idx].film2_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-                                          ], dim=1)
+            # # todo: film param check
+            # with torch.no_grad():
+            #     print(f"debug: iter {i}, train task gumbel sim {epoch_loss[f'task/gumbel_sim'][-1]}")
+            #     _film_gammas = torch.cat([pmo.film_normalize_gammas.data,
+            #                               *[layer[block_idx].film1_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               *[layer[block_idx].film2_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               ], dim=1)
+            #     _film_betas = torch.cat([pmo.film_normalize_betas.data,
+            #                               *[layer[block_idx].film1_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               *[layer[block_idx].film2_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               ], dim=1)
+            #     assert _film_gammas.shape[0] == _film_betas.shape[0] == 10, f"_film_gammas shape {_film_gammas.shape}, _film_betas shape {_film_betas.shape}"
+            #
+            #     _film_gammas_grad = torch.cat([pmo.film_normalize_gammas.grad,
+            #                               *[layer[block_idx].film1_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               *[layer[block_idx].film2_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               ], dim=1)
+            #     _film_betas_grad = torch.cat([pmo.film_normalize_betas.grad,
+            #                               *[layer[block_idx].film1_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               *[layer[block_idx].film2_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
+            #                               ], dim=1)
 
 
             update_step(i)
 
 
-            # todo: film param check
-            with torch.no_grad():
-                _film_gammas_up = torch.cat([pmo.film_normalize_gammas.data,
-                                          *[layer[block_idx].film1_gammas.data for layer in
-                                            [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-                                            range(len(layer))],
-                                          *[layer[block_idx].film2_gammas.data for layer in
-                                            [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-                                            range(len(layer))],
-                                          ], dim=1)
-                _film_betas_up = torch.cat([pmo.film_normalize_betas.data,
-                                         *[layer[block_idx].film1_betas.data for layer in
-                                           [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-                                           range(len(layer))],
-                                         *[layer[block_idx].film2_betas.data for layer in
-                                           [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-                                           range(len(layer))],
-                                         ], dim=1)
-                print(f"gamma\nsum over film dim: valu: {torch.sum(_film_gammas, dim=1)}\ngrad: {torch.sum(_film_gammas_grad, dim=1)}\nupda: {torch.sum(_film_gammas_up, dim=1)}.")
-                print(f"beta\nsum over film dim: valu: {torch.sum(_film_betas, dim=1)}\ngrad: {torch.sum(_film_betas_grad, dim=1)}\nupda: {torch.sum(_film_betas_up, dim=1)}.")
+            # # todo: film param check
+            # with torch.no_grad():
+            #     _film_gammas_up = torch.cat([pmo.film_normalize_gammas.data,
+            #                               *[layer[block_idx].film1_gammas.data for layer in
+            #                                 [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
+            #                                 range(len(layer))],
+            #                               *[layer[block_idx].film2_gammas.data for layer in
+            #                                 [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
+            #                                 range(len(layer))],
+            #                               ], dim=1)
+            #     _film_betas_up = torch.cat([pmo.film_normalize_betas.data,
+            #                              *[layer[block_idx].film1_betas.data for layer in
+            #                                [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
+            #                                range(len(layer))],
+            #                              *[layer[block_idx].film2_betas.data for layer in
+            #                                [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
+            #                                range(len(layer))],
+            #                              ], dim=1)
+            #     print(f"gamma sum over film dim: \nvalu: {torch.sum(_film_gammas, dim=1).cpu().numpy()}\ngrad: {torch.sum(_film_gammas_grad, dim=1).cpu().numpy()}\nupda: {torch.sum(_film_gammas_up, dim=1).cpu().numpy()}.")
+            #     print(f"beta sum over film dim: \nvalu: {torch.sum(_film_betas, dim=1).cpu().numpy()}\ngrad: {torch.sum(_film_betas_grad, dim=1).cpu().numpy()}\nupda: {torch.sum(_film_betas_up, dim=1).cpu().numpy()}.")
 
 
             '''log iter-wise params change'''

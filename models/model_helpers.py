@@ -52,11 +52,13 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
     model_fe = model_fn(classifier=train_classifier,
                         num_classes=num_classes,
                         global_pool=False)
-    # freeze
     if args['model.pretrained']:
-        for k, v in model_fe.named_parameters():
-            if 'cls' not in k and 'running' not in k:
-                v.requires_grad = False
+        # freeze
+        if args['model.pretrained']:
+            for k, v in model_fe.named_parameters():
+                if 'cls' not in k and 'running' not in k:
+                    v.requires_grad = False
+        model_fe.eval()
     model.feature_extractor = model_fe
 
     if d is None:
@@ -68,6 +70,7 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
         for name, param in model.named_parameters():
             if 'cls' not in name:       # cls_fn
                 param.requires_grad = False
+        model.eval()
 
     return model
 
