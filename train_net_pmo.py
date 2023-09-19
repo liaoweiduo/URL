@@ -155,7 +155,7 @@ def train():
 
         def model_train():
             # train mode
-            pmo.eval()         # train()?
+            pmo.eval()         # todo: train()? or eval()
             if pmo.feature_extractor is not None:
                 pmo.feature_extractor.eval()        # to extract task features
             pool.train()
@@ -1055,7 +1055,7 @@ def train():
                 checkpointer.save_checkpoint(
                         i, best_val_acc, best_val_loss,
                         is_best, optimizer=optimizer,
-                        state_dict=pmo.get_state_dict(), extra=extra_dict)
+                        state_dict=pmo.get_state_dict(whole=False), extra=extra_dict)
 
                 '''save epoch_val_loss and epoch_val_acc'''
                 with open(os.path.join(args['out.dir'], 'summary', 'val_log.pickle'), 'wb') as f:
