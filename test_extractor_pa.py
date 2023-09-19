@@ -21,7 +21,7 @@ from utils import check_dir
 
 from models.losses import prototype_loss, knn_loss, lr_loss, scm_loss, svm_loss
 from models.model_utils import CheckPointer
-from models.model_helpers import get_model
+from models.model_helpers import get_model, get_model_moe
 from models.pa import apply_selection, pa
 from data.meta_dataset_reader import (MetaDatasetEpisodeReader, MetaDatasetBatchReader, TRAIN_METADATASET_NAMES,
                                       ALL_METADATASET_NAMES)
@@ -40,7 +40,12 @@ def main():
     elif args['test.mode'] == 'sdl':
         # single-domain learning setting, meta-train on ImageNet
         trainsets = ['ilsvrc_2012']
-    model = get_model(None, args)
+
+    if args['model.name'] == 'pmo':
+        # pmo model, fe load from url
+        model = get_model_moe(None, args, base_network_name='url')  # resnet18_moe
+    else:
+        model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
     checkpointer.restore_model(ckpt='best', strict=False)
     model.eval()
@@ -64,8 +69,14 @@ def main():
             for i in tqdm(range(TEST_SIZE)):
                 with torch.no_grad():
                     sample = test_loader.get_test_task(session, dataset)
-                    context_features = model.embed(sample['context_images'])
-                    target_features = model.embed(sample['target_images'])
+                    if args['model.name'] == 'pmo':
+                        task_features = model.embed(torch.cat([sample['context_images'], sample['target_images']]))
+                        [context_features, target_features], selection_info = model(
+                            [sample['context_images'], sample['target_images']], task_features,
+                            gumbel=True, hard=False)
+                    else:
+                        context_features = model.embed(sample['context_images'])
+                        target_features = model.embed(sample['target_images'])
                     context_labels = sample['context_labels']
                     target_labels = sample['target_labels']
 
