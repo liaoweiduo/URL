@@ -214,7 +214,7 @@ common_args = {
     'train.selector_learning_rate': 1e-3,
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 100, 'train.n_mo': 10, 'train.hv_coefficient': 1,
-    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 300,
 }
 
 params = []
@@ -246,24 +246,23 @@ exp: for debug
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 1        # num of runs in 1 sh file
+num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-urlfilm',
-    'train.max_iter': 10000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
-    'train.mo_freq': 200, 'train.n_mo': 5,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 2000,    # no eval
+    'tag': 'pmo-tcph-tunelr',
+    'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
+    'train.mo_freq': 100, 'train.n_mo': 10,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
     'train.loss_type': 'task+ce+pure+hv',
 })
 param_grid = {
-    'train.selector_learning_rate': [1e-3],
-    'train.learning_rate': [1e-3],
+    'train.learning_rate': [5e-4, 2e-3, 5e-3, 1e-2],
 }
 exp_name_template = common_args['tag'] + \
-                    '-slr{train.selector_learning_rate}' + \
                     '-flr{train.learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
+    p['train.selector_learning_rate'] = p['train.learning_rate']
 params.extend(params_temp)
 
 
