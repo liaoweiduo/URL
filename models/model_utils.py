@@ -86,6 +86,8 @@ class CheckPointer(object):
         self.last_ckpt = os.path.join(self.model_path, 'checkpoint.pth.tar')
         self.best_ckpt = os.path.join(self.model_path, 'model_best.pth.tar')
         ckpt_path = self.last_ckpt if ckpt == 'last' else self.best_ckpt
+        if type(ckpt) == int:
+            ckpt_path = os.path.join(self.model_path, f'checkpoint-{ckpt}.pth.tar')
         if os.path.isfile(ckpt_path):
             print("=> loading {} checkpoint '{}'".format(ckpt, ckpt_path))
             ch = torch.load(ckpt_path, map_location=device)
