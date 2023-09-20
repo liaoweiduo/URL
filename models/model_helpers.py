@@ -13,7 +13,8 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
     dropout_rate = args.get('model.dropout', 0)
     if base_network_name is None:       # for fe before selector
         base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
-    moe_base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']
+    # moe_base_network_name = DATASET_MODELS_RESNET18['ilsvrc_2012']        # need to change source_moe to sdl's path
+    moe_base_network_name = base_network_name       # use URL for moe backbone
 
     from models.resnet18_moe import resnet18 as resnet18_moe
     if args['model.pretrained']:
