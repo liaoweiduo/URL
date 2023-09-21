@@ -1041,9 +1041,9 @@ def train():
                       f"avg_accuracy {avg_val_cluster_acc:.3f}.")
 
                 # evaluation acc based on cluster acc
-                # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
+                avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
                 # evaluation acc based on source domain acc
-                avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
+                # avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
@@ -1077,3 +1077,7 @@ def train():
 
 if __name__ == '__main__':
     train()
+
+    # run testing
+    from test_extractor_pa import main as test
+    test()

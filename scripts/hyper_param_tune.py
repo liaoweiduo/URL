@@ -204,7 +204,7 @@ common_args = {
     'model.pretrained': True, 'source': '../URL-experiments/saved_results/url',
     'source_moe': '../URL-experiments/saved_results/url',
     'data.train': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
-    'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower mscoco',
+    'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.test': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower '
                  'traffic_sign mscoco mnist cifar10 cifar100',
     'train.type': 'standard',
