@@ -253,6 +253,7 @@ common_args.update({
     'train.mo_freq': 100, 'train.n_mo': 10,
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
     'train.loss_type': 'task+ce+pure+hv',
+    'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
     'train.learning_rate': [5e-4, 2e-3, 5e-3, 1e-2],
@@ -262,7 +263,6 @@ exp_name_template = common_args['tag'] + \
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
-    p['train.selector_learning_rate'] = p['train.learning_rate']
 params.extend(params_temp)
 
 
