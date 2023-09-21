@@ -248,15 +248,15 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-tunelr',
-    'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
-    'train.mo_freq': 100, 'train.n_mo': 10,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
+    'tag': 'pmo-tcph-tunelr-2000iter-mo_f10',
+    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 10,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
     'train.loss_type': 'task+ce+pure+hv',
     'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [5e-4, 2e-3, 5e-3, 1e-2],
+    'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2],
 }
 exp_name_template = common_args['tag'] + \
                     '-flr{train.learning_rate}'

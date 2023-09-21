@@ -628,54 +628,7 @@ def train():
             #     if 'selector.prototypes' in k and p.grad is not None:
             #         p.grad = p.grad * 1000
 
-
-            # # todo: film param check
-            # with torch.no_grad():
-            #     print(f"debug: iter {i}, train task gumbel sim {epoch_loss[f'task/gumbel_sim'][-1]}")
-            #     _film_gammas = torch.cat([pmo.film_normalize_gammas.data,
-            #                               *[layer[block_idx].film1_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               *[layer[block_idx].film2_gammas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               ], dim=1)
-            #     _film_betas = torch.cat([pmo.film_normalize_betas.data,
-            #                               *[layer[block_idx].film1_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               *[layer[block_idx].film2_betas.data for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               ], dim=1)
-            #     assert _film_gammas.shape[0] == _film_betas.shape[0] == 10, f"_film_gammas shape {_film_gammas.shape}, _film_betas shape {_film_betas.shape}"
-            #
-            #     _film_gammas_grad = torch.cat([pmo.film_normalize_gammas.grad,
-            #                               *[layer[block_idx].film1_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               *[layer[block_idx].film2_gammas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               ], dim=1)
-            #     _film_betas_grad = torch.cat([pmo.film_normalize_betas.grad,
-            #                               *[layer[block_idx].film1_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               *[layer[block_idx].film2_betas.grad for layer in [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in range(len(layer))],
-            #                               ], dim=1)
-
-
             update_step(i)
-
-
-            # # todo: film param check
-            # with torch.no_grad():
-            #     _film_gammas_up = torch.cat([pmo.film_normalize_gammas.data,
-            #                               *[layer[block_idx].film1_gammas.data for layer in
-            #                                 [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-            #                                 range(len(layer))],
-            #                               *[layer[block_idx].film2_gammas.data for layer in
-            #                                 [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-            #                                 range(len(layer))],
-            #                               ], dim=1)
-            #     _film_betas_up = torch.cat([pmo.film_normalize_betas.data,
-            #                              *[layer[block_idx].film1_betas.data for layer in
-            #                                [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-            #                                range(len(layer))],
-            #                              *[layer[block_idx].film2_betas.data for layer in
-            #                                [pmo.layer1, pmo.layer2, pmo.layer3, pmo.layer4] for block_idx in
-            #                                range(len(layer))],
-            #                              ], dim=1)
-            #     print(f"gamma sum over film dim: \nvalu: {torch.sum(_film_gammas, dim=1).cpu().numpy()}\ngrad: {torch.sum(_film_gammas_grad, dim=1).cpu().numpy()}\nupda: {torch.sum(_film_gammas_up, dim=1).cpu().numpy()}.")
-            #     print(f"beta sum over film dim: \nvalu: {torch.sum(_film_betas, dim=1).cpu().numpy()}\ngrad: {torch.sum(_film_betas_grad, dim=1).cpu().numpy()}\nupda: {torch.sum(_film_betas_up, dim=1).cpu().numpy()}.")
-
 
             '''log iter-wise params change'''
             writer.add_scalar('params/learning_rate', optimizer.param_groups[0]['lr'], i+1)
@@ -785,29 +738,29 @@ def train():
                         figure = draw_heatmap(sim_in_cluster, verbose=False)
                         writer.add_figure(f"center_pool-sim/{cluster_id}", figure, i+1)
 
-                '''write image similarities in the pool'''
-                similarities = pool.current_similarities(image_wise=True)
-                for cluster_id, cluster in enumerate(similarities):
-                    if len(cluster) > 0:
-                        sim_in_cluster = np.concatenate(cluster)  # [num_cls*num_img, 8]
-                        figure = draw_heatmap(sim_in_cluster, verbose=False)
-                        writer.add_figure(f"pool-img-sim/{cluster_id}", figure, i+1)
+                # '''write image similarities in the pool'''
+                # similarities = pool.current_similarities(image_wise=True)
+                # for cluster_id, cluster in enumerate(similarities):
+                #     if len(cluster) > 0:
+                #         sim_in_cluster = np.concatenate(cluster)  # [num_cls*num_img, 8]
+                #         figure = draw_heatmap(sim_in_cluster, verbose=False)
+                #         writer.add_figure(f"pool-img-sim/{cluster_id}", figure, i+1)
 
-                '''write image similarities in the pool after update iter'''
-                for cluster_idx, cluster in enumerate(pool.clusters):
-                    if len(cluster) > 0:
-                        features_batch = torch.from_numpy(
-                            np.concatenate([cls['features'] for cls in cluster])
-                        ).to(device)
-                        with torch.no_grad():
-                            img_features = features_batch      # [img_size, 512]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-                            img_sim = selection_info['y_soft']        # [img_size, 10]
-                            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-                            tsk_sim = selection_info['y_soft']        # [1, 10]
-                        sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
-                        figure = draw_heatmap(sim, verbose=False)
-                        writer.add_figure(f"pool-img-sim-(fea)-re-cal/{cluster_idx}", figure, i+1)
+                # '''write image similarities in the pool after update iter'''
+                # for cluster_idx, cluster in enumerate(pool.clusters):
+                #     if len(cluster) > 0:
+                #         features_batch = torch.from_numpy(
+                #             np.concatenate([cls['features'] for cls in cluster])
+                #         ).to(device)
+                #         with torch.no_grad():
+                #             img_features = features_batch      # [img_size, 512]
+                #             _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+                #             img_sim = selection_info['y_soft']        # [img_size, 10]
+                #             _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                #             tsk_sim = selection_info['y_soft']        # [1, 10]
+                #         sim = torch.cat([img_sim, *[tsk_sim]*(img_sim.shape[0]//10)]).cpu().numpy()
+                #         figure = draw_heatmap(sim, verbose=False)
+                #         writer.add_figure(f"pool-img-sim-(fea)-re-cal/{cluster_idx}", figure, i+1)
 
                 '''write task images'''
                 writer.add_images(f"task-image/image", task_images, i+1)     # task images
@@ -834,11 +787,11 @@ def train():
                     figure = draw_heatmap(similarities, verbose=False)
                     writer.add_figure(f"train_image/task-softmax-sim", figure, i+1)
 
-                '''write pure task image sim'''
-                for cluster_idx, sim in epoch_loss[f'pure/image_softmax_sim'].items():
-                    writer.add_images(f"pure-image/image{cluster_idx}", pure_task_images[cluster_idx], i + 1)  # pure images
-                    figure = draw_heatmap(sim, verbose=False)
-                    writer.add_figure(f"pure-image/sim{cluster_idx}", figure, i + 1)
+                # '''write pure task image sim'''
+                # for cluster_idx, sim in epoch_loss[f'pure/image_softmax_sim'].items():
+                #     writer.add_images(f"pure-image/image{cluster_idx}", pure_task_images[cluster_idx], i + 1)  # pure images
+                #     figure = draw_heatmap(sim, verbose=False)
+                #     writer.add_figure(f"pure-image/sim{cluster_idx}", figure, i + 1)
 
                 '''write pure task similarities   10*10'''
                 if len(epoch_loss[f'pure/task_softmax_sim']) > 0:
@@ -924,11 +877,20 @@ def train():
                 val_accs, val_losses = {f'{name}': [] for name in valsets}, {f'{name}': [] for name in valsets}
                 cluster_accs, cluster_losses = [[] for _ in range(args['model.num_clusters'])], \
                                                [[] for _ in range(args['model.num_clusters'])]
+                epoch_val_acc[f'mo/image_softmax_sim'] = {}
+                epoch_val_acc['hv'] = []
+                epoch_val_acc.update({
+                    f'hv/obj{obj_idx}': {
+                        f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
+                    } for obj_idx in range(args['train.n_obj'])})
+                pop_labels = [
+                    f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
+                    for idx in range(args['train.n_mix'] + args['train.n_obj'])
+                ]       # ['p0', 'p1', 'm0', 'm1']
                 with torch.no_grad():
-                    for v_indx, valset in enumerate(valsets):
-                        print(f"==>> evaluate on {valset}.")
-                        for j in tqdm(range(args['train.eval_size']), ncols=100):
-                            '''obtain 1 task from val_loader'''
+                    for j in tqdm(range(args['train.eval_size']), ncols=100):
+                        '''obtain 1 task from all val_loader'''
+                        for v_indx, valset in enumerate(valsets):
                             samples = val_loader.get_validation_task(session, valset, d=device)
                             context_images, target_images = samples['context_images'], samples['target_images']
                             context_labels, target_labels = samples['context_labels'], samples['target_labels']
@@ -939,8 +901,6 @@ def train():
                             [enriched_context_features, enriched_target_features], _ = pmo(
                                 [context_images, target_images], features,
                                 gumbel=False, hard=False)
-                            # enriched_context_features, _ = pmo(context_images, gumbel=False)
-                            # enriched_target_features, _ = pmo(target_images, gumbel=False)
 
                             _, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -950,63 +910,129 @@ def train():
                             val_losses[valset].append(stats_dict['loss'])
                             val_accs[valset].append(stats_dict['acc'])
 
-                            '''put to val_pool'''
-                            images = torch.cat([context_images, target_images])
+                            '''samples put to val buffer'''
+                            task_images = torch.cat([context_images, target_images]).cpu()
                             gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
                             domain = np.array([domain] * len(gt_labels))
+                            task_features = pmo.embed(torch.cat([context_images, target_images]))
 
-                            '''obtain selection vec for images'''
                             _, selection_info = pmo.selector(
                                 features, gumbel=False, average=False)  # [bs, n_clusters]
-                            similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-                            # if similarities.shape[0] == 1 and images.shape[0] != 1:    # repeat to match num of samples
-                            #     similarities = np.concatenate(([similarities for _ in range(images.shape[0])]))
-                            cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
+                            similarities = selection_info[
+                                'y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
-                            val_pool.put_batch(
-                                images.cpu(), cluster_idxs, {
-                                    'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities, 'features': features.cpu().numpy()})
+                            not_full = val_pool.put_buffer(
+                                task_images, {'domain': domain, 'gt_labels': gt_labels,
+                                              'similarities': similarities, 'features': task_features.cpu().numpy()},
+                                maintain_size=False)
 
-                            '''check if any cluster have sufficient class to construct 1 task'''
-                            num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
-                                                 val_pool.current_classes()]
-                            n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['test.type'],
-                                                                       min_available_clusters=1,
-                                                                       use_max_shot=True)
+                        '''collect samples in the val buffer'''
+                        val_pool.clear_clusters()  # do not need last iter's center
 
-                            if n_way != -1:
-                                # enough classes to construct 1 task
+                        verbose = False
+                        if verbose:
+                            print(f'Buffer contains {len(val_pool.buffer)} classes.')
+
+                        '''buffer -> clusters'''
+                        val_pool.buffer2cluster()
+                        val_pool.clear_buffer()
+
+                        '''repeat collecting MO acc on val pool'''
+                        num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
+                                             val_pool.current_classes()]
+                        for mo_train_idx in range(args['train.n_mo']):
+                            '''check pool has enough samples and generate 1 setting'''
+                            n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'],
+                                                                       min_available_clusters=args['train.n_obj'])
+                            if n_way == -1:  # not enough samples
+                                print(f"==>> val_pool has not enough samples. skip MO evaluation this iter.")
+                                break
+                            else:
                                 available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
-                                # then use all available classes to construct 1 task
-                                for idx in available_cluster_idxs:
-                                    task = val_pool.episodic_sample(
-                                        idx, n_way, n_shot, n_query,
-                                        remove_sampled_classes=True,
-                                        d=device
+
+                                selected_cluster_idxs = sorted(np.random.choice(
+                                    available_cluster_idxs, args['train.n_obj'], replace=False))
+
+                                torch_tasks = []
+                                epoch_val_acc[f'mo/image_softmax_sim'] = {}
+                                '''sample pure tasks from clusters in selected_cluster_idxs'''
+                                for cluster_idx in selected_cluster_idxs:
+                                    pure_task = val_pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+                                    torch_tasks.append(pure_task)
+
+                                '''sample mix tasks by mixer'''
+                                for mix_id in range(args['train.n_mix']):
+                                    numpy_mix_task, _ = mixer.mix(
+                                        task_list=[val_pool.episodic_sample(idx, n_way, n_shot, n_query)
+                                                   for idx in selected_cluster_idxs],
+                                        mix_id=mix_id
                                     )
-                                    features = torch.cat([task['context_features'], task['target_features']])
-                                    [enriched_context_features, enriched_target_features], _ = pmo(
-                                        [task['context_images'], task['target_images']],
-                                        features, gumbel=False, hard=True)
+                                    torch_tasks.append(task_to_device(numpy_mix_task, device))
 
-                                    # enriched_context_features, _ = pmo(task['context_images'], gumbel=False)
-                                    # enriched_target_features, _ = pmo(task['target_images'], gumbel=False)
+                                for task_idx, task in enumerate(torch_tasks):
+                                    '''obtain task-specific selection'''
+                                    # pure use feature->sim, mixed use img->sim
+                                    if task_idx < len(selected_cluster_idxs):
+                                        torch_task_features = torch.cat(
+                                            [task['context_features'], task['target_features']])
+                                    else:
+                                        torch_task_features = pmo.embed(
+                                            torch.cat([task['context_images'], task['target_images']]))
+                                    selection, selection_info = pmo.selector(
+                                        torch_task_features,
+                                        gumbel=False, hard=False)
 
-                                    _, stats_dict, _ = prototype_loss(
-                                        enriched_context_features, task['context_labels'],
-                                        enriched_target_features, task['target_labels'],
-                                        distance=args['test.distance'])
+                                    '''log img sim in the task'''
+                                    img_features = torch_task_features  # [img_size, 512]
+                                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False,
+                                                                     average=False)
+                                    img_sim = selection_info['y_soft']  # [img_size, 10]
+                                    _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+                                    tsk_sim = selection_info['y_soft']  # [1, 10]
+                                    sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
+                                    epoch_val_acc[f'mo/image_softmax_sim'][task_idx] = sim
 
-                                    cluster_losses[idx].append(stats_dict['loss'])
-                                    cluster_accs[idx].append(stats_dict['acc'])
+                                    '''forward 2 pure tasks as 2 objs'''
+                                    for obj_idx in range(len(selected_cluster_idxs)):
+                                        context_images = torch_tasks[obj_idx]['context_images']
+                                        target_images = torch_tasks[obj_idx]['target_images']
+                                        context_labels = torch_tasks[obj_idx]['context_labels']
+                                        target_labels = torch_tasks[obj_idx]['target_labels']
+                                        context_features = pmo.embed(context_images, selection=selection)
+                                        target_features = pmo.embed(target_images, selection=selection)
 
-                        '''write and print val on source'''
-                        epoch_val_loss[valset] = np.mean(val_losses[valset])
-                        epoch_val_acc[valset] = np.mean(val_accs[valset])
-                        writer.add_scalar(f"val_loss/{valset}", epoch_val_loss[valset], i+1)
-                        writer.add_scalar(f"val_accuracy/{valset}", epoch_val_acc[valset], i+1)
-                        print(f"==>> val: loss {np.mean(val_losses[valset]):.3f}, "
-                              f"accuracy {np.mean(val_accs[valset]):.3f}.")
+                                        _, stats_dict, _ = prototype_loss(
+                                            context_features, context_labels, target_features, target_labels,
+                                            distance=args['test.distance'])
+
+                                        if task_idx == obj_idx:     # forward on itself
+                                            cluster_losses[task_idx].append(stats_dict['loss'])
+                                            cluster_accs[task_idx].append(stats_dict['acc'])
+
+                                        epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
+
+                                '''calculate HV value for mutli-obj acc'''
+                                obj = np.array([[
+                                    epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                    for task_idx in range(len(torch_tasks))
+                                ] for obj_idx in range(len(selected_cluster_idxs))])
+                                hv = cal_hv(obj, 0, target='acc')
+                                epoch_val_acc['hv'].append(hv)
+
+                '''write mo: (pure+mixed) task image sim for val'''
+                for task_id, sim in epoch_val_acc[f'mo/image_softmax_sim'].items():
+                    figure = draw_heatmap(sim, verbose=False)
+                    writer.add_figure(f"val-mo-image/{pop_labels[task_id]}/sim", figure, i + 1)
+
+                '''write and print val on source'''
+                for v_indx, valset in enumerate(valsets):
+                    print(f"==>> evaluate results on {valset}.")
+                    epoch_val_loss[valset] = np.mean(val_losses[valset])
+                    epoch_val_acc[valset] = np.mean(val_accs[valset])
+                    writer.add_scalar(f"val_loss/{valset}", epoch_val_loss[valset], i+1)
+                    writer.add_scalar(f"val_accuracy/{valset}", epoch_val_acc[valset], i+1)
+                    print(f"==>> val: loss {np.mean(val_losses[valset]):.3f}, "
+                          f"accuracy {np.mean(val_accs[valset]):.3f}.")
 
                 '''write summaries averaged over sources'''
                 avg_val_source_loss = np.mean(np.concatenate([val_loss for val_loss in val_losses.values()]))
@@ -1032,7 +1058,7 @@ def train():
                         print(f"==>> val C{cluster_idx}: "
                               f"val_loss No value, val_acc No value")
 
-                # write summaries averaged over sources/clusters
+                # write summaries averaged over clusters
                 avg_val_cluster_loss = np.mean(np.concatenate(cluster_losses))
                 avg_val_cluster_acc = np.mean(np.concatenate(cluster_accs))
                 writer.add_scalar(f"val_loss/avg_val_cluster_loss", avg_val_cluster_loss, i+1)
@@ -1040,10 +1066,33 @@ def train():
                 print(f"==>> val: avg_loss {avg_val_cluster_loss:.3f}, "
                       f"avg_accuracy {avg_val_cluster_acc:.3f}.")
 
-                # evaluation acc based on cluster acc
-                avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
-                # evaluation acc based on source domain acc
+                if len(epoch_val_acc['hv']) > 0:      # did mo process
+                    '''log multi-objective accuracy'''
+                    objs_acc = []        # for average figure visualization
+                    for obj_idx in range(args['train.n_obj']):
+                        obj_acc = []
+                        for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
+                            acc_values = epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
+                            writer.add_scalar(f"val_accuracy/obj{obj_idx}/pop{pop_idx}",
+                                              np.mean(acc_values), i+1)
+                            obj_acc.append(np.mean(acc_values))
+                        objs_acc.append(obj_acc)
+
+                    '''log objs figure'''
+                    objs = np.array(objs_acc)     # [2, 4]
+                    figure = draw_objs(objs, pop_labels)
+                    writer.add_figure(f"val_image/objs_acc", figure, i+1)
+
+                    '''log hv'''
+                    writer.add_scalar('val_accuracy/hv', np.mean(epoch_val_acc['hv']), i+1)
+                    print(f"==>> hv: accuracy {np.mean(epoch_val_acc['hv']):.3f}.")
+
+                '''evaluation acc based on cluster acc'''
+                # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
+                '''evaluation acc based on source domain acc'''
                 # avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
+                '''evaluation acc based on hv accuracy'''
+                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
