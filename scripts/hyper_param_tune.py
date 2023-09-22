@@ -195,7 +195,7 @@ func = template_sustech
 task_root = 'scripts'        # path for sh in the working path
 # task_root = '../URL-experiments/tasks'        # path for sh out of working path
 num_runs_1sh = 1        # num of runs in 1 sh file
-fix_device = False      # cuda self-increase for each run if False, else use cuda:0
+fix_device = True      # cuda self-increase for each run if False, else use cuda:0
 start_iter = 0
 common_args = {
     'model.name': 'pmo',

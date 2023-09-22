@@ -47,7 +47,7 @@ def main():
     else:
         model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
-    checkpointer.restore_model(ckpt=2999, strict=False)       # ckpt='best'  'last'     1999 or mute to not restore
+    checkpointer.restore_model(ckpt='best', strict=False)       # ckpt='best'  'last'     1999 or mute to not restore
     model.eval()
 
     accs_names = ['NCC']
