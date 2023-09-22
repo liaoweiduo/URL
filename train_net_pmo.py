@@ -88,7 +88,7 @@ def train():
         checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
         if os.path.isfile(checkpointer.last_ckpt) and args['train.resume']:
             start_iter, best_val_loss, best_val_acc = \
-                checkpointer.restore_model(ckpt='last')
+                checkpointer.restore_model(ckpt='last', strict=False)       # since only store film and selector
         else:
             print('No checkpoint restoration for pmo.')
         if args['train.lr_policy'] == "step":
