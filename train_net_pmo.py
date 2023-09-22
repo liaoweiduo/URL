@@ -883,6 +883,11 @@ def train():
                     f'hv/obj{obj_idx}': {
                         f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
                     } for obj_idx in range(args['train.n_obj'])})
+                epoch_val_loss['hv'] = []
+                epoch_val_loss.update({
+                    f'hv/obj{obj_idx}': {
+                        f'hv/pop{pop_idx}': [] for pop_idx in range(args['train.n_mix'] + args['train.n_obj'])
+                    } for obj_idx in range(args['train.n_obj'])})
                 pop_labels = [
                     f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
                     for idx in range(args['train.n_mix'] + args['train.n_obj'])
@@ -1009,9 +1014,16 @@ def train():
                                             cluster_losses[task_idx].append(stats_dict['loss'])
                                             cluster_accs[task_idx].append(stats_dict['acc'])
 
+                                        epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])
                                         epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
 
-                                '''calculate HV value for mutli-obj acc'''
+                                '''calculate HV value for mutli-obj loss acc'''
+                                obj = np.array([[
+                                    epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                    for task_idx in range(len(torch_tasks))
+                                ] for obj_idx in range(len(selected_cluster_idxs))])
+                                hv = cal_hv(obj, ref, target='loss')
+                                epoch_val_loss['hv'].append(hv)
                                 obj = np.array([[
                                     epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
                                     for task_idx in range(len(torch_tasks))
@@ -1067,32 +1079,43 @@ def train():
                       f"avg_accuracy {avg_val_cluster_acc:.3f}.")
 
                 if len(epoch_val_acc['hv']) > 0:      # did mo process
-                    '''log multi-objective accuracy'''
-                    objs_acc = []        # for average figure visualization
+                    '''log multi-objective loss/accuracy'''
+                    objs_loss, objs_acc = [], []        # for average figure visualization
                     for obj_idx in range(args['train.n_obj']):
-                        obj_acc = []
+                        obj_loss, obj_acc = [], []
                         for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
+                            loss_values = epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
+                            writer.add_scalar(f"val_loss/obj{obj_idx}/pop{pop_idx}",
+                                              np.mean(loss_values), i+1)
+                            obj_loss.append(np.mean(loss_values))
                             acc_values = epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
                             writer.add_scalar(f"val_accuracy/obj{obj_idx}/pop{pop_idx}",
                                               np.mean(acc_values), i+1)
                             obj_acc.append(np.mean(acc_values))
+                        objs_loss.append(obj_loss)
                         objs_acc.append(obj_acc)
 
                     '''log objs figure'''
+                    objs = np.array(objs_loss)     # [2, 4]
+                    figure = draw_objs(objs, pop_labels)
+                    writer.add_figure(f"val_image/objs_loss", figure, i+1)
                     objs = np.array(objs_acc)     # [2, 4]
                     figure = draw_objs(objs, pop_labels)
                     writer.add_figure(f"val_image/objs_acc", figure, i+1)
 
                     '''log hv'''
+                    writer.add_scalar('val_loss/hv', np.mean(epoch_val_loss['hv']), i+1)
                     writer.add_scalar('val_accuracy/hv', np.mean(epoch_val_acc['hv']), i+1)
-                    print(f"==>> hv: accuracy {np.mean(epoch_val_acc['hv']):.3f}.")
+                    print(f"==>> "
+                          f"loss {np.mean(epoch_val_loss['hv']):.3f}, "
+                          f"accuracy {np.mean(epoch_val_acc['hv']):.3f}.")
 
                 '''evaluation acc based on cluster acc'''
                 # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
                 '''evaluation acc based on source domain acc'''
                 # avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
-                '''evaluation acc based on hv accuracy'''
-                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
+                '''evaluation acc based on hv loss (the larger the better)'''
+                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_loss['hv'])
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
@@ -1125,7 +1148,7 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    # train()
 
     # run testing
     from test_extractor_pa import main as test
