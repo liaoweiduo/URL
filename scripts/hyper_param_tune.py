@@ -246,9 +246,9 @@ exp: for debug
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 1        # num of runs in 1 sh file
+num_runs_1sh = 3        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-tunelr-2000iter-mo_f10',
+    'tag': 'pmo-tcph-tunelr-2000iter-evalhv',
     'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 400,
