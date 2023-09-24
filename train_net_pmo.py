@@ -155,7 +155,7 @@ def train():
 
         def model_train():
             # train mode
-            pmo.eval()         # todo: train()? or eval()
+            pmo.train()         # todo: train()? or eval()
             if pmo.feature_extractor is not None:
                 pmo.feature_extractor.eval()        # to extract task features
             pool.train()
@@ -1041,16 +1041,16 @@ def train():
                     print(f"==>> evaluate results on {valset}.")
                     epoch_val_loss[valset] = np.mean(val_losses[valset])
                     epoch_val_acc[valset] = np.mean(val_accs[valset])
-                    writer.add_scalar(f"val_loss/{valset}", epoch_val_loss[valset], i+1)
-                    writer.add_scalar(f"val_accuracy/{valset}", epoch_val_acc[valset], i+1)
+                    writer.add_scalar(f"val-domain-loss/{valset}", epoch_val_loss[valset], i+1)
+                    writer.add_scalar(f"val-domain-accuracy/{valset}", epoch_val_acc[valset], i+1)
                     print(f"==>> val: loss {np.mean(val_losses[valset]):.3f}, "
                           f"accuracy {np.mean(val_accs[valset]):.3f}.")
 
                 '''write summaries averaged over sources'''
                 avg_val_source_loss = np.mean(np.concatenate([val_loss for val_loss in val_losses.values()]))
                 avg_val_source_acc = np.mean(np.concatenate([val_acc for val_acc in val_accs.values()]))
-                writer.add_scalar(f"val_loss/avg_val_source_loss", avg_val_source_loss, i+1)
-                writer.add_scalar(f"val_accuracy/avg_val_source_acc", avg_val_source_acc, i+1)
+                writer.add_scalar(f"val-domain-loss/avg_val_source_loss", avg_val_source_loss, i+1)
+                writer.add_scalar(f"val-domain-accuracy/avg_val_source_acc", avg_val_source_acc, i+1)
                 print(f"==>> val: avg_loss {avg_val_source_loss:.3f}, "
                       f"avg_accuracy {avg_val_source_acc:.3f}.")
 
@@ -1061,8 +1061,8 @@ def train():
 
                         epoch_val_loss[f"C{cluster_idx}"] = cluster_loss
                         epoch_val_acc[f"C{cluster_idx}"] = cluster_acc
-                        writer.add_scalar(f"val_loss/C{cluster_idx}", cluster_loss, i+1)
-                        writer.add_scalar(f"val_accuracy/C{cluster_idx}", cluster_acc, i+1)
+                        writer.add_scalar(f"val-cluster-loss/C{cluster_idx}", cluster_loss, i+1)
+                        writer.add_scalar(f"val-cluster-accuracy/C{cluster_idx}", cluster_acc, i+1)
                         print(f"==>> val C{cluster_idx}: "
                               f"val_loss {cluster_loss:.3f}, accuracy {cluster_acc:.3f}")
 
@@ -1073,8 +1073,8 @@ def train():
                 # write summaries averaged over clusters
                 avg_val_cluster_loss = np.mean(np.concatenate(cluster_losses))
                 avg_val_cluster_acc = np.mean(np.concatenate(cluster_accs))
-                writer.add_scalar(f"val_loss/avg_val_cluster_loss", avg_val_cluster_loss, i+1)
-                writer.add_scalar(f"val_accuracy/avg_val_cluster_acc", avg_val_cluster_acc, i+1)
+                writer.add_scalar(f"val-cluster-loss/avg_val_cluster_loss", avg_val_cluster_loss, i+1)
+                writer.add_scalar(f"val-cluster-accuracy/avg_val_cluster_acc", avg_val_cluster_acc, i+1)
                 print(f"==>> val: avg_loss {avg_val_cluster_loss:.3f}, "
                       f"avg_accuracy {avg_val_cluster_acc:.3f}.")
 
@@ -1085,11 +1085,11 @@ def train():
                         obj_loss, obj_acc = [], []
                         for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
                             loss_values = epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                            writer.add_scalar(f"val_loss/obj{obj_idx}/pop{pop_idx}",
+                            writer.add_scalar(f"val-mo-loss/obj{obj_idx}/pop{pop_idx}",
                                               np.mean(loss_values), i+1)
                             obj_loss.append(np.mean(loss_values))
                             acc_values = epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                            writer.add_scalar(f"val_accuracy/obj{obj_idx}/pop{pop_idx}",
+                            writer.add_scalar(f"val-mo-accuracy/obj{obj_idx}/pop{pop_idx}",
                                               np.mean(acc_values), i+1)
                             obj_acc.append(np.mean(acc_values))
                         objs_loss.append(obj_loss)
@@ -1098,14 +1098,14 @@ def train():
                     '''log objs figure'''
                     objs = np.array(objs_loss)     # [2, 4]
                     figure = draw_objs(objs, pop_labels)
-                    writer.add_figure(f"val_image/objs_loss", figure, i+1)
+                    writer.add_figure(f"val-image/objs_loss", figure, i+1)
                     objs = np.array(objs_acc)     # [2, 4]
                     figure = draw_objs(objs, pop_labels)
-                    writer.add_figure(f"val_image/objs_acc", figure, i+1)
+                    writer.add_figure(f"val-image/objs_acc", figure, i+1)
 
                     '''log hv'''
-                    writer.add_scalar('val_loss/hv', np.mean(epoch_val_loss['hv']), i+1)
-                    writer.add_scalar('val_accuracy/hv', np.mean(epoch_val_acc['hv']), i+1)
+                    writer.add_scalar('val-mo-loss/hv', np.mean(epoch_val_loss['hv']), i+1)
+                    writer.add_scalar('val-mo-accuracy/hv', np.mean(epoch_val_acc['hv']), i+1)
                     print(f"==>> "
                           f"loss {np.mean(epoch_val_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_val_acc['hv']):.3f}.")

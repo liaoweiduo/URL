@@ -202,7 +202,7 @@ common_args = {
     'model.dir': '../URL-experiments/saved_results/',   # need to add a folder name
     'model.num_clusters': 10, 'model.backbone': 'resnet18_moe',
     'model.pretrained': True, 'source': '../URL-experiments/saved_results/url',
-    'source_moe': '../URL-experiments/saved_results/url',
+    'source_moe': '../URL-experiments/saved_results/sdl',
     'data.train': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.test': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower '
@@ -218,6 +218,29 @@ common_args = {
 }
 
 params = []
+
+
+"""
+exp: try 1 iter = 1 tasks 
+"""
+num_runs_1sh = 3        # num of runs in 1 sh file
+common_args.update({
+    'tag': 'pmo-tcph-fromimagenet',
+    'train.max_iter': 24000, 'train.summary_freq': 2400, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 10,
+    'train.cosine_anneal_freq': 4800, 'train.eval_freq': 4800,
+    'train.loss_type': 'task+ce+pure+hv',
+    'train.selector_learning_rate': 1e-3,
+})
+param_grid = {
+    'train.learning_rate': [1e-4, 1e-3, 1e-2],
+}
+exp_name_template = common_args['tag'] + \
+                    '-flr{train.learning_rate}'
+params_temp = generate_params(common_args, param_grid, exp_name_template)
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
+params.extend(params_temp)
 
 
 """
@@ -243,152 +266,5 @@ exp: for debug
 #     p['train.weight_decay'] = p['train.learning_rate'] / 50
 # params.extend(params_temp)
 
-"""
-exp: try 1 iter = 1 tasks 
-"""
-num_runs_1sh = 3        # num of runs in 1 sh file
-common_args.update({
-    'tag': 'pmo-tcph-tunelr-2000iter-evalhv',
-    'train.max_iter': 2000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 10,
-    'train.cosine_anneal_freq': 200, 'train.eval_freq': 400,
-    'train.loss_type': 'task+ce+pure+hv',
-    'train.selector_learning_rate': 1e-3,
-})
-param_grid = {
-    'train.learning_rate': [1e-4, 1e-3, 1e-2],
-}
-exp_name_template = common_args['tag'] + \
-                    '-flr{train.learning_rate}'
-params_temp = generate_params(common_args, param_grid, exp_name_template)
-for p in params_temp:
-    p['train.weight_decay'] = p['train.learning_rate'] / 50
-params.extend(params_temp)
-
-
-"""
-exp: try 1 iter = many tasks until full buffer in the pool
-"""
-# num_runs_1sh = 4        # num of runs in 1 sh file
-# common_args.update({
-#     'tag': 'pmo-adam-iter500-tcp',
-#     'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 1,
-#     'train.mo_freq': 50, 'train.n_mo': 1,
-#     'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
-#     'train.loss_type': 'task+ce+pure',
-# })
-# param_grid = {
-#     'train.selector_learning_rate': [1e-3, 5e-3, 1e-2, 5e-2],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-slr{train.selector_learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# # for p in params_temp:
-# #     p['train.weight_decay'] = p['train.learning_rate'] / 50
-# params.extend(params_temp)
-
-
-"""
-exp: tcp see pure task selection
-"""
-# num_runs_1sh = 1        # num of runs in 1 sh file
-# common_args.update({
-#     'tag': 'pmo-ab-tcp-seetask500',
-#     'train.loss_type': 'task+ce+pure',
-#     'train.max_iter': 500, 'train.summary_freq': 50, 'train.pool_freq': 10,
-#     'train.mo_freq': 10, 'train.n_mo': 1,
-#     'train.cosine_anneal_freq': 100, 'train.eval_freq': 20000,    # no eval
-# })
-# param_grid = {
-#     'train.selector_learning_rate': [1, 10],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-slr{train.selector_learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# # for p in params_temp:
-# #     p['train.weight_decay'] = p['train.learning_rate'] / 50
-# params.extend(params_temp)
-
-
-"""
-exp: ce on both pool and task (no gumbel); task+ce
-"""
-# num_runs_1sh = 1        # num of runs in 1 sh file
-# common_args.update({
-#     'tag': 'pmo-ab-tc-seetask-10000',
-#     'train.loss_type': 'task+ce',
-#     'train.max_iter': 10000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
-#     'train.mo_freq': 1000, 'train.n_mo': 1,
-#     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 20000,    # no eval
-# })
-# param_grid = {
-#     'train.selector_learning_rate': [1],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-slr{train.selector_learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# # for p in params_temp:
-# #     p['train.learning_rate'] = p['train.selector_learning_rate']
-# params.extend(params_temp)
-
-
-"""
-exp: domain classifier
-"""
-# target = 'train_net_domain_classifier.py'
-# num_runs_1sh = 2        # num of runs in 1 sh file
-# common_args.update({
-#     'tag': 'url-domain_classifier',
-#     'train.max_iter': 100, 'train.summary_freq': 10,
-#     'train.cosine_anneal_freq': 20, 'train.eval_freq': 20,    # no eval
-#     'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
-# })
-# param_grid = {
-#     'train.learning_rate': [1e-2, 1e-1, 1, 10],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-lr{train.learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# for p in params_temp:
-#     p['train.weight_decay'] = p['train.learning_rate'] / 50
-# params.extend(params_temp)
-
-
-"""
-exp: effect of frequency on ce loss. 
-"""
-# common_args.update({
-#     'tag': 'pmo-ab-task-ce-pure-hv',
-#     'train.loss_type': 'task+ce+pure+hv',
-#     'train.max_iter': 100, 'train.summary_freq': 10,
-# })
-# param_grid = {
-#     'train.mo_freq': [1, 10],
-#     'train.cluster_center_learning_rate': [1, 10],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-freq{train.mo_freq}' + \
-#                     '-cclr{train.cluster_center_learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# params.extend(params_temp)
-
-
-"""
-tune selector and cluster center lr
-"""
-# common_args.update({
-#     'tag': 'pmo-ab-task-ce-pure',
-#     'train.loss_type': 'task+ce+pure',
-#     'train.max_iter': 100, 'train.summary_freq': 10,
-# })
-# param_grid = {
-#     'train.selector_learning_rate': [1e-1, 1],
-#     'train.cluster_center_learning_rate': [1, 10],
-# }
-# exp_name_template = common_args['tag'] + \
-#                     '-slr{train_selector_learning_rate}' + \
-#                     '-clr{train_cluster_center_learning_rate}'
-# params_temp = generate_params(common_args, param_grid, exp_name_template)
-# params.extend(params_temp)
 
 main(params, fix_device, start_iter, func=func)
