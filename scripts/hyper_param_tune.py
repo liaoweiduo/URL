@@ -223,23 +223,24 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 3        # num of runs in 1 sh file
+num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-fromimagenet',
+    'tag': 'pmo-tcph-fromimagenet-slr=flr',
     'train.max_iter': 24000, 'train.summary_freq': 2400, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10,
     'train.cosine_anneal_freq': 4800, 'train.eval_freq': 4800,
     'train.loss_type': 'task+ce+pure+hv',
-    'train.selector_learning_rate': 1e-3,
+    # 'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [1e-4, 1e-3, 1e-2],
+    'train.learning_rate': [1e-5, 5e-5, 1e-4],
 }
 exp_name_template = common_args['tag'] + \
                     '-flr{train.learning_rate}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
+    p['train.selector_learning_rate'] = p['train.learning_rate']
 params.extend(params_temp)
 
 
