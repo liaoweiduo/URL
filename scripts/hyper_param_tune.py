@@ -214,7 +214,7 @@ common_args = {
     'train.selector_learning_rate': 1e-3,
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 100, 'train.n_mo': 10, 'train.hv_coefficient': 1,
-    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 300,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200, 'train.eval_size': 50,
 }
 
 params = []
@@ -223,20 +223,21 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 1        # num of runs in 1 sh file
+num_runs_1sh = 3        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tcph-fromimagenet-slr=flr',
-    'train.max_iter': 24000, 'train.summary_freq': 2400, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 10,
-    'train.cosine_anneal_freq': 4800, 'train.eval_freq': 4800,
-    'train.loss_type': 'task+ce+pure+hv',
+    'tag': 'pmo-ablation-loss_type',
+    'train.max_iter': 240000, 'train.summary_freq': 24000, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 1,
+    'train.cosine_anneal_freq': 48000, 'train.eval_freq': 48000,
     # 'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 5e-5, 1e-4],
+    'train.learning_rate': [1e-5],
+    'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
 }
 exp_name_template = common_args['tag'] + \
-                    '-flr{train.learning_rate}'
+                    '-lr{train.learning_rate}' + \
+                    '-lt{train.loss_type}'
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
