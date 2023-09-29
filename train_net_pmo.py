@@ -98,8 +98,8 @@ def train():
             lr_manager = ExpDecayLR(optimizer, args, start_iter)
             lr_manager_selector = ExpDecayLR(optimizer_selector, args, start_iter)
         elif "cosine" in args['train.lr_policy']:
-            lr_manager = CosineAnnealRestartLR(optimizer, args, start_iter)
-            lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, start_iter)
+            lr_manager = CosineAnnealRestartLR(optimizer, args, 0)       # start_iter
+            lr_manager_selector = CosineAnnealRestartLR(optimizer_selector, args, 0)       # start_iter
 
         # defining the summary writer
         writer = SummaryWriter(check_dir(os.path.join(args['out.dir'], 'summary'), False))
@@ -868,6 +868,9 @@ def train():
                 print(f"\n>> Iter: {i + 1}, evaluation:")
                 # eval mode
                 model_eval()
+
+                '''nvidia-smi'''
+                print(os.system('nvidia-smi'))
 
                 val_pool = Pool(capacity=args['model.num_clusters'], mode=args['train.cluster_center_mode'])
                 val_pool.centers = pool.centers     # same centers and device as train_pool; no use
