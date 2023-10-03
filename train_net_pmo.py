@@ -1151,7 +1151,7 @@ def train():
 
 
 if __name__ == '__main__':
-    train()       # mute for only do testing
+    # train()       # mute for only do testing
 
     # run testing
     from test_extractor_pa import main as test
