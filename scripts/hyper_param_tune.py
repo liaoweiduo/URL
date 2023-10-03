@@ -202,7 +202,7 @@ common_args = {
     'model.dir': '../URL-experiments/saved_results/',   # need to add a folder name
     'model.num_clusters': 10, 'model.backbone': 'resnet18_moe',
     'model.pretrained': True, 'source': '../URL-experiments/saved_results/url',
-    'source_moe': '../URL-experiments/saved_results/sdl',
+    'source_moe': '../URL-experiments/saved_results/url',
     'data.train': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.val': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower',
     'data.test': 'ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower '
@@ -225,15 +225,16 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 3        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-ablation-loss_type',
-    'train.max_iter': 240000, 'train.summary_freq': 24000, 'train.pool_freq': 10,
+    'tag': 'pmo-urlinit-checklr',
+    'train.max_iter': 4000, 'train.summary_freq': 500, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1,
-    'train.cosine_anneal_freq': 48000, 'train.eval_freq': 48000,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
     # 'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [1e-5],
-    'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
+    'train.learning_rate': [1e-5, 1e-4, 1e-3],
+    'train.loss_type': ['task+ce+pure'],
+    # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
 }
 exp_name_template = common_args['tag'] + \
                     '-lr{train.learning_rate}' + \
