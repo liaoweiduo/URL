@@ -73,7 +73,7 @@ def train():
         val_loader = MetaDatasetEpisodeReader('val', trainsets, valsets, testsets, test_type=args['test.type'])
 
         '''initialize models and optimizer'''
-        start_iter, best_val_loss, best_val_acc = 0, 999999999, 0
+        start_iter, best_val_loss, best_val_acc = 0, 999999999, -1
 
         # pmo model, fe load from url
         pmo = get_model_moe(None, args, base_network_name='url')    # resnet18_moe
@@ -1117,8 +1117,8 @@ def train():
                 # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
                 '''evaluation acc based on source domain acc'''
                 # avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
-                '''evaluation acc based on hv loss (the larger the better)'''
-                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_loss['hv'])
+                '''evaluation acc based on hv acc/loss (the larger the better)'''
+                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
