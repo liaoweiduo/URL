@@ -452,10 +452,10 @@ def train():
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
 
                 '''pure loss on all clusters'''
+                epoch_loss[f'pure/task_softmax_sim'] = []
+                epoch_loss[f'pure/task_dist'] = []
+                epoch_loss[f'pure/image_softmax_sim'] = {}
                 if 'pure' in args['train.loss_type']:
-                    epoch_loss[f'pure/task_softmax_sim'] = []
-                    epoch_loss[f'pure/task_dist'] = []
-                    epoch_loss[f'pure/image_softmax_sim'] = {}
                     pure_task_images = {}
                     for cluster_idx in range(len(num_imgs_clusters)):
                         n_way, n_shot, n_query = available_setting([num_imgs_clusters[cluster_idx]],
