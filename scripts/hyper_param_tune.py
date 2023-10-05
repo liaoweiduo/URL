@@ -223,7 +223,7 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 3        # num of runs in 1 sh file
+num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
     'tag': 'pmo-pc',
     'train.max_iter': 4000, 'train.summary_freq': 500, 'train.pool_freq': 10,
@@ -232,9 +232,9 @@ common_args.update({
     'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [1e-3],        # [1e-4, 5e-4, 1e-3, 5e-3],
-    'train.loss_type': ['task+ce+pure'],
-    'train.pure_coefficient': [0.1, 1, 10],         # [0.1, 1, 10],
+    'train.learning_rate': [1e-4, 5e-4, 1e-3, 5e-3],
+    'train.loss_type': ['task+ce'],
+    'train.pure_coefficient': [1],         # [0.1, 1, 10],
     # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
 }
 exp_name_template = common_args['tag'] + \
