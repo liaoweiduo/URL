@@ -386,22 +386,19 @@ def train():
             if 'task' in args['train.loss_type']:
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], task_features,
-                    gumbel=True, hard=False)
+                    hard=False)
                 # task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
                 # # supervision to be softmax for CE loss
             else:
                 with torch.no_grad():
                     [enriched_context_features, enriched_target_features], selection_info = pmo(
                         [context_images, target_images], task_features,
-                        gumbel=True, hard=False)
+                        hard=False)
 
             task_loss, stats_dict, _ = prototype_loss(
                 enriched_context_features, context_labels,
                 enriched_target_features, target_labels,
                 distance=args['test.distance'])
-
-            if 'task' in args['train.loss_type']:
-                task_loss.backward()
 
             '''log task loss and acc'''
             epoch_loss[f'task/{trainset}'].append(stats_dict['loss'])
@@ -421,6 +418,10 @@ def train():
                 tsk_sim = selection_info['y_soft']  # [1, 10]
             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
             epoch_loss[f'task/image_softmax_sim'] = sim
+
+            if 'task' in args['train.loss_type']:
+
+                task_loss.backward()
 
             # '''selection CE loss on training task'''
             # if 'ce' in args['train.loss_type']:
@@ -480,6 +481,8 @@ def train():
 
                             '''pure_loss to average'''
                             pure_loss = pure_loss / len(num_imgs_clusters)
+                            '''step coefficient from 0 to pure_coefficient (default: 1.0)'''
+                            pure_loss = pure_loss * (args['train.pure_coefficient'] * i / max_iter)
                             pure_loss.backward()
 
                             '''log pure loss'''
