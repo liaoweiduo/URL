@@ -225,21 +225,21 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 4        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-pc',
+    'tag': 'pmo-nogum-soft-nologscal',
     'train.max_iter': 4000, 'train.summary_freq': 500, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1, 'train.hv_coefficient': 10,
     'train.cosine_anneal_freq': 4000, 'train.eval_freq': 1000,
     'train.selector_learning_rate': 1e-3,
 })
 param_grid = {
-    'train.learning_rate': [1e-4, 5e-4, 1e-3, 5e-3],
+    'train.learning_rate': [5e-5, 1e-4, 5e-4, 1e-3],
     'train.loss_type': ['task+ce'],
-    'train.pure_coefficient': [1],         # [0.1, 1, 10],
+    'train.pure_coefficient': [1],         # [1, 10],
     # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
 }
 exp_name_template = common_args['tag'] + \
-                    '-lr{train.loss_type}' + \
-                    '-lt{train.learning_rate}' + \
+                    '-lt{train.loss_type}' + \
+                    '-lr{train.learning_rate}' + \
                     '-pc{train.pure_coefficient}'
 
 params_temp = generate_params(common_args, param_grid, exp_name_template)

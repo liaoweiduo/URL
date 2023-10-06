@@ -177,7 +177,7 @@ class ResNet(nn.Module):
         # return nn.Sequential(*layers)
         return nn.ModuleList(layers)       # forward need head_idx, can not use Sequential
 
-    def forward(self, x_list, task_x, gumbel=True, hard=True, selected_idx=None):
+    def forward(self, x_list, task_x, gumbel=False, hard=False, selected_idx=None):
         """task_x contains task image samples for task-conditioning."""
         if isinstance(x_list, torch.Tensor):
             x_list = [x_list]
@@ -349,8 +349,8 @@ class Selector(nn.Module):
         self.prototype_shape = (self.n_class, self.rep_dim, *self.prot_shape)
         self.prototypes = nn.Parameter(torch.randn(self.prototype_shape))
         torch.nn.init.trunc_normal_(self.prototypes, mean=0., std=1., a=-1., b=1.)
-        self.logit_scale = nn.Parameter(torch.ones([]) * 1)     # 1
-        # self.logit_scale = torch.ones([])     # 1
+        # self.logit_scale = nn.Parameter(torch.ones([]) * 1)     # learnable 1
+        self.logit_scale = torch.zeros([])     # 0    exp(logit_scale) = 1
         # self.cluster_centers = nn.Parameter(torch.randn((num_clusters, emb_dim)))
 
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)

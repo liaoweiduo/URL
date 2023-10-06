@@ -472,7 +472,7 @@ def train():
 
                             [enriched_context_features, enriched_target_features], selection_info = pmo(
                                 [context_images, target_images], torch.cat([context_features, target_features]),
-                                gumbel=False, hard=True)
+                                gumbel=False, hard=False)
 
                             pure_loss, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -543,7 +543,8 @@ def train():
                         for task_idx, task in enumerate(torch_tasks):
                             '''obtain task-specific selection'''
                             gumbel = False
-                            hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
+                            hard = False
+                            # hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
                             if task_idx < len(selected_cluster_idxs):   # pure use feature->sim, mixed use img->sim
                                 torch_task_features = torch.cat([task['context_features'], task['target_features']])
                             else:
@@ -1017,8 +1018,8 @@ def train():
                                             distance=args['test.distance'])
 
                                         if task_idx == obj_idx:     # forward on itself
-                                            cluster_losses[task_idx].append(stats_dict['loss'])
-                                            cluster_accs[task_idx].append(stats_dict['acc'])
+                                            cluster_losses[torch.argmax(selection).item()].append(stats_dict['loss'])
+                                            cluster_accs[torch.argmax(selection).item()].append(stats_dict['acc'])
 
                                         epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['loss'])
                                         epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
