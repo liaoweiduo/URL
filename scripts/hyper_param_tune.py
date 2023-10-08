@@ -243,7 +243,7 @@ exp_name_template = common_args['tag'] + \
                     '-lt{train.loss_type}' + \
                     '-lr{train.learning_rate}' + \
                     '-ls{cluster.logit_scale}' + \
-                    '-pc{train.pure_coefficient}'
+                    '-cc{train.ce_coefficient}'
 
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
