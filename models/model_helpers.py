@@ -24,6 +24,7 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
                            pretrained_model_path=base_network_path,
                            film_head=args['model.num_clusters'],
                            tau=args['train.gumbel_tau'],
+                           logit_scale=args['cluster.logit_scale'],
                            num_clusters=args['model.num_clusters'],
                            opt=args['cluster.opt'],
                            freeze_backbone=args['train.freeze_backbone'])
@@ -31,6 +32,7 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
         model_fn = partial(resnet18_moe, dropout=dropout_rate,
                            film_head=args['model.num_clusters'],
                            tau=args['train.gumbel_tau'],
+                           logit_scale=args['cluster.logit_scale'],
                            num_clusters=args['model.num_clusters'],
                            opt=args['cluster.opt'],
                            freeze_backbone=False)

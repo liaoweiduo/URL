@@ -26,6 +26,8 @@ parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
 # Selector model args
 parser.add_argument('--cluster.opt', type=str, default='nonlinear', help="type of cluster model, linear or nonlinear")
+parser.add_argument('--cluster.logit_scale', type=float, default=0.0, metavar='LOGIT_SCALE',
+                    help='logit scale s, and softmax(exp(s) * dist) -> sim.')
 
 # train args
 parser.add_argument('--train.type', type=str, choices=['standard', '1shot', '5shot'],
@@ -95,6 +97,8 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
                          'Usually equals to train.summary_freq, that do mo train at the last iter before summary.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
+parser.add_argument('--train.ce_coefficient', type=float, default=1, metavar='CE_COEFFICIENT',
+                    help='coeffient for selection ce loss.')
 parser.add_argument('--train.pure_coefficient', type=float, default=1, metavar='PURE_COEFFICIENT',
                     help='coeffient for pure task ncc loss.')
 parser.add_argument('--train.hv_coefficient', type=float, default=1, metavar='HV_COEFFICIENT',
