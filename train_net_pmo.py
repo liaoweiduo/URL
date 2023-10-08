@@ -350,7 +350,7 @@ def train():
                     epoch_loss[f'pool/selection_ce_loss'].append(selection_ce_loss.item())
 
                     '''ce loss coefficient'''
-                    selection_ce_loss = selection_ce_loss * ['train.ce_coefficient']
+                    selection_ce_loss = selection_ce_loss * args['train.ce_coefficient']
                     selection_ce_loss.backward()
 
                     # ''''''
