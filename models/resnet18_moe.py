@@ -52,16 +52,16 @@ class BasicBlockFilm(nn.Module):
         self.stride = stride
         self.film_head = film_head
 
-        """if not init with 1 and 0 for gamma and beta"""
-        self.film1_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
-        self.film1_betas = nn.Parameter(torch.randn(film_head, planes))
-        self.film2_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
-        self.film2_betas = nn.Parameter(torch.randn(film_head, planes))
+        # """if not init with 1 and 0 for gamma and beta"""
+        # self.film1_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
+        # self.film1_betas = nn.Parameter(torch.randn(film_head, planes))
+        # self.film2_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
+        # self.film2_betas = nn.Parameter(torch.randn(film_head, planes))
 
-        # self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
-        # self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
-        # self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
-        # self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
+        self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
+        self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
+        self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
+        self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
 
         # self.film1 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
         # self.film2 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
@@ -115,12 +115,12 @@ class ResNet(nn.Module):
         self.initial_pool = False
         self.film_head = film_head
 
-        """if not init with 1 and 0 for gamma and beta"""
-        self.film_normalize_gammas = nn.Parameter(torch.randn(film_head, 3)+1)
-        self.film_normalize_betas = nn.Parameter(torch.randn(film_head, 3))
+        # """if not init with 1 and 0 for gamma and beta"""
+        # self.film_normalize_gammas = nn.Parameter(torch.randn(film_head, 3)+1)
+        # self.film_normalize_betas = nn.Parameter(torch.randn(film_head, 3))
 
-        # self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
-        # self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
+        self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
+        self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
 
         # self.film_normalize = nn.ModuleList([CatFilm(3) for _ in range(film_head)])
         inplanes = self.inplanes = 64
