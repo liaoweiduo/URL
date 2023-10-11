@@ -600,11 +600,11 @@ def train():
                         ref = args['train.ref']
                         ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
                         hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
+                        '''hv loss to average'''
+                        hv_loss = hv_loss / args['train.n_mo']
                         epoch_loss['hv/loss'].append(hv_loss.item())
 
                         if 'hv' in args['train.loss_type']:
-                            '''hv loss to average'''
-                            hv_loss = hv_loss / args['train.n_mo']
 
                             '''step coefficient from 0 to hv_coefficient (default: 1.0)'''
                             hv_loss = hv_loss * (args['train.hv_coefficient'] * i / max_iter)

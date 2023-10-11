@@ -225,23 +225,24 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 6        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tune4000pc',
-    'train.max_iter': 4000, 'train.summary_freq': 500, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 1,
-    'train.hv_coefficient': 10,
-    'train.cosine_anneal_freq': 4000, 'train.eval_freq': 2000,
+    'tag': 'pmo-tunehvc',
+    'train.max_iter': 1000, 'train.summary_freq': 500, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 5,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
     'train.selector_learning_rate': 1e-4,
 })
 param_grid = {
-    'train.learning_rate': [1e-6, 1e-5, 1e-4],
-    'train.loss_type': ['task+ce+pure', 'task+ce+pure+hv'],
+    'train.learning_rate': [1e-5],
+    'train.loss_type': ['task+ce+pure+hv'],
     # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
-    'train.pure_coefficient': [1, 10],         # [1, 10],
+    'train.pure_coefficient': [10, 100],         # [1, 10],
+    'train.hv_coefficient': [1, 10, 100],
 }
 exp_name_template = common_args['tag'] + \
                     '-lt{train.loss_type}' + \
                     '-lr{train.learning_rate}' + \
-                    '-pc{train.pure_coefficient}'
+                    '-pc{train.pure_coefficient}' + \
+                    '-hvc{train.hv_coefficient}'
 
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
