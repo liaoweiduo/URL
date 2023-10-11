@@ -1120,9 +1120,9 @@ def train():
                 '''evaluation acc based on cluster acc'''
                 # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
                 '''evaluation acc based on source domain acc'''
-                # avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
+                avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
                 '''evaluation acc based on hv acc/loss (the larger the better)'''
-                avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
+                # avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:

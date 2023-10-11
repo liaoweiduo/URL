@@ -114,7 +114,7 @@ parser.add_argument('--train.mo_task_type', type=str, choices=['standard', '1sho
                          "standard varying number of ways and shots (ten-query) as in Meta-Dataset, "
                          "1shot for five-way-one-shot-ten-query "
                          "and 5shot for varying-way-five-shot-ten-query evaluation.")
-parser.add_argument('--train.n_obj', type=int, default=1, metavar='N_OBJ',
+parser.add_argument('--train.n_obj', type=int, default=2, metavar='N_OBJ',
                     help='number of objs (models considered in 1 iter) to train')
 parser.add_argument('--train.mix_mode', type=str, default='cutmix', metavar='MIX_MODE',
                     choices=['cutmix', 'mixup'],
