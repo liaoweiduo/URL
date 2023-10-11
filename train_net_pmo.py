@@ -599,10 +599,11 @@ def train():
                         '''calculate HV loss'''
                         ref = args['train.ref']
                         ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
-                        hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
-                        '''hv loss to average'''
-                        hv_loss = hv_loss / args['train.n_mo']
-                        epoch_loss['hv/loss'].append(hv_loss.item())
+                        if args['train.n_obj'] > 1:
+                            hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
+                            '''hv loss to average'''
+                            hv_loss = hv_loss / args['train.n_mo']
+                            epoch_loss['hv/loss'].append(hv_loss.item())
 
                         if 'hv' in args['train.loss_type']:
 
@@ -614,18 +615,19 @@ def train():
                             hv_loss.backward()
 
                         '''calculate HV value for mutli-obj loss and acc'''
-                        obj = np.array([[
-                            epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                            for task_idx in range(len(torch_tasks))
-                        ] for obj_idx in range(len(selected_cluster_idxs))])
-                        hv = cal_hv(obj, ref, target='loss')
-                        epoch_loss['hv'].append(hv)
-                        obj = np.array([[
-                            epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                            for task_idx in range(len(torch_tasks))
-                        ] for obj_idx in range(len(selected_cluster_idxs))])
-                        hv = cal_hv(obj, 0, target='acc')
-                        epoch_acc['hv'].append(hv)
+                        if args['train.n_obj'] > 1:
+                            obj = np.array([[
+                                epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                for task_idx in range(len(torch_tasks))
+                            ] for obj_idx in range(len(selected_cluster_idxs))])
+                            hv = cal_hv(obj, ref, target='loss')
+                            epoch_loss['hv'].append(hv)
+                            obj = np.array([[
+                                epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                for task_idx in range(len(torch_tasks))
+                            ] for obj_idx in range(len(selected_cluster_idxs))])
+                            hv = cal_hv(obj, 0, target='acc')
+                            epoch_acc['hv'].append(hv)
 
             # '''try prototypes' grad * 1000'''
             # for k, p in pmo.named_parameters():
@@ -1025,18 +1027,19 @@ def train():
                                         epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'].append(stats_dict['acc'])
 
                                 '''calculate HV value for mutli-obj loss acc'''
-                                obj = np.array([[
-                                    epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                                    for task_idx in range(len(torch_tasks))
-                                ] for obj_idx in range(len(selected_cluster_idxs))])
-                                hv = cal_hv(obj, ref, target='loss')
-                                epoch_val_loss['hv'].append(hv)
-                                obj = np.array([[
-                                    epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
-                                    for task_idx in range(len(torch_tasks))
-                                ] for obj_idx in range(len(selected_cluster_idxs))])
-                                hv = cal_hv(obj, 0, target='acc')
-                                epoch_val_acc['hv'].append(hv)
+                                if args['train.n_obj'] > 1:
+                                    obj = np.array([[
+                                        epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                        for task_idx in range(len(torch_tasks))
+                                    ] for obj_idx in range(len(selected_cluster_idxs))])
+                                    hv = cal_hv(obj, ref, target='loss')
+                                    epoch_val_loss['hv'].append(hv)
+                                    obj = np.array([[
+                                        epoch_val_acc[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
+                                        for task_idx in range(len(torch_tasks))
+                                    ] for obj_idx in range(len(selected_cluster_idxs))])
+                                    hv = cal_hv(obj, 0, target='acc')
+                                    epoch_val_acc['hv'].append(hv)
 
                 '''write mo: (pure+mixed) task image sim for val'''
                 for task_id, sim in epoch_val_acc[f'mo/image_softmax_sim'].items():
