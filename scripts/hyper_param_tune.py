@@ -227,7 +227,7 @@ num_runs_1sh = 9        # num of runs in 1 sh file
 common_args.update({
     'tag': 'pmo-debug-numcluster',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 1,
+    'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 1, # todo: remove
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 200,
     'train.selector_learning_rate': 1e-4,
 })
