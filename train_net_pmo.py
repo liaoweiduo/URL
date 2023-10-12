@@ -491,11 +491,8 @@ def train():
                             '''pure_loss to average'''
                             pure_loss = pure_loss / len(num_imgs_clusters)
                             '''step coefficient from 0 to pure_coefficient (default: 1.0)'''
-                            pure_loss = pure_loss * (args['train.pure_coefficient'] * i / max_iter)
+                            pure_loss = pure_loss * (args['train.pure_coefficient'] * min(i * 2, max_iter) / max_iter)
                             pure_loss.backward()
-
-                            '''debug'''
-                            debugger.print_grad(pmo, key='film', prefix=f'iter{i} after pure_loss backward:\n')
 
                             '''log pure loss'''
                             epoch_loss[f'pure/C{cluster_idx}'].append(stats_dict['loss'])
@@ -516,6 +513,9 @@ def train():
                                 tsk_sim = selection_info['y_soft']  # [1, 10]
                             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
                             epoch_loss[f'pure/image_softmax_sim'][cluster_idx] = sim
+
+                    '''debug'''
+                    debugger.print_grad(pmo, key='film', prefix=f'iter{i} after pure_loss backward:\n')
 
                 '''repeat collecting MO loss'''
                 for mo_train_idx in range(args['train.n_mo']):
@@ -620,14 +620,11 @@ def train():
                         if 'hv' in args['train.loss_type']:
 
                             '''step coefficient from 0 to hv_coefficient (default: 1.0)'''
-                            hv_loss = hv_loss * (args['train.hv_coefficient'] * i / max_iter)
+                            hv_loss = hv_loss * (args['train.hv_coefficient'] * min(i * 2, max_iter) / max_iter)
                             '''since no torch is saved in the pool, do not need to retain_graph'''
                             # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
-
-                            '''debug'''
-                            debugger.print_grad(pmo, key='film', prefix=f'iter{i} after hv_loss backward:\n')
 
                         '''calculate HV value for mutli-obj loss and acc'''
                         if args['train.n_obj'] > 1:
@@ -643,6 +640,9 @@ def train():
                             ] for obj_idx in range(len(selected_cluster_idxs))])
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
+
+                '''debug'''
+                debugger.print_grad(pmo, key='film', prefix=f'iter{i} after hv_loss backward:\n')
 
             # '''try prototypes' grad * 1000'''
             # for k, p in pmo.named_parameters():

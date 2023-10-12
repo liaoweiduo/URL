@@ -28,7 +28,7 @@ from data.meta_dataset_reader import (MetaDatasetEpisodeReader, MetaDatasetBatch
 from config import args
 
 
-def main():
+def main(no_selection=False):
     TEST_SIZE = 600
 
     # Setting up datasets
@@ -43,7 +43,11 @@ def main():
 
     if args['model.name'] == 'pmo':
         # pmo model, fe load from url
-        model = get_model_moe(None, args, base_network_name='url')  # resnet18_moe
+        if no_selection:
+            args['model.num_clusters'] = 1
+            model = get_model_moe(None, args, base_network_name='url')  # resnet18_moe
+        else:
+            model = get_model_moe(None, args, base_network_name='url')  # resnet18_moe
     else:
         model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
@@ -70,10 +74,15 @@ def main():
                 with torch.no_grad():
                     sample = test_loader.get_test_task(session, dataset)
                     if args['model.name'] == 'pmo':
-                        task_features = model.embed(torch.cat([sample['context_images'], sample['target_images']]))
-                        [context_features, target_features], selection_info = model(
-                            [sample['context_images'], sample['target_images']], task_features,
-                            gumbel=False, hard=False)
+                        if no_selection:
+                            context_features = model.embed(sample['context_images'], selection=torch.Tensor([[1]]).cuda())
+                            target_features = model.embed(sample['target_images'], selection=torch.Tensor([[1]]).cuda())
+
+                        else:
+                            task_features = model.embed(torch.cat([sample['context_images'], sample['target_images']]))
+                            [context_features, target_features], selection_info = model(
+                                [sample['context_images'], sample['target_images']], task_features,
+                                gumbel=False, hard=False)
                     else:
                         context_features = model.embed(sample['context_images'])
                         target_features = model.embed(sample['target_images'])
@@ -94,14 +103,36 @@ def main():
     # Print nice results table
     print('results of {}'.format(args['model.name']))
     rows = []
-    for dataset_name in testsets:
+    id_accs = {n: [] for n in accs_names}
+    ood_accs = {n: [] for n in accs_names}
+    for dataset_idx, dataset_name in enumerate(testsets):
         row = [dataset_name]
         for model_name in accs_names:
             acc = np.array(var_accs[dataset_name][model_name]) * 100
             mean_acc = acc.mean()
             conf = (1.96 * acc.std()) / np.sqrt(len(acc))
             row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+            if dataset_idx < 8:
+                id_accs[model_name].append(mean_acc)
+            else:
+                ood_accs[model_name].append(mean_acc)
         rows.append(row)
+        if dataset_idx == 7:
+            row = ['ID']
+            for model_name in accs_names:
+                acc = np.array(id_accs[model_name])
+                mean_acc = acc.mean()
+                conf = (1.96 * acc.std()) / np.sqrt(len(acc))
+                row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+            rows.append(row)
+        elif dataset_idx == 12:
+            row = ['OOD']
+            for model_name in accs_names:
+                acc = np.array(ood_accs[model_name])
+                mean_acc = acc.mean()
+                conf = (1.96 * acc.std()) / np.sqrt(len(acc))
+                row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+            rows.append(row)
     out_path = os.path.join(args['out.dir'], 'weights')
     out_path = check_dir(out_path, True)
     out_path = os.path.join(out_path, '{}-{}-{}-{}-test-results.npy'.format(args['model.name'], args['test.type'], 'pa', args['test.distance']))
