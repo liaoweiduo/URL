@@ -225,24 +225,24 @@ exp: try 1 iter = 1 tasks
 """
 num_runs_1sh = 9        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-debug-numcluster',
-    'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 1, 'train.n_mix': 0,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 200,
+    'tag': 'pmo-debug-checkfilmgrad',
+    'train.max_iter': 1000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 5, 'train.n_obj': 2, 'train.n_mix': 2,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
     'train.selector_learning_rate': 1e-4,
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 1e-4, 1e-3],
-    'train.loss_type': ['task+ce'],
-    'model.num_clusters': [1, 2, 5],
+    'train.learning_rate': [1e-5],
+    'train.loss_type': ['task+ce+pure+hv'],
+    # 'model.num_clusters': [1, 2, 5],
     # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
     # 'train.pure_coefficient': [10, 100],         # [1, 10],
     # 'train.hv_coefficient': [1, 10, 100],
 }
 exp_name_template = common_args['tag'] + \
                     '-lt{train.loss_type}' + \
-                    '-lr{train.learning_rate}' + \
-                    '-nc{model.num_clusters}' # + \
+                    '-lr{train.learning_rate}' # + \
+                    # '-nc{model.num_clusters}' + \
                     # '-pc{train.pure_coefficient}' + \
                     # '-hvc{train.hv_coefficient}'
 

@@ -28,6 +28,7 @@ from config import args
 
 from pmo_utils import (Pool, Mixer,
                        cal_hv_loss, cal_hv, draw_objs, draw_heatmap, available_setting, check_available, task_to_device)
+from debug import Debugger
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -36,6 +37,8 @@ warnings.filterwarnings('ignore')
 def train():
     # Set seed
     set_determ(seed=1234)
+
+    debugger = Debugger(activate=True)
 
     config = tf.compat.v1.ConfigProto()
     # config.gpu_options.allow_growth = True
@@ -353,6 +356,9 @@ def train():
                     selection_ce_loss = selection_ce_loss * args['train.ce_coefficient']
                     selection_ce_loss.backward()
 
+                    '''debug'''
+                    debugger.print_grad(pmo, key='film', prefix=f'iter{i} after selection_ce_loss backward:\n')
+
                     # ''''''
                     # '''pure task selection CE loss on all clusters'''
                     # num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
@@ -423,6 +429,9 @@ def train():
 
                 task_loss.backward()
 
+                '''debug'''
+                debugger.print_grad(pmo, key='film', prefix=f'iter{i} after task_loss backward:\n')
+
             # '''selection CE loss on training task'''
             # if 'ce' in args['train.loss_type']:
             #     image_batch = torch.cat([context_images, target_images])
@@ -484,6 +493,9 @@ def train():
                             '''step coefficient from 0 to pure_coefficient (default: 1.0)'''
                             pure_loss = pure_loss * (args['train.pure_coefficient'] * i / max_iter)
                             pure_loss.backward()
+
+                            '''debug'''
+                            debugger.print_grad(pmo, key='film', prefix=f'iter{i} after pure_loss backward:\n')
 
                             '''log pure loss'''
                             epoch_loss[f'pure/C{cluster_idx}'].append(stats_dict['loss'])
@@ -614,6 +626,9 @@ def train():
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
 
+                            '''debug'''
+                            debugger.print_grad(pmo, key='film', prefix=f'iter{i} after hv_loss backward:\n')
+
                         '''calculate HV value for mutli-obj loss and acc'''
                         if args['train.n_obj'] > 1:
                             obj = np.array([[
@@ -641,7 +656,7 @@ def train():
             writer.add_scalar('params/gumbel_tau', pmo.selector.tau.item(), i+1)
             writer.add_scalar('params/sim_logit_scale', pmo.selector.logit_scale.item(), i+1)
 
-            if (i + 1) % args['train.summary_freq'] == 0:        # 5; 2 for DEBUG
+            if (i + 1) % args['train.summary_freq'] == 0:
                 print(f">> Iter: {i + 1}, train summary:")
                 '''save epoch_loss and epoch_acc'''
                 epoch_train_history = dict()
