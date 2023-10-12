@@ -675,6 +675,11 @@ def train():
                 # writer.add_scalar(f"loss/train/task_rec",
                 #                   np.mean(epoch_loss['task_rec']), i+1)
 
+                pop_labels = [
+                    f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
+                    for idx in range(args['train.n_mix'] + args['train.n_obj'])
+                ]       # ['p0', 'p1', 'm0', 'm1']
+
                 if len(epoch_loss['hv/loss']) > 0:      # did mo process
                     '''log multi-objective loss and accuracy'''
                     objs_loss, objs_acc = [], []        # for average figure visualization
@@ -693,10 +698,6 @@ def train():
                         objs_acc.append(obj_acc)
 
                     '''log objs figure'''
-                    pop_labels = [
-                        f"p{idx}" if idx < args['train.n_obj'] else f"m{idx-args['train.n_obj']}"
-                        for idx in range(args['train.n_mix'] + args['train.n_obj'])
-                    ]       # ['p0', 'p1', 'm0', 'm1']
                     objs = np.array(objs_loss)     # [2, 4]
                     figure = draw_objs(objs, pop_labels)
                     writer.add_figure(f"train_image/objs_loss", figure, i+1)
