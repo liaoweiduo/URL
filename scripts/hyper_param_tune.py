@@ -223,16 +223,52 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
+num_runs_1sh = 9        # num of runs in 1 sh file
+common_args.update({
+    'tag': 'pmo-kd',
+    'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
+    'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 2, 'train.n_mix': 2,
+    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 500,
+    'train.selector_learning_rate': 1e-4,
+})
+param_grid = {
+    'train.learning_rate': [1e-4, 1e-3, 1e-2],
+    'train.loss_type': ['task+kd+ce'],
+    'train.kd_type': ['kl', 'kernelcka'],
+    # 'model.num_clusters': [1, 2, 5],
+    # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
+    'train.kd_coefficient': [0.5, 1, 2],
+    # 'train.pure_coefficient': [0.1, 0.5, 1],
+    # 'train.hv_coefficient': [0.1, 0.3, 0.5],
+}
+exp_name_template = common_args['tag'] + \
+                    '-lt{train.loss_type}' + \
+                    '-lr{train.learning_rate}' # + \
+                    # '-nc{model.num_clusters}' + \
+                    # '-pc{train.pure_coefficient}' + \
+                    # '-hvc{train.hv_coefficient}'
+
+params_temp = generate_params(common_args, param_grid, exp_name_template)
+for p in params_temp:
+    p['train.weight_decay'] = p['train.learning_rate'] / 50
+    # p['train.selector_learning_rate'] = p['train.learning_rate']
+params.extend(params_temp)
+
+
+"""
+exp: for debug
+"""
+# target = 'train_net_film_url.py'
 # num_runs_1sh = 9        # num of runs in 1 sh file
 # common_args.update({
-#     'tag': 'pmo-debug-checkfilmgrad',
-#     'train.max_iter': 1000, 'train.summary_freq': 1000, 'train.pool_freq': 10,
+#     'tag': 'pmo-debug-checknoselection-onlyfilm',
+#     'train.max_iter': 1000, 'train.summary_freq': 50, 'train.pool_freq': 10,
 #     'train.mo_freq': 10, 'train.n_mo': 5, 'train.n_obj': 2, 'train.n_mix': 2,
-#     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
+#     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 100,
 #     'train.selector_learning_rate': 1e-4,
 # })
 # param_grid = {
-#     'train.learning_rate': [1e-5],
+#     'train.learning_rate': [1e-5, 1e-4, 1e-3],
 #     'train.loss_type': ['task+ce+pure+hv'],
 #     # 'model.num_clusters': [1, 2, 5],
 #     # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
@@ -251,40 +287,6 @@ exp: try 1 iter = 1 tasks
 #     p['train.weight_decay'] = p['train.learning_rate'] / 50
 #     # p['train.selector_learning_rate'] = p['train.learning_rate']
 # params.extend(params_temp)
-
-
-"""
-exp: for debug
-"""
-target = 'train_net_film_url.py'
-num_runs_1sh = 9        # num of runs in 1 sh file
-common_args.update({
-    'tag': 'pmo-debug-checknoselection-onlyfilm',
-    'train.max_iter': 1000, 'train.summary_freq': 50, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 5, 'train.n_obj': 2, 'train.n_mix': 2,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 100,
-    'train.selector_learning_rate': 1e-4,
-})
-param_grid = {
-    'train.learning_rate': [1e-5, 1e-4, 1e-3],
-    'train.loss_type': ['task+ce+pure+hv'],
-    # 'model.num_clusters': [1, 2, 5],
-    # 'train.loss_type': ['task+ce+pure+hv', 'task+ce+pure', 'task+pure+hv'],
-    # 'train.pure_coefficient': [0.1, 0.5, 1],
-    # 'train.hv_coefficient': [0.1, 0.3, 0.5],
-}
-exp_name_template = common_args['tag'] + \
-                    '-lt{train.loss_type}' + \
-                    '-lr{train.learning_rate}' # + \
-                    # '-nc{model.num_clusters}' + \
-                    # '-pc{train.pure_coefficient}' + \
-                    # '-hvc{train.hv_coefficient}'
-
-params_temp = generate_params(common_args, param_grid, exp_name_template)
-for p in params_temp:
-    p['train.weight_decay'] = p['train.learning_rate'] / 50
-    # p['train.selector_learning_rate'] = p['train.learning_rate']
-params.extend(params_temp)
 
 
 main(params, fix_device, start_iter, func=func)

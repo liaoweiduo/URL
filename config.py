@@ -87,7 +87,7 @@ parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='M
 parser.add_argument('--train.gumbel_tau', type=float, default=1, metavar='GUMBEL_TAU',
                     help='temperature for gumbel softmax. (default: 1)'
                          'use exp(tau) to ensure positive, so 1 means e.')
-parser.add_argument('--train.loss_type', type=str, default='task+pure+hv+ce', metavar='LOSS_TYPE',
+parser.add_argument('--train.loss_type', type=str, default='task+kd+pure+hv+ce', metavar='LOSS_TYPE',
                     help='backward losses.'
                          'can be any combination of task, hv, task+pure+hv, pure, pure+hv')
 parser.add_argument('--train.pool_freq', type=int, default=1, metavar='POOL_FREQ',
@@ -97,6 +97,10 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
                          'Usually equals to train.summary_freq, that do mo train at the last iter before summary.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
+parser.add_argument('--train.kd_type', type=str, default='kl', metavar='KD_TYPE',
+                    help='choice: kl, kernelcka')
+parser.add_argument('--train.kd_coefficient', type=float, default=1, metavar='KD_COEFFICIENT',
+                    help='coeffient for distillation loss.')
 parser.add_argument('--train.ce_coefficient', type=float, default=1, metavar='CE_COEFFICIENT',
                     help='coeffient for selection ce loss.')
 parser.add_argument('--train.pure_coefficient', type=float, default=1, metavar='PURE_COEFFICIENT',

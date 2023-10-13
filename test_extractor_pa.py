@@ -122,16 +122,14 @@ def main(no_selection=False):
             for model_name in accs_names:
                 acc = np.array(id_accs[model_name])
                 mean_acc = acc.mean()
-                conf = (1.96 * acc.std()) / np.sqrt(len(acc))
-                row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+                row.append(f"{mean_acc:0.2f}")
             rows.append(row)
         elif dataset_idx == 12:
             row = ['OOD']
             for model_name in accs_names:
                 acc = np.array(ood_accs[model_name])
                 mean_acc = acc.mean()
-                conf = (1.96 * acc.std()) / np.sqrt(len(acc))
-                row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+                row.append(f"{mean_acc:0.2f}")
             rows.append(row)
     out_path = os.path.join(args['out.dir'], 'weights')
     out_path = check_dir(out_path, True)

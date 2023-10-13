@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from data.meta_dataset_reader import (MetaDatasetBatchReader, MetaDatasetEpisodeReader,
                                       TRAIN_METADATASET_NAMES)
-from models.losses import cross_entropy_loss, prototype_loss
+from models.losses import cross_entropy_loss, prototype_loss, DistillKL, distillation_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from models.model_helpers import get_model, get_model_moe, get_optimizer
@@ -81,6 +81,12 @@ def train():
         # pmo model, fe load from url
         pmo = get_model_moe(None, args, base_network_name='url')    # resnet18_moe
 
+        if 'kd' in args['train.loss_type']:
+            # KL-divergence loss
+            criterion_div = DistillKL(T=4)
+            url = get_model(None, args, base_network_name='url', freeze_fe=True)
+            url.eval()
+
         optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())    # for films
         optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
                                               lr=args['train.selector_learning_rate'],
@@ -132,6 +138,7 @@ def train():
             epoch_loss[f'pool/selection_ce_loss'] = []
             epoch_loss[f'pure/selection_ce_loss'] = []
             epoch_loss.update({f'task/{name}': [] for name in trainsets})
+            epoch_loss['kd'] = []
             # epoch_loss['task/rec'] = []
             # if 'hv' in args['train.loss_type']:
             epoch_loss['hv/loss'], epoch_loss['hv'] = [], []
@@ -406,6 +413,30 @@ def train():
                 enriched_target_features, target_labels,
                 distance=args['test.distance'])
 
+            if 'kd' in args['train.loss_type']:
+                fs = torch.cat([enriched_context_features, enriched_target_features])
+
+                '''forward url obtain url features'''
+                url_context_features = url(context_images)
+                url_target_features = url(target_images)
+                ft = torch.cat([url_context_features, url_target_features]).detach()
+
+                if args['train.kd_type'] == 'kl':
+                    kd_losses = criterion_div(F.softmax(fs, dim=1),
+                                              F.softmax(ft, dim=1))
+                else:
+                    kd_losses = distillation_loss(F.normalize(fs, p=2, dim=1, eps=1e-12),
+                                                  F.normalize(ft, p=2, dim=1, eps=1e-12),
+                                                  opt=args['train.kd_type'])
+
+                '''log kd_losses'''
+                epoch_loss['kd'].append(kd_losses.item())
+
+                '''kd_losses to coeff'''
+                kd_losses = kd_losses * args['train.kd_coefficient']
+
+                task_loss = task_loss + kd_losses
+
             '''log task loss and acc'''
             epoch_loss[f'task/{trainset}'].append(stats_dict['loss'])
             epoch_acc[f'task/{trainset}'].append(stats_dict['acc'])
@@ -430,7 +461,7 @@ def train():
                 task_loss.backward()
 
                 '''debug'''
-                debugger.print_grad(pmo, key='film', prefix=f'iter{i} after task_loss backward:\n')
+                debugger.print_grad(pmo, key='film', prefix=f'iter{i} after task_loss (with kd_loss) backward:\n')
 
             # '''selection CE loss on training task'''
             # if 'ce' in args['train.loss_type']:
@@ -613,9 +644,10 @@ def train():
                         ncc_losses_multi_obj = ncc_losses_multi_obj.T       # [2, 4]
                         if args['train.n_obj'] > 1:
                             hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
+                            epoch_loss['hv/loss'].append(hv_loss.item())
+
                             '''hv loss to average'''
                             hv_loss = hv_loss / args['train.n_mo']
-                            epoch_loss['hv/loss'].append(hv_loss.item())
 
                         if 'hv' in args['train.loss_type']:
 
@@ -671,9 +703,9 @@ def train():
                 average_loss, average_accuracy = [], []
                 for dataset_name in trainsets:
                     if f'task/{dataset_name}' in epoch_loss.keys() and len(epoch_loss[f'task/{dataset_name}']) > 0:
-                        writer.add_scalar(f"train_loss/task/{dataset_name}",
+                        writer.add_scalar(f"train_task_loss/{dataset_name}",
                                           np.mean(epoch_loss[f'task/{dataset_name}']), i+1)
-                        writer.add_scalar(f"train_accuracy/task/{dataset_name}",
+                        writer.add_scalar(f"train_task_accuracy/{dataset_name}",
                                           np.mean(epoch_acc[f'task/{dataset_name}']), i+1)
                         average_loss.append(epoch_loss[f'task/{dataset_name}'])
                         average_accuracy.append(epoch_acc[f'task/{dataset_name}'])
@@ -681,10 +713,15 @@ def train():
                 if len(average_loss) > 0:      # did task train process
                     average_loss = np.mean(np.concatenate(average_loss))
                     average_accuracy = np.mean(np.concatenate(average_accuracy))
-                    writer.add_scalar(f"train_loss/task/average", average_loss, i+1)
-                    writer.add_scalar(f"train_accuracy/task/average", average_accuracy, i+1)
+                    writer.add_scalar(f"train_task_loss/average", average_loss, i+1)
+                    writer.add_scalar(f"train_task_accuracy/average", average_accuracy, i+1)
                     print(f"==>> task: loss {average_loss:.3f}, "
                           f"accuracy {average_accuracy:.3f}.")
+
+                '''log kd_loss'''
+                if len(epoch_loss['kd']) > 0:
+                    average_loss = np.mean(epoch_loss['kd'])
+                    writer.add_scalar(f"train_kd_loss", average_loss, i + 1)
 
                 # '''log task_rec'''
                 # writer.add_scalar(f"loss/train/task_rec",
@@ -702,11 +739,11 @@ def train():
                         obj_loss, obj_acc = [], []
                         for pop_idx in range(args['train.n_mix'] + args['train.n_obj']):
                             loss_values = epoch_loss[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                            writer.add_scalar(f"train_loss/obj{obj_idx}/pop{pop_idx}",
+                            writer.add_scalar(f"train_mo_loss/obj{obj_idx}/pop{pop_idx}",
                                               np.mean(loss_values), i+1)
                             obj_loss.append(np.mean(loss_values))
                             acc_values = epoch_acc[f'hv/obj{obj_idx}'][f'hv/pop{pop_idx}']
-                            writer.add_scalar(f"train_accuracy/obj{obj_idx}/pop{pop_idx}",
+                            writer.add_scalar(f"train_mo_accuracy/obj{obj_idx}/pop{pop_idx}",
                                               np.mean(acc_values), i+1)
                             obj_acc.append(np.mean(acc_values))
                         objs_loss.append(obj_loss)
@@ -721,9 +758,9 @@ def train():
                     writer.add_figure(f"train_image/objs_acc", figure, i+1)
 
                     '''log hv'''
-                    writer.add_scalar('train_loss/hv_loss', np.mean(epoch_loss['hv/loss']), i+1)
-                    writer.add_scalar('train_loss/hv', np.mean(epoch_loss['hv']), i+1)
-                    writer.add_scalar('train_accuracy/hv', np.mean(epoch_acc['hv']), i+1)
+                    writer.add_scalar('train_mo_loss/hv_loss', np.mean(epoch_loss['hv/loss']), i+1)
+                    writer.add_scalar('train_mo_loss/hv', np.mean(epoch_loss['hv']), i+1)
+                    writer.add_scalar('train_mo_accuracy/hv', np.mean(epoch_acc['hv']), i+1)
                     print(f"==>> hv: hv_loss {np.mean(epoch_loss['hv/loss']):.3f}, "
                           f"loss {np.mean(epoch_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_acc['hv']):.3f}.")
@@ -859,12 +896,12 @@ def train():
 
                 '''log pool ce loss'''
                 if len(epoch_loss[f'pool/selection_ce_loss']) > 0:      # did selection loss on pool samples
-                    writer.add_scalar('train_loss/selection_ce_loss/pool',
+                    writer.add_scalar('train_ce_loss/pool',
                                       np.mean(epoch_loss[f'pool/selection_ce_loss']), i+1)
 
                 '''log pure ce loss'''
                 if len(epoch_loss[f'pure/selection_ce_loss']) > 0:  # did selection loss on pool samples
-                    writer.add_scalar('train_loss/selection_ce_loss/pure',
+                    writer.add_scalar('train_ce_loss/pure',
                                       np.mean(epoch_loss[f'pure/selection_ce_loss']), i + 1)
 
                 # '''log task ce loss'''
@@ -875,9 +912,9 @@ def train():
                 '''log pure ncc loss'''
                 for cluster_idx in range(args['model.num_clusters']):
                     if f'pure/C{cluster_idx}' in epoch_loss.keys() and len(epoch_loss[f'pure/C{cluster_idx}']) > 0:
-                        writer.add_scalar(f'train_loss/pure/C{cluster_idx}',
+                        writer.add_scalar(f'train_pure_loss/C{cluster_idx}',
                                           np.mean(epoch_loss[f'pure/C{cluster_idx}']), i+1)
-                        writer.add_scalar(f'train_accuracy/pure/C{cluster_idx}',
+                        writer.add_scalar(f'train_pure_accuracy/C{cluster_idx}',
                                           np.mean(epoch_acc[f'pure/C{cluster_idx}']), i+1)
 
                 epoch_loss, epoch_acc = init_train_log()
