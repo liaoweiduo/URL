@@ -417,8 +417,8 @@ def train():
                 fs = torch.cat([enriched_context_features, enriched_target_features])
 
                 '''forward url obtain url features'''
-                url_context_features = url(context_images)
-                url_target_features = url(target_images)
+                url_context_features = url.embed(context_images)
+                url_target_features = url.embed(target_images)
                 ft = torch.cat([url_context_features, url_target_features]).detach()
 
                 if args['train.kd_type'] == 'kl':
