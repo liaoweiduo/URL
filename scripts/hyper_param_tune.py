@@ -243,6 +243,8 @@ param_grid = {
 }
 exp_name_template = common_args['tag'] + \
                     '-lt{train.loss_type}' + \
+                    '-kdt{train.kd_type}' + \
+                    '-kdc{train.kd_coefficient}' + \
                     '-lr{train.learning_rate}' # + \
                     # '-nc{model.num_clusters}' + \
                     # '-pc{train.pure_coefficient}' + \
