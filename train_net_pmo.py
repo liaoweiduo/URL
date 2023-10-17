@@ -21,7 +21,7 @@ from data.meta_dataset_reader import (MetaDatasetBatchReader, MetaDatasetEpisode
                                       TRAIN_METADATASET_NAMES)
 from models.losses import cross_entropy_loss, prototype_loss, DistillKL, distillation_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
-                                CosineAnnealRestartLR, ExpDecayLR)
+                                CosineAnnealRestartLR, ExpDecayLR, WeightAnnealing)
 from models.model_helpers import get_model, get_model_moe, get_optimizer
 from utils import Accumulator, device, set_determ, check_dir
 from config import args
@@ -433,9 +433,13 @@ def train():
                 epoch_loss['kd'].append(kd_losses.item())
 
                 '''kd_losses to coeff'''
-                kd_losses = kd_losses * args['train.kd_coefficient']
+                kd_weight_annealing = WeightAnnealing(
+                    T=int(args['train.cosine_anneal_freq'] * args['train.kd_T_extent']))
+                kd_weight = max(kd_weight_annealing(t=i, opt='linear'), 0) * args['train.kd_coefficient']
+                # kd_weight = args['train.kd_coefficient']
+                writer.add_scalar('params/kd_weight', kd_weight, i+1)
 
-                task_loss = task_loss + kd_losses
+                task_loss = task_loss + kd_losses * kd_weight
 
             '''log task loss and acc'''
             epoch_loss[f'task/{trainset}'].append(stats_dict['loss'])

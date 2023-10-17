@@ -82,6 +82,9 @@ parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
                     choices=['kmeans', 'hierarchical', 'prototypes'],
                     help='use kmeans(average) or hierarchical clustering net.')
+parser.add_argument('--train.cond_mode', type=str, default='film-random', metavar='CONDITIONING_MODE',
+                    choices=['film-random', 'film-opt'],
+                    help='use randn init film (film-randm) or (1 and 0) init film (film-opt).')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')
 parser.add_argument('--train.gumbel_tau', type=float, default=1, metavar='GUMBEL_TAU',
@@ -99,6 +102,8 @@ parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='
                     help='coeffient for reconstruction loss.')
 parser.add_argument('--train.kd_type', type=str, default='kl', metavar='KD_TYPE',
                     help='choice: kl, kernelcka')
+parser.add_argument('--train.kd_T_extent', type=float, default=1, metavar='KD_T_EXTENT',
+                    help='max{kd_coefficient*(1-t/(cosine_anneal_freq*kd_T_extent)), 0}.')
 parser.add_argument('--train.kd_coefficient', type=float, default=1, metavar='KD_COEFFICIENT',
                     help='coeffient for distillation loss.')
 parser.add_argument('--train.ce_coefficient', type=float, default=1, metavar='CE_COEFFICIENT',

@@ -27,6 +27,7 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
                            logit_scale=args['cluster.logit_scale'],
                            num_clusters=args['model.num_clusters'],
                            opt=args['cluster.opt'],
+                           cond_mode=args['train.cond_mode'],
                            freeze_backbone=args['train.freeze_backbone'])
     else:
         model_fn = partial(resnet18_moe, dropout=dropout_rate,
@@ -35,6 +36,7 @@ def get_model_moe(num_classes, args, base_network_name=None, d=None, freeze_fe=F
                            logit_scale=args['cluster.logit_scale'],
                            num_clusters=args['model.num_clusters'],
                            opt=args['cluster.opt'],
+                           cond_mode=args['train.cond_mode'],
                            freeze_backbone=False)
 
     model = model_fn(classifier=train_classifier,

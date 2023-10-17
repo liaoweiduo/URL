@@ -41,7 +41,7 @@ def film(x, gamma, beta):
 class BasicBlockFilm(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, film_head=1):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, film_head=1, cond_mode='film-opt'):
         super(BasicBlockFilm, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -51,17 +51,20 @@ class BasicBlockFilm(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.film_head = film_head
+        self.cond_mode = cond_mode
 
-        # """if not init with 1 and 0 for gamma and beta"""
-        # self.film1_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
-        # self.film1_betas = nn.Parameter(torch.randn(film_head, planes))
-        # self.film2_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
-        # self.film2_betas = nn.Parameter(torch.randn(film_head, planes))
-
-        self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
-        self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
-        self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
-        self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
+        if cond_mode == 'film-random':
+            self.film1_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
+            self.film1_betas = nn.Parameter(torch.randn(film_head, planes))
+            self.film2_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
+            self.film2_betas = nn.Parameter(torch.randn(film_head, planes))
+        elif cond_mode == 'film-opt':
+            self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
+            self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
+            self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
+            self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
+        else:
+            raise Exception(f'un-implemented cond mode: {cond_mode}.')
 
         # self.film1 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
         # self.film2 = nn.ModuleList([CatFilm(planes) for _ in range(film_head)])
@@ -110,17 +113,20 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, classifier=None, num_classes=None,
                  dropout=0.0, global_pool=True,
                  film_head=1, tau=1, logit_scale=0.0,
-                 num_clusters=8, opt='linear'):
+                 num_clusters=8, opt='linear', cond_mode='film-opt'):
         super(ResNet, self).__init__()
         self.initial_pool = False
         self.film_head = film_head
+        self.cond_mode = cond_mode
 
-        # """if not init with 1 and 0 for gamma and beta"""
-        # self.film_normalize_gammas = nn.Parameter(torch.randn(film_head, 3)+1)
-        # self.film_normalize_betas = nn.Parameter(torch.randn(film_head, 3))
-
-        self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
-        self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
+        if cond_mode == 'film-random':
+            self.film_normalize_gammas = nn.Parameter(torch.randn(film_head, 3)+1)
+            self.film_normalize_betas = nn.Parameter(torch.randn(film_head, 3))
+        elif cond_mode == 'film-opt':
+            self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
+            self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
+        else:
+            raise Exception(f'un-implemented cond mode: {cond_mode}.')
 
         # self.film_normalize = nn.ModuleList([CatFilm(3) for _ in range(film_head)])
         inplanes = self.inplanes = 64
@@ -130,10 +136,14 @@ class ResNet(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(block, inplanes, layers[0], film_head=film_head)
-        self.layer2 = self._make_layer(block, inplanes * 2, layers[1], stride=2, film_head=film_head)
-        self.layer3 = self._make_layer(block, inplanes * 4, layers[2], stride=2, film_head=film_head)
-        self.layer4 = self._make_layer(block, inplanes * 8, layers[3], stride=2, film_head=film_head)
+        self.layer1 = self._make_layer(block, inplanes, layers[0], film_head=film_head,
+                                       cond_mode=cond_mode)
+        self.layer2 = self._make_layer(block, inplanes * 2, layers[1], stride=2, film_head=film_head,
+                                       cond_mode=cond_mode)
+        self.layer3 = self._make_layer(block, inplanes * 4, layers[2], stride=2, film_head=film_head,
+                                       cond_mode=cond_mode)
+        self.layer4 = self._make_layer(block, inplanes * 8, layers[3], stride=2, film_head=film_head,
+                                       cond_mode=cond_mode)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(dropout)
         self.outplanes = 512
@@ -162,7 +172,7 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, film_head=1):
+    def _make_layer(self, block, planes, blocks, stride=1, film_head=1, cond_mode='film-opt'):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -170,10 +180,11 @@ class ResNet(nn.Module):
                 nn.BatchNorm2d(planes * block.expansion))
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride=stride, downsample=downsample, film_head=film_head))
+        layers.append(block(self.inplanes, planes, stride=stride, downsample=downsample, film_head=film_head,
+                            cond_mode=cond_mode))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes, film_head=film_head))
+            layers.append(block(self.inplanes, planes, film_head=film_head, cond_mode=cond_mode))
 
         # return nn.Sequential(*layers)
         return nn.ModuleList(layers)       # forward need head_idx, can not use Sequential
