@@ -82,8 +82,8 @@ parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
                     choices=['kmeans', 'hierarchical', 'prototypes'],
                     help='use kmeans(average) or hierarchical clustering net.')
-parser.add_argument('--train.cond_mode', type=str, default='film-random', metavar='CONDITIONING_MODE',
-                    choices=['film-random', 'film-opt'],
+parser.add_argument('--train.cond_mode', type=str, default='film_random', metavar='CONDITIONING_MODE',
+                    choices=['film_random', 'film_opt'],
                     help='use randn init film (film-randm) or (1 and 0) init film (film-opt).')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
                     help='alpha on current class centroid. only activate if use mov_avg. ')

@@ -41,7 +41,7 @@ def film(x, gamma, beta):
 class BasicBlockFilm(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, film_head=1, cond_mode='film-opt'):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, film_head=1, cond_mode='film_opt'):
         super(BasicBlockFilm, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -53,12 +53,12 @@ class BasicBlockFilm(nn.Module):
         self.film_head = film_head
         self.cond_mode = cond_mode
 
-        if cond_mode == 'film-random':
+        if cond_mode == 'film_random':
             self.film1_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
             self.film1_betas = nn.Parameter(torch.randn(film_head, planes))
             self.film2_gammas = nn.Parameter(torch.randn(film_head, planes)+1)
             self.film2_betas = nn.Parameter(torch.randn(film_head, planes))
-        elif cond_mode == 'film-opt':
+        elif cond_mode == 'film_opt':
             self.film1_gammas = nn.Parameter(torch.ones(film_head, planes))
             self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
             self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
@@ -113,16 +113,16 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, classifier=None, num_classes=None,
                  dropout=0.0, global_pool=True,
                  film_head=1, tau=1, logit_scale=0.0,
-                 num_clusters=8, opt='linear', cond_mode='film-opt'):
+                 num_clusters=8, opt='linear', cond_mode='film_opt'):
         super(ResNet, self).__init__()
         self.initial_pool = False
         self.film_head = film_head
         self.cond_mode = cond_mode
 
-        if cond_mode == 'film-random':
+        if cond_mode == 'film_random':
             self.film_normalize_gammas = nn.Parameter(torch.randn(film_head, 3)+1)
             self.film_normalize_betas = nn.Parameter(torch.randn(film_head, 3))
-        elif cond_mode == 'film-opt':
+        elif cond_mode == 'film_opt':
             self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
             self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
         else:
@@ -172,7 +172,7 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, film_head=1, cond_mode='film-opt'):
+    def _make_layer(self, block, planes, blocks, stride=1, film_head=1, cond_mode='film_opt'):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
