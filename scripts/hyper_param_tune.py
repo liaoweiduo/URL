@@ -230,7 +230,7 @@ common_args.update({
     'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 2000, 'train.eval_freq': 2000,
     'train.selector_learning_rate': 1e-4,
-    '--train.cond_mode': 'film_random',
+    'train.cond_mode': 'film_random',
 })
 param_grid = {
     'train.learning_rate': [5e-4, 1e-3, 5e-3],
