@@ -494,7 +494,7 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                if 'pure' in args['train.loss_type'] or 'hv' in args['train.loss_type']:
+                if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                     model_eval()
 
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
@@ -680,7 +680,7 @@ def train():
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
 
-                if 'pure' in args['train.loss_type'] or 'hv' in args['train.loss_type']:
+                if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                     model_train()
 
                 '''debug'''
