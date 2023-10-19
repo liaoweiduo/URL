@@ -494,6 +494,8 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
+                model_eval()           # todo: exam whether to use if cond
+
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
 
                 '''pure loss on all clusters'''
@@ -676,6 +678,8 @@ def train():
                             ] for obj_idx in range(len(selected_cluster_idxs))])
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
+
+                model_train()       # todo: exam whether to use if cond
 
                 '''debug'''
                 debugger.print_grad(pmo, key='film', prefix=f'iter{i} after hv_loss backward:\n')
