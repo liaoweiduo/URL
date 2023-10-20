@@ -26,7 +26,7 @@ parser.add_argument('--model.num_clusters', type=int, default=8, help="Number of
 parser.add_argument('--adaptor.opt', type=str, default='linear', help="type of adaptor, linear or nonlinear")
 # Selector model args
 parser.add_argument('--cluster.opt', type=str, default='nonlinear', help="type of cluster model, linear or nonlinear")
-parser.add_argument('--cluster.logit_scale', type=float, default=0.0, metavar='LOGIT_SCALE',
+parser.add_argument('--cluster.logit_scale', type=float, default=0.5, metavar='LOGIT_SCALE',
                     help='logit scale s, and softmax(exp(s) * dist) -> sim.')
 
 # train args
