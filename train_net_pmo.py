@@ -494,8 +494,9 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
-                    model_eval()
+                model_eval()
+                # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
+                #     model_eval()
 
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
 
@@ -680,8 +681,9 @@ def train():
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
 
-                if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
-                    model_train()
+                model_train()
+                # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
+                #     model_train()
 
                 '''debug'''
                 debugger.print_grad(pmo, key='film', prefix=f'iter{i} after hv_loss backward:\n')
