@@ -223,9 +223,9 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 4        # num of runs in 1 sh file
+num_runs_1sh = 8        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-filmrandn-kd-tuneslr',
+    'tag': 'pmo-filmrandn-kd-tkcph',
     'train.max_iter': 5000, 'train.summary_freq': 500, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 1000,
@@ -233,26 +233,26 @@ common_args.update({
     'train.cond_mode': 'film_random',
 })
 param_grid = {
-    'train.learning_rate': [5e-4, 7e-4, 1e-3, 2e-3],
-    'train.loss_type': ['task+kd+ce'],      # +pure+hv
+    'train.learning_rate': [1e-3],
+    'train.loss_type': ['task+kd+ce+pure+hv'],
     'train.kd_type': ['kernelcka'],
     'train.kd_T_extent': [1000],
     'train.kd_coefficient': [6],
-    'train.ce_coefficient': [5, 10],
-    'cluster.logit_scale': [0.5]
-    # 'train.pure_coefficient': [0, 0.1, 0.5, 1, 2],
-    # 'train.hv_coefficient': [0, 0.1, 0.5, 1, 2],
+    'train.ce_coefficient': [10],
+    'cluster.logit_scale': [0.5],
+    'train.pure_coefficient': [0, 0.5, 1, 2],
+    'train.hv_coefficient': [0, 0.5, 1, 2],
 }
 exp_name_template = common_args['tag'] + \
-                    '-lr{train.learning_rate}' + \
-                    '-cec{train.ce_coefficient}' # + \
+                    '-pc{train.pure_coefficient}' + \
+                    '-hvc{train.hv_coefficient}' # + \
+                    # '-lt{train.loss_type}' + \
+                    # '-lr{train.learning_rate}' + \
+                    # '-cec{train.ce_coefficient}' # + \
                     # '-ls{cluster.logit_scale}' # + \
                     # '-kdt{train.kd_type}' + \
                     # '-kdt{train.kd_T_extent}' + \
                     # '-kdc{train.kd_coefficient}' + \
-                    # '-pc{train.pure_coefficient}' + \
-                    # '-hvc{train.hv_coefficient}' # + \
-                    # '-lt{train.loss_type}' + \
 
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
