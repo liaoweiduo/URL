@@ -74,6 +74,8 @@ parser.add_argument('--train.eval_size', type=int, default=300, metavar='EVAL_SI
                     help='How many episodes to sample for validation')
 parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN',
                     help="Resume training starting from the last checkpoint (default: True)")
+parser.add_argument('--train.best_criteria', type=str, default='hv', metavar='BEST_MODEL',
+                    help='Best model based on which [hv, cluster, domain]')
 
 # pmo training
 parser.add_argument('--train.selector_learning_rate', type=float, default=0.03, metavar='LR',
@@ -82,7 +84,7 @@ parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
                     choices=['kmeans', 'hierarchical', 'prototypes'],
                     help='use kmeans(average) or hierarchical clustering net.')
-parser.add_argument('--train.cond_mode', type=str, default='film_random', metavar='CONDITIONING_MODE',
+parser.add_argument('--train.cond_mode', type=str, default='film_opt', metavar='CONDITIONING_MODE',
                     choices=['film_random', 'film_opt'],
                     help='use randn init film (film-randm) or (1 and 0) init film (film-opt).')
 parser.add_argument('--train.mov_avg_alpha', type=float, default=0.2, metavar='MOV_AVG_ALPHA',
@@ -93,6 +95,8 @@ parser.add_argument('--train.gumbel_tau', type=float, default=1, metavar='GUMBEL
 parser.add_argument('--train.loss_type', type=str, default='task+kd+pure+hv+ce', metavar='LOSS_TYPE',
                     help='backward losses.'
                          'can be any combination of task, hv, task+pure+hv, pure, pure+hv')
+parser.add_argument('--train.cluster_loss_type', type=str, default='ce', metavar='CL_TYPE',
+                    help='choice: ce, kl')
 parser.add_argument('--train.pool_freq', type=int, default=1, metavar='POOL_FREQ',
                     help='How often to update pool. ')
 parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ',

@@ -349,7 +349,12 @@ def train():
                     cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
 
                     _, selection_info = pmo.selector(features_batch, gumbel=False, average=False)
-                    fn = torch.nn.CrossEntropyLoss()
+
+                    if args['train.cluster_loss_type'] == 'kl':
+                        fn = DistillKL(T=4)
+                        cluster_labels = F.one_hot(cluster_labels, num_classes=args['model.num_clusters']).float()
+                    else:
+                        fn = torch.nn.CrossEntropyLoss()
                     y_soft = selection_info['y_soft']  # [img_size, 8]
                     # select_idx = selected_cluster_idxs[task_idx]
                     # labels = torch.ones(
@@ -494,7 +499,7 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                model_eval()
+                model_eval()          # todo: check to use eval or train
                 # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                 #     model_eval()
 
@@ -681,7 +686,7 @@ def train():
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
 
-                model_train()
+                model_train()       # todo: check to use eval or train
                 # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                 #     model_train()
 
@@ -1185,12 +1190,17 @@ def train():
                           f"loss {np.mean(epoch_val_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_val_acc['hv']):.3f}.")
 
-                '''evaluation acc based on cluster acc'''
-                # avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
-                '''evaluation acc based on source domain acc'''
-                avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
-                '''evaluation acc based on hv acc/loss (the larger the better)'''
-                # avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_acc['hv'])
+
+                if args['train.best_criteria'] == 'cluster':
+                    '''evaluation acc based on cluster acc'''
+                    avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
+                elif args['train.best_criteria'] == 'hv':
+                    '''evaluation acc based on hv acc/loss (the larger the better)'''
+                    # epoch_val_acc or epoch_val_loss
+                    avg_val_loss, avg_val_acc = avg_val_cluster_loss, np.mean(epoch_val_loss['hv'])
+                else:
+                    '''evaluation acc based on source domain acc'''
+                    avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
 
                 # saving checkpoints
                 if avg_val_acc > best_val_acc:
