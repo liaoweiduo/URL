@@ -223,9 +223,9 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 12        # num of runs in 1 sh file
+num_runs_1sh = 6        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-tkc',
+    'tag': 'pmo-testklonNCC_and_film_param_l2',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 1000, 'train.eval_freq': 200,
@@ -237,19 +237,17 @@ param_grid = {
     # 'train.selector_learning_rate': 1e-4,
     'train.loss_type': ['task+kd+ce'],      # +pure+hv
     'cluster.logit_scale': [0.5],
-    'train.cluster_loss_type': ['ce', 'kl'],      # 'ce', 'kl'
-    'train.ce_coefficient': [1, 5, 10],
-    'train.kd_type': ['kernelcka', 'kl'],     # kernelcka, kl
+    'train.cluster_loss_type': ['ce'],      # 'ce', 'kl'
+    'train.ce_coefficient': [1, 2],
+    'train.kd_type': ['kl', 'film_param_l2'],     # kernelcka, kl, film_param_l2
     'train.kd_T_extent': [1000],
-    'train.kd_coefficient': [2, 5],
+    'train.kd_coefficient': [0, 1, 2],
     # 'train.pure_coefficient': [0, 0.5, 1],
     # 'train.hv_coefficient': [0, 0.5, 1],
 }
 exp_name_template = common_args['tag'] + \
-                    '-clt{train.cluster_loss_type}' + \
-                    '-cec{train.ce_coefficient}' + \
-                    '-kdt{train.kd_type}' + \
-                    '-kdc{train.kd_coefficient}'
+                    '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \
+                    '-kd{train.kd_type}{train.kd_coefficient}' # + \
                     # '-lt{train.loss_type}' + \
                     # '-lr{train.learning_rate}' + \
                     # '-ls{cluster.logit_scale}' # + \

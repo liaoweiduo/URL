@@ -43,7 +43,7 @@ def train():
     config = tf.compat.v1.ConfigProto()
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
-    with tf.compat.v1.Session(config=config) as session:
+    with (tf.compat.v1.Session(config=config) as session):
         '''--------------------'''
         '''Initialization Phase'''
         '''--------------------'''
@@ -355,11 +355,8 @@ def train():
                         cluster_labels = F.one_hot(cluster_labels, num_classes=args['model.num_clusters']).float()
                     else:
                         fn = torch.nn.CrossEntropyLoss()
-                    y_soft = selection_info['y_soft']  # [img_size, 8]
-                    # select_idx = selected_cluster_idxs[task_idx]
-                    # labels = torch.ones(
-                    #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-                    selection_ce_loss = fn(y_soft, cluster_labels)
+                    dist = selection_info['dist']  # [img_size, 8]
+                    selection_ce_loss = fn(dist, cluster_labels)
 
                     '''log ce loss'''
                     epoch_loss[f'pool/selection_ce_loss'].append(selection_ce_loss.item())
@@ -413,23 +410,41 @@ def train():
                         [context_images, target_images], task_features,
                         hard=False)
 
-            task_loss, stats_dict, _ = prototype_loss(
+            task_loss, stats_dict, pred_dict = prototype_loss(
                 enriched_context_features, context_labels,
                 enriched_target_features, target_labels,
                 distance=args['test.distance'])
 
             if 'kd' in args['train.loss_type']:
-                fs = torch.cat([enriched_context_features, enriched_target_features])
 
                 '''forward url obtain url features'''
                 url_context_features = url.embed(context_images)
                 url_target_features = url.embed(target_images)
-                ft = torch.cat([url_context_features, url_target_features]).detach()
 
                 if args['train.kd_type'] == 'kl':
-                    kd_losses = criterion_div(F.softmax(fs, dim=1),
-                                              F.softmax(ft, dim=1))
-                else:
+                    fs = pred_dict['logits_tensor']     # NCC logits
+                    _, _, url_pred_dict = prototype_loss(
+                        url_context_features, context_labels,
+                        url_target_features, target_labels,
+                        distance=args['test.distance'])
+                    ft = url_pred_dict['logits_tensor']     # NCC logits
+                    # kd_losses = criterion_div(F.softmax(fs, dim=1),
+                    #                           F.softmax(ft, dim=1))
+                    kd_losses = criterion_div(fs, ft)
+                elif args['train.kd_type'] == 'film_param_l2':
+                    film_gamma_params = torch.cat([
+                        v.flatten() for k, v in pmo.named_parameters()
+                        if v.requires_grad and 'film' in k and 'gamma' in k]).unsqueeze(0)      # [1, dim]
+                    film_beta_params = torch.cat([
+                        v.flatten() for k, v in pmo.named_parameters()
+                        if v.requires_grad and 'film' in k and 'beta' in k]).unsqueeze(0)       # [1, dim]
+                    film_gamma_labels = torch.ones_like(film_gamma_params)
+                    film_beta_labels = torch.zeros_like(film_beta_params)
+                    kd_losses = (torch.cdist(film_gamma_params, film_gamma_labels, p=2.0).squeeze() +
+                                 torch.cdist(film_beta_params, film_beta_labels, p=2.0).squeeze()) / 2
+                else:   # kernelCKA
+                    fs = torch.cat([enriched_context_features, enriched_target_features])
+                    ft = torch.cat([url_context_features, url_target_features]).detach()
                     kd_losses = distillation_loss(F.normalize(fs, p=2, dim=1, eps=1e-12),
                                                   F.normalize(ft, p=2, dim=1, eps=1e-12),
                                                   opt=args['train.kd_type'])
@@ -499,7 +514,7 @@ def train():
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
 
-                model_eval()          # todo: check to use eval or train
+                # model_eval()
                 # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                 #     model_eval()
 
@@ -686,7 +701,7 @@ def train():
                             hv = cal_hv(obj, 0, target='acc')
                             epoch_acc['hv'].append(hv)
 
-                model_train()       # todo: check to use eval or train
+                model_train()
                 # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
                 #     model_train()
 

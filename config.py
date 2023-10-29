@@ -105,7 +105,7 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
 parser.add_argument('--train.kd_type', type=str, default='kl', metavar='KD_TYPE',
-                    help='choice: kl, kernelcka')
+                    help='choice: kl, kernelcka, film_param_l2')
 parser.add_argument('--train.kd_T_extent', type=float, default=1, metavar='KD_T_EXTENT',
                     help='max{kd_coefficient*(1-t/(cosine_anneal_freq*kd_T_extent)), 0}.')
 parser.add_argument('--train.kd_coefficient', type=float, default=1, metavar='KD_COEFFICIENT',

@@ -72,7 +72,7 @@ def cross_entropy_loss(logits, targets):
     loss = F.nll_loss(log_p_y, labels, reduction='mean')
     acc = torch.eq(preds, labels).float().mean()
     stats_dict = {'loss': loss.item(), 'acc': acc.item()}
-    pred_dict = {'preds': preds.cpu().numpy(), 'labels': labels.cpu().numpy()}
+    pred_dict = {'preds': preds.cpu().numpy(), 'labels': labels.cpu().numpy(), 'logits_tensor': logits}
     return loss, stats_dict, pred_dict
 
 # logistic regression
