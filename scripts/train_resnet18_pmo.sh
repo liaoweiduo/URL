@@ -1,10 +1,11 @@
 ################### Train Multiple Models with pmo ###################
 ulimit -n 50000
 export META_DATASET_ROOT=../meta-dataset
-export RECORDS=../datasets/tfrecords
+#export RECORDS=../datasets/tfrecords
+export RECORDS="D://OneDrive - City University of Hong Kong - Student/datasets/tfrecords"
 
 NAME="pmo"
-OUTNAME="pmo-ab-task-pure-ce-flr1e-5-slr1e-1-clr10"
+OUTNAME="pmo-debug"
 
 CUDA_VISIBLE_DEVICES=0 python train_net_pmo.py \
     --model.name=$NAME --model.num_clusters 10 --model.backbone resnet18_moe \

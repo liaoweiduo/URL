@@ -84,6 +84,8 @@ parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
                     choices=['kmeans', 'hierarchical', 'prototypes'],
                     help='use kmeans(average) or hierarchical clustering net.')
+parser.add_argument('--train.sim_gumbel', action='store_true',
+                    help='use gumbel for selector output: similarity.')
 parser.add_argument('--train.cond_mode', type=str, default='film_opt', metavar='CONDITIONING_MODE',
                     choices=['film_random', 'film_opt'],
                     help='use randn init film (film-randm) or (1 and 0) init film (film-opt).')

@@ -401,14 +401,14 @@ def train():
             if 'task' in args['train.loss_type']:
                 [enriched_context_features, enriched_target_features], selection_info = pmo(
                     [context_images, target_images], task_features,
-                    hard=False)
+                    gumbel=args['train.sim_gumbel'], hard=args['train.sim_gumbel'])
                 # task_cluster_idx = torch.argmax(selection_info['y_soft'], dim=1).squeeze()
                 # # supervision to be softmax for CE loss
             else:
                 with torch.no_grad():
                     [enriched_context_features, enriched_target_features], selection_info = pmo(
                         [context_images, target_images], task_features,
-                        hard=False)
+                        gumbel=args['train.sim_gumbel'], hard=args['train.sim_gumbel'])
 
             task_loss, stats_dict, pred_dict = prototype_loss(
                 enriched_context_features, context_labels,
@@ -540,7 +540,7 @@ def train():
 
                             [enriched_context_features, enriched_target_features], selection_info = pmo(
                                 [context_images, target_images], torch.cat([context_features, target_features]),
-                                gumbel=False, hard=False)
+                                gumbel=args['train.sim_gumbel'], hard=args['train.sim_gumbel'])
 
                             pure_loss, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -613,8 +613,8 @@ def train():
 
                         for task_idx, task in enumerate(torch_tasks):
                             '''obtain task-specific selection'''
-                            gumbel = False
-                            hard = False
+                            gumbel = args['train.sim_gumbel']
+                            hard = args['train.sim_gumbel']
                             # hard = task_idx < len(selected_cluster_idxs)    # pure use hard, mixed use soft
                             if task_idx < len(selected_cluster_idxs):   # pure use feature->sim, mixed use img->sim
                                 torch_task_features = torch.cat([task['context_features'], task['target_features']])
@@ -999,7 +999,7 @@ def train():
                             features = pmo.embed(torch.cat([context_images, target_images]))
                             [enriched_context_features, enriched_target_features], _ = pmo(
                                 [context_images, target_images], features,
-                                gumbel=False, hard=False)
+                                gumbel=False, hard=args['train.sim_gumbel'])
 
                             _, stats_dict, _ = prototype_loss(
                                 enriched_context_features, context_labels,
@@ -1079,7 +1079,7 @@ def train():
                                             torch.cat([task['context_images'], task['target_images']]))
                                     selection, selection_info = pmo.selector(
                                         torch_task_features,
-                                        gumbel=False, hard=False)
+                                        gumbel=False, hard=args['train.sim_gumbel'])
 
                                     '''log img sim in the task'''
                                     img_features = torch_task_features  # [img_size, 512]

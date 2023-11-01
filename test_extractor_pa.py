@@ -82,7 +82,7 @@ def main(no_selection=False):
                             task_features = model.embed(torch.cat([sample['context_images'], sample['target_images']]))
                             [context_features, target_features], selection_info = model(
                                 [sample['context_images'], sample['target_images']], task_features,
-                                gumbel=False, hard=False)
+                                gumbel=False, hard=args['train.sim_gumbel'])
                     else:
                         context_features = model.embed(sample['context_images'])
                         target_features = model.embed(sample['target_images'])
