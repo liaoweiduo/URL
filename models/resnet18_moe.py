@@ -113,7 +113,8 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, classifier=None, num_classes=None,
                  dropout=0.0, global_pool=True,
                  film_head=1, tau=1, logit_scale=0.0,
-                 num_clusters=8, opt='linear', cond_mode='film_opt'):
+                 num_clusters=8, opt='linear', cond_mode='film_opt',
+                 mov_avg_alpha=0.2):
         super(ResNet, self).__init__()
         self.initial_pool = False
         self.film_head = film_head
@@ -150,7 +151,7 @@ class ResNet(nn.Module):
 
         # selector
         self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine',
-                                 tau=tau, logit_scale=logit_scale)
+                                 tau=tau, logit_scale=logit_scale, mov_avg_alpha=mov_avg_alpha)
         # metric = cosine, euclidean
         self.feature_extractor = None
 
@@ -338,7 +339,7 @@ class Selector(nn.Module):
     Selector tasks feature vector ([bs, 512]) as input.
     """
     def __init__(self, input_dim=512, rep_dim=64, num_clusters=8, opt='linear', metric='cosine',
-                 tau=1.0, logit_scale=0.0):
+                 tau=1.0, logit_scale=0.0, mode='prototypes', mov_avg_alpha=0.2):
         super(Selector, self).__init__()
         self.input_dim = input_dim
         self.rep_dim = rep_dim
@@ -358,16 +359,31 @@ class Selector(nn.Module):
         # self.encoder = adaptor(num_datasets=1, dim_in=input_dim, dim_out=rep_dim, opt=opt)
         # self.hierarchical_net()
 
+        self.mode = mode
         self.prot_shape = (1, 1)
         self.prototype_shape = (self.n_class, self.rep_dim, *self.prot_shape)
-        self.prototypes = nn.Parameter(torch.randn(self.prototype_shape))
+        if mode == 'prototypes':
+            self.prototypes = nn.Parameter(torch.randn(self.prototype_shape))
+        elif mode == 'mov_avg':
+            self.register_buffer('prototypes', torch.randn(self.prototype_shape))
+        else:
+            raise Exception(f'Un-implemented mode: {mode}.')
         torch.nn.init.trunc_normal_(self.prototypes, mean=0., std=1., a=-1., b=1.)
+
         # self.logit_scale = nn.Parameter(torch.ones([]) * 1)     # learnable
-        self.logit_scale = torch.ones([]) * logit_scale     # 0    exp(logit_scale) = 1
-        # self.cluster_centers = nn.Parameter(torch.randn((num_clusters, emb_dim)))
+        self.register_buffer('logit_scale', torch.ones([]) * logit_scale)
+        # 0    exp(logit_scale) = 1
+
+        # self.mov_avg_alpha = nn.Parameter(torch.ones([]) * mov_avg_alpha)   # learnable alpha PROBLEM
+        self.register_buffer('mov_avg_alpha', torch.ones([]) * mov_avg_alpha)
 
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
         # self.ones = torch.ones(self.prototype_shape)
+
+    def update_prototypes(self, current_centers):
+        assert (self.mode == 'mov_avg'), f"call update_prototypes but the mode is {self.mode}."
+        c = current_centers.view(self.prototype_shape)
+        self.prototypes = (1 - self.mov_avg_alpha) * self.prototypes + self.mov_avg_alpha * c
 
     def forward(self, inputs, gumbel=True, hard=True, average=True):
         """

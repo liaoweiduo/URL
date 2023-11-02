@@ -34,7 +34,7 @@ class Pool(nn.Module):
     """
     def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical', buffer_size=200):
         """
-        :param capacity: Number of clusters. Typically 8 columns of classes.
+        :param capacity: Number of clusters. Typically, 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
         :param max_num_images: Maximum number of images can be stored in each class.
         :param mode: mode for cluster centers, choice=[kmeans, hierarchical].
@@ -73,8 +73,8 @@ class Pool(nn.Module):
                 self.lr_manager = ExpDecayLR(self.optimizer, args, start_iter)
             elif "cosine" in args['train.lr_policy']:
                 self.lr_manager = CosineAnnealRestartLR(self.optimizer, args, start_iter)
-        elif self.mode == 'mov_avg':
-            self.centers: List[Optional[torch.Tensor]] = [None for _ in range(self.capacity)]
+        # elif self.mode == 'mov_avg':
+        #     self.centers: List[Optional[torch.Tensor]] = [None for _ in range(self.capacity)]
         elif self.mode in ['kmeans', 'hierarchical']:
             self.centers: Optional[torch.Tensor] = None
             self.clear_buffer()
@@ -122,14 +122,14 @@ class Pool(nn.Module):
             shutil.copyfile(os.path.join(self.out_path, class_filename),
                             os.path.join(self.out_path, 'pool_best.json'))
 
-        if self.mode not in ['learnable', 'mov_avg', 'kmeans']:
+        if self.mode not in ['learnable', 'kmeans']:        # , 'mov_avg'
             return
 
         path = os.path.join(self.out_path, center_filename)
         if self.mode == 'learnable':
             centers = self.centers.detach().cpu().numpy()
-        elif self.mode == 'mov_avg':
-            centers = torch.stack(self.centers).numpy()     # may raise exception if contains None.
+        # elif self.mode == 'mov_avg':
+        #     centers = torch.stack(self.centers).numpy()     # may raise exception if contains None.
         elif self.mode == 'kmeans':
             centers = self.centers.cpu().numpy()
         else:
@@ -153,15 +153,15 @@ class Pool(nn.Module):
         self.init(start_iter)
 
         # if self.mode == 'hierarchical':
-        if self.mode not in ['learnable', 'mov_avg', 'kmeans']:
+        if self.mode not in ['learnable', 'kmeans']:    # , 'mov_avg'
             return
 
         centers = np.load(os.path.join(self.load_path, center_filename))
 
         if self.mode == 'learnable':
             self.centers.data = torch.from_numpy(centers)    # tensor: 8*512
-        elif self.mode == 'mov_avg':
-            self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
+        # elif self.mode == 'mov_avg':
+        #     self.centers = [item for item in torch.from_numpy(centers)]     # tensor: 8*512 -> list: 8 *[512]
         elif self.mode == 'kmeans':
             self.centers = torch.from_numpy(centers).to(self.cluster_device)
         else:

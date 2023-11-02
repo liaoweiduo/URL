@@ -43,7 +43,7 @@ def train():
     config = tf.compat.v1.ConfigProto()
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
-    with tf.compat.v1.Session(config=config) as session:
+    with (tf.compat.v1.Session(config=config) as session):
         '''--------------------'''
         '''Initialization Phase'''
         '''--------------------'''
@@ -181,12 +181,7 @@ def train():
             if args['train.cluster_center_mode'] == 'trainable':
                 pool.optimizer.zero_grad()
 
-        def update_step(idx):
-            optimizer.step()
-            optimizer_selector.step()
-            if args['train.cluster_center_mode'] == 'trainable':
-                pool.optimizer.step()
-
+        def lr_manager_step(idx):
             lr_manager.step(idx)
             lr_manager_selector.step(idx)
             if args['train.cluster_center_mode'] == 'trainable':
@@ -239,161 +234,6 @@ def train():
             # need to check how many classes in 1 samples and need a buffer size
             # about 10 iters can obtain 200 classes
             # print(f'num classes in buffer: {len(pool.buffer)}.')
-
-            # '''fill pool from train_loaders'''
-            # for t in tqdm(range(args['train.max_sampling_iter_for_pool']), ncols=100):
-            #     for t_indx, trainset in enumerate(trainsets):
-            #         num_task_per_batch = 1 if trainset != 'ilsvrc_2012' else 2
-            #         for _ in range(num_task_per_batch):
-            #             samples = train_loaders[trainset].get_train_task(session, d='cpu')
-            #             images = torch.cat([samples['context_images'], samples['target_images']])
-            #             # re_labels = torch.cat([samples['context_labels'], samples['target_labels']]).numpy()
-            #             gt_labels = torch.cat([samples['context_gt'], samples['target_gt']]).numpy()
-            #             domain = np.array([t_indx] * len(gt_labels))
-            #
-            #             # put in sequence
-            #             # '''obtain selection vec for images'''
-            #             # with torch.no_grad():
-            #             #     _, selection_info = pmo.selector(
-            #             #         pmo.embed(images.to(device)), gumbel=True)  # [bs, n_clusters]
-            #             #     similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-            #             #     cluster_idxs = np.argmax(similarities, axis=1)  # [bs]
-            #             #     similarities = selection_info['normal_soft'].detach().cpu().numpy()
-            #             #     # using gumbel to determine which cluster to put, but similarity use normal softmax
-            #             #
-            #             # pool.put_batch(
-            #             #     images, cluster_idxs, {
-            #             #         'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
-            #
-            #             # put to buffer then put to cluster
-            #             '''obtain selection vec for images'''
-            #             with torch.no_grad():
-            #                 _, selection_info = pmo.selector(
-            #                     pmo.embed(images.to(device)), gumbel=False)  # [bs, n_clusters]
-            #                 similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-            #
-            #             pool.put_buffer(images, {
-            #                 'domain': domain, 'gt_labels': gt_labels, 'similarities': similarities})
-
-            '''maintain pool'''
-            if (i + 1) % args['train.pool_freq'] == 0:
-                print(f"\n>> Iter: {i + 1}, update pool: ")
-
-                '''collect samples in the buffer'''
-                pool.clear_clusters()       # do not need last iter's center
-
-                verbose = True
-                if verbose:
-                    print(f'Buffer contains {len(pool.buffer)} classes.')
-
-                '''re-cal sim and re-put samples into pool buffer'''
-                if len(pool.buffer) > 0:
-                    # need to check num of images, maybe need to reshape to batch to calculate
-                    # less than 1w images for 200 classes
-                    # print(f'num images in buffer (cal sim): {len(images)}.')
-
-                    for cls in pool.buffer:
-                        # cal sim from stored features
-                        features = torch.from_numpy(cls['features']).to(device)
-                        images = torch.from_numpy(cls['images'])
-
-                        with torch.no_grad():
-                            # features = pmo.embed(images.to(device))
-                            _, selection_info = pmo.selector(
-                                features, gumbel=False, average=False)  # [bs, n_clusters]
-                            similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-                        cls['similarities'] = similarities
-
-                '''collect cluster for center_pool'''
-                current_clusters = center_pool.clear_clusters()
-                current_clusters = [cls for clses in current_clusters for cls in clses]       # cat all clusters
-
-                '''re-cal sim and re-put samples into center pool's buffer'''
-                center_pool.clear_buffer()
-                center_pool.buffer = copy.deepcopy(pool.buffer)
-                for current_cls in current_clusters:
-                    current_images = torch.from_numpy(current_cls['images'])
-                    current_features = current_cls['features']
-                    current_gt_labels = np.array([current_cls['label'][0]] * len(current_images))
-                    current_domain = np.array([current_cls['label'][1]] * len(current_images))
-
-                    with torch.no_grad():
-                        # current_features = current_images.to(device)
-                        _, selection_info = pmo.selector(
-                            torch.from_numpy(current_features).to(device), gumbel=False, average=False)  # [bs, n_clusters]
-                        current_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
-
-                    '''put current cases into center_pool.buffer'''
-                    center_pool.put_buffer(
-                        current_images, {
-                            'domain': current_domain, 'gt_labels': current_gt_labels,
-                            'similarities': current_similarities, 'features': current_features},
-                        maintain_size=False)
-
-                '''buffer -> clusters'''
-                pool.buffer2cluster()
-                pool.clear_buffer()
-                center_pool.buffer2cluster()
-                center_pool.clear_buffer()
-
-                '''selection CE loss on all clusters'''
-                if 'ce' in args['train.loss_type']:
-                    features_batch, cluster_labels = [], []
-                    for cluster_idx, cluster in enumerate(pool.clusters):
-                        if len(cluster) > 0:
-                            features = np.concatenate([cls['features'] for cls in cluster])
-                            features_batch.append(features)
-                            cluster_labels.append([cluster_idx] * features.shape[0])
-                    features_batch = torch.from_numpy(np.concatenate(features_batch)).to(device)
-                    cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
-
-                    _, selection_info = pmo.selector(features_batch, gumbel=False, average=False)
-
-                    if args['train.cluster_loss_type'] == 'kl':
-                        fn = DistillKL(T=4)
-                        cluster_labels = F.one_hot(cluster_labels, num_classes=args['model.num_clusters']).float()
-                    else:
-                        fn = torch.nn.CrossEntropyLoss()
-                    dist = selection_info['dist']  # [img_size, 8]
-                    selection_ce_loss = fn(dist, cluster_labels)
-
-                    '''log ce loss'''
-                    epoch_loss[f'pool/selection_ce_loss'].append(selection_ce_loss.item())
-
-                    '''ce loss coefficient'''
-                    selection_ce_loss = selection_ce_loss * args['train.ce_coefficient']
-                    selection_ce_loss.backward()
-
-                    '''debug'''
-                    debugger.print_grad(pmo, key='film', prefix=f'iter{i} after selection_ce_loss backward:\n')
-
-                    # ''''''
-                    # '''pure task selection CE loss on all clusters'''
-                    # num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
-                    # for cluster_idx in range(len(num_imgs_clusters)):
-                    #     n_way, n_shot, n_query = available_setting([num_imgs_clusters[cluster_idx]],
-                    #                                                args['train.type'])
-                    #     if n_way == -1:
-                    #         continue    # not enough samples to construct a task
-                    #     else:
-                    #         pure_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
-                    #         _, selection_info = pmo.selector(
-                    #             pmo.embed(
-                    #                 torch.cat([pure_task['context_images'], pure_task['target_images']])),
-                    #             gumbel=False, average=True)
-                    #         y_soft = selection_info['y_soft']  # [1, 8]
-                    #         labels = torch.ones(
-                    #             (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * cluster_idx
-                    #         selection_ce_loss = fn(y_soft, labels)
-                    #
-                    #         '''log pure ce loss'''
-                    #         epoch_loss[f'pure/selection_ce_loss'].append(selection_ce_loss.item())
-                    #
-                    #         '''ce loss to average'''
-                    #         selection_ce_loss = selection_ce_loss / len(num_imgs_clusters)
-                    #         # selection_ce_loss = selection_ce_loss * 1000
-                    #         selection_ce_loss.backward()
 
             '''----------------'''
             '''Task Train Phase'''
@@ -481,31 +321,132 @@ def train():
             epoch_loss[f'task/image_softmax_sim'] = sim
 
             if 'task' in args['train.loss_type']:
-
+                zero_grad()
                 task_loss.backward()
 
                 '''debug'''
                 debugger.print_grad(pmo, key='film', prefix=f'iter{i} after task_loss (with kd_loss) backward:\n')
 
-            # '''selection CE loss on training task'''
-            # if 'ce' in args['train.loss_type']:
-            #     image_batch = torch.cat([context_images, target_images])
-            #     cluster_labels = torch.ones_like(
-            #         torch.cat([context_labels, target_labels])).long() * task_cluster_idx
-            #     _, selection_info = pmo.selector(pmo.embed(image_batch), gumbel=False)
-            #     fn = torch.nn.CrossEntropyLoss()
-            #     y_soft = selection_info['y_soft']  # [img_size, 8]
-            #     # select_idx = selected_cluster_idxs[task_idx]
-            #     # labels = torch.ones(
-            #     #     (y_soft.shape[0],), dtype=torch.long, device=y_soft.device) * select_idx
-            #     selection_ce_loss = fn(y_soft, cluster_labels)
-            #
-            #     '''ce loss coefficient'''
-            #     # selection_ce_loss = selection_ce_loss * args['train.task_ce_coefficient']
-            #     selection_ce_loss.backward()
-            #
-            #     '''log ce loss'''
-            #     epoch_loss[f'task/selection_ce_loss'].append(selection_ce_loss.item())
+                optimizer.step()
+
+            '''-------------------'''
+            '''Cluster Train Phase'''
+            '''-------------------'''
+            '''maintain pool'''
+            if (i + 1) % args['train.pool_freq'] == 0:
+                print(f"\n>> Iter: {i}, update pool: ")
+
+                '''collect samples in the buffer'''
+                pool.clear_clusters()       # do not need last iter's center
+
+                verbose = True
+                if verbose:
+                    print(f'Buffer contains {len(pool.buffer)} classes.')
+
+                '''re-cal sim and re-put samples into pool buffer'''
+                if len(pool.buffer) > 0:
+                    # need to check num of images, maybe need to reshape to batch to calculate
+                    # less than 1w images for 200 classes
+                    # print(f'num images in buffer (cal sim): {len(images)}.')
+
+                    for cls in pool.buffer:
+                        # cal sim from stored features
+                        features = torch.from_numpy(cls['features']).to(device)
+                        images = torch.from_numpy(cls['images'])
+
+                        with torch.no_grad():
+                            # features = pmo.embed(images.to(device))
+                            _, selection_info = pmo.selector(
+                                features, gumbel=False, average=False)  # [bs, n_clusters]
+                            similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+                        cls['similarities'] = similarities
+
+                '''collect cluster for center_pool'''
+                current_clusters = center_pool.clear_clusters()
+                current_clusters = [cls for clses in current_clusters for cls in clses]       # cat all clusters
+
+                '''re-cal sim and re-put samples into center pool's buffer'''
+                center_pool.clear_buffer()
+                center_pool.buffer = copy.deepcopy(pool.buffer)
+                for current_cls in current_clusters:
+                    current_images = torch.from_numpy(current_cls['images'])
+                    current_features = current_cls['features']
+                    current_gt_labels = np.array([current_cls['label'][0]] * len(current_images))
+                    current_domain = np.array([current_cls['label'][1]] * len(current_images))
+
+                    with torch.no_grad():
+                        # current_features = current_images.to(device)
+                        _, selection_info = pmo.selector(
+                            torch.from_numpy(current_features).to(device), gumbel=False, average=False)  # [bs, n_clusters]
+                        current_similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
+
+                    '''put current cases into center_pool.buffer'''
+                    center_pool.put_buffer(
+                        current_images, {
+                            'domain': current_domain, 'gt_labels': current_gt_labels,
+                            'similarities': current_similarities, 'features': current_features},
+                        maintain_size=False)
+
+                '''buffer -> clusters'''
+                pool.buffer2cluster()
+                pool.clear_buffer()
+                center_pool.buffer2cluster()
+                center_pool.clear_buffer()
+
+                if args['train.cluster_center_mode'] == 'mov_avg':
+                    print(f"\n>> Iter: {i}, update prototypes: ")
+
+                    centers = []
+                    for cluster in pool.clusters:
+                        # cat features and forward with average embedding
+                        features = torch.cat([torch.from_numpy(cls['features']) for cls in cluster]).to(device)
+                        with torch.no_grad():
+                            _, selection_info = pmo.selector(
+                                features, gumbel=False, average=True)
+                            center = selection_info['embeddings']  # [1, 64]
+                        centers.append(center)
+                    centers = torch.stack(centers)
+
+                    pmo.selector.update_prototypes(centers)
+
+                '''debug'''
+                debugger.print_prototype_change(pmo, i=i, writer=writer)
+
+                '''selection CE loss on all clusters'''
+                if 'ce' in args['train.loss_type']:
+                    print(f"\n>> Iter: {i}, clustering loss calculation: ")
+                    features_batch, cluster_labels = [], []
+                    for cluster_idx, cluster in enumerate(pool.clusters):
+                        if len(cluster) > 0:
+                            features = np.concatenate([cls['features'] for cls in cluster])
+                            features_batch.append(features)
+                            cluster_labels.append([cluster_idx] * features.shape[0])
+                    features_batch = torch.from_numpy(np.concatenate(features_batch)).to(device)
+                    cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
+
+                    _, selection_info = pmo.selector(features_batch, gumbel=False, average=False)
+
+                    if args['train.cluster_loss_type'] == 'kl':
+                        fn = DistillKL(T=4)
+                        cluster_labels = F.one_hot(cluster_labels, num_classes=args['model.num_clusters']).float()
+                    else:
+                        fn = torch.nn.CrossEntropyLoss()
+                    dist = selection_info['dist']  # [img_size, 8]
+                    selection_ce_loss = fn(dist, cluster_labels)
+
+                    '''log ce loss'''
+                    epoch_loss[f'pool/selection_ce_loss'].append(selection_ce_loss.item())
+
+                    zero_grad()
+                    '''ce loss coefficient'''
+                    selection_ce_loss = selection_ce_loss * args['train.ce_coefficient']
+                    selection_ce_loss.backward()
+
+                    '''debug'''
+                    debugger.print_grad(pmo, key='film', prefix=f'iter{i} after selection_ce_loss backward:\n')
+
+                    optimizer_selector.step()
 
             '''----------------'''
             '''MO Train Phase  '''
@@ -513,6 +454,8 @@ def train():
             if (i + 1) % args['train.mo_freq'] == 0:
                 print(f"\n>> Iter: {i + 1}, MO phase: "
                       f"({'train' if 'hv' in args['train.loss_type'] else 'eval'})")
+
+                zero_grad()
 
                 # model_eval()
                 # if 'pure' not in args['train.loss_type'] and 'hv' not in args['train.loss_type']:
@@ -686,6 +629,9 @@ def train():
                             # hv_loss.backward(retain_graph=retain_graph)
                             hv_loss.backward()
 
+                            optimizer.step()
+                            optimizer_selector.step()
+
                         '''calculate HV value for mutli-obj loss and acc'''
                         if args['train.n_obj'] > 1:
                             obj = np.array([[
@@ -713,7 +659,7 @@ def train():
             #     if 'selector.prototypes' in k and p.grad is not None:
             #         p.grad = p.grad * 1000
 
-            update_step(i)
+            lr_manager_step(i)
 
             '''log iter-wise params change'''
             writer.add_scalar('params/learning_rate', optimizer.param_groups[0]['lr'], i+1)

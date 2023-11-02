@@ -82,7 +82,7 @@ parser.add_argument('--train.selector_learning_rate', type=float, default=0.03, 
                     help='learning rate (default: 0.0001)')
 parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze resnet18 backbone when using MOE")
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
-                    choices=['kmeans', 'hierarchical', 'prototypes'],
+                    choices=['kmeans', 'hierarchical', 'prototypes', 'mov_avg'],
                     help='use kmeans(average) or hierarchical clustering net.')
 parser.add_argument('--train.sim_gumbel', action='store_true',
                     help='use gumbel for selector output: similarity.')
