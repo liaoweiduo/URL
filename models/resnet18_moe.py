@@ -114,7 +114,7 @@ class ResNet(nn.Module):
                  dropout=0.0, global_pool=True,
                  film_head=1, tau=1, logit_scale=0.0,
                  num_clusters=8, opt='linear', cond_mode='film_opt',
-                 mov_avg_alpha=0.2):
+                 cluster_center_mode='prototypes', mov_avg_alpha=0.2):
         super(ResNet, self).__init__()
         self.initial_pool = False
         self.film_head = film_head
@@ -151,7 +151,7 @@ class ResNet(nn.Module):
 
         # selector
         self.selector = Selector(rep_dim=64, num_clusters=num_clusters, opt=opt, metric='cosine',
-                                 tau=tau, logit_scale=logit_scale, mov_avg_alpha=mov_avg_alpha)
+                                 tau=tau, logit_scale=logit_scale, mode=cluster_center_mode, mov_avg_alpha=mov_avg_alpha)
         # metric = cosine, euclidean
         self.feature_extractor = None
 
