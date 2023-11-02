@@ -14,12 +14,12 @@ class Debugger:
         self.activate = activate
         self.storage = {}
 
-    def print_prototype_change(self, model: nn.Module, i, writer: Optional[SummaryWriter, str] = 'print'):
+    def print_prototype_change(self, model: nn.Module, i, writer: Optional[SummaryWriter] = None):
         """
 
         Args:
             model: target model contain prototypes
-            writer: 'print' or obj: writer
+            writer: None or obj: writer
             i: iter index
 
         Returns:
@@ -36,7 +36,7 @@ class Debugger:
         self.storage['proto'] = proto
 
         print(f'proto diff (l2) is {dif}.\nmov_avg_alpha is {model.selector.mov_avg_alpha.item()}.')
-        if writer != 'print':
+        if writer is not None:
             writer.add_scalar('train_image/cluster-centers-dif', dif, i + 1)
             writer.add_scalar('params/mov_avg_alpha', model.selector.mov_avg_alpha.item(), i + 1)
 
