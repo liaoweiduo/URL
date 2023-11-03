@@ -223,35 +223,36 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-num_runs_1sh = 2        # num of runs in 1 sh file
+num_runs_1sh = 18        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-test_mov_avg',
+    'tag': 'pmo-mov_avg-tkcph',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
-    'train.mo_freq': 10, 'train.n_mo': 1, 'train.n_obj': 2, 'train.n_mix': 2,
-    'train.cosine_anneal_freq': 1000, 'train.eval_freq': 200,
+    'train.mo_freq': 10, 'train.n_mo': 5, 'train.n_obj': 2, 'train.n_mix': 2,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
     'train.cond_mode': 'film_opt',      # film_opt, film_random
-    'train.best_criteria': 'domain',    # domain; cluster; hv
-    'train.sim_gumbel': False,
+    'train.best_criteria': 'hv',    # domain; cluster; hv
     'train.cluster_center_mode': 'mov_avg',
 })
 param_grid = {
-    'train.learning_rate': [1e-5],
+    'train.learning_rate': [5e-6, 1e-5],
     # 'train.selector_learning_rate': 1e-4,
-    'train.loss_type': ['task+kd+ce'],      # +pure+hv
+    'train.sim_gumbel': [False, True],
+    'train.loss_type': ['task+kd+ce+pure+hv'],      # +pure+hv
     'cluster.logit_scale': [0.5],
     'train.cluster_loss_type': ['ce'],      # 'ce', 'kl'
     'train.ce_coefficient': [1],
-    'train.kd_type': ['kl'],     # kernelcka, kl, film_param_l2
-    'train.kd_T_extent': [1000],
-    'train.kd_coefficient': [0],
-    # 'train.pure_coefficient': [0, 0.5, 1],
-    # 'train.hv_coefficient': [0, 0.5, 1],
+    'train.kd_type': ['kernelcka'],     # kernelcka, kl, film_param_l2
+    'train.kd_T_extent': [2],
+    'train.kd_coefficient': [1],
+    'train.pure_coefficient': [0, 0.5, 1],
+    'train.hv_coefficient': [0, 0.5, 1],
 }
 exp_name_template = common_args['tag'] + \
+                    '-gumbel{train.sim_gumbel}' + \
                     '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \
-                    '-kd{train.kd_type}{train.kd_coefficient}' # + \
-                    # '-pc{train.pure_coefficient}' + \
-                    # '-hvc{train.hv_coefficient}' # + \
+                    '-kd{train.kd_type}{train.kd_coefficient}' + \
+                    '-pc{train.pure_coefficient}' + \
+                    '-hvc{train.hv_coefficient}' # + \
                     # '-lt{train.loss_type}' + \
                     # '-lr{train.learning_rate}' + \
                     # '-ls{cluster.logit_scale}' # + \

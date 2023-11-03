@@ -28,7 +28,7 @@ from data.meta_dataset_reader import (MetaDatasetEpisodeReader, MetaDatasetBatch
 from config import args
 
 
-def main(no_selection=False):
+def main(test_model='best', no_selection=False):
     TEST_SIZE = 600
 
     # Setting up datasets
@@ -51,7 +51,9 @@ def main(no_selection=False):
     else:
         model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
-    checkpointer.restore_model(ckpt='best', strict=False)       # ckpt='best'  'last'     1999 or mute to not restore
+    if test_model is not None:
+        checkpointer.restore_model(ckpt=test_model, strict=False)
+        # ckpt='best'  'last'     1999 or mute to not restore
     model.eval()
 
     accs_names = ['NCC']

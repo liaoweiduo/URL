@@ -165,7 +165,7 @@ def train():
 
         def model_train():
             # train mode
-            pmo.train()         # todo: train()? or eval()
+            pmo.train()
             if pmo.feature_extractor is not None:
                 pmo.feature_extractor.eval()        # to extract task features
             pool.train()
@@ -901,7 +901,7 @@ def train():
             '''Eval Phase'''
             '''----------'''
             # Evaluation inside the training loop
-            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:      # args['train.eval_freq']; 10 for DEBUG
+            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:          # eval at init
                 print(f"\n>> Iter: {i + 1}, evaluation:")
                 # eval mode
                 model_eval()
@@ -1152,7 +1152,6 @@ def train():
                           f"loss {np.mean(epoch_val_loss['hv']):.3f}, "
                           f"accuracy {np.mean(epoch_val_acc['hv']):.3f}.")
 
-
                 if args['train.best_criteria'] == 'cluster':
                     '''evaluation acc based on cluster acc'''
                     avg_val_loss, avg_val_acc = avg_val_cluster_loss, avg_val_cluster_acc
@@ -1165,7 +1164,7 @@ def train():
                     avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
 
                 # saving checkpoints
-                if avg_val_acc > best_val_acc:
+                if avg_val_acc > best_val_acc and i > 0:    # do not consider init
                     best_val_loss, best_val_acc = avg_val_loss, avg_val_acc
                     is_best = True
                     print('====>> Best model so far!')
@@ -1199,4 +1198,7 @@ if __name__ == '__main__':
 
     # run testing
     from test_extractor_pa import main as test
-    test()
+    test(test_model='best')
+    print("↑↑ best model")
+    test(test_model='last')
+    print("↑↑ last model")
