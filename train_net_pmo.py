@@ -1063,6 +1063,7 @@ def train():
                                         epoch_val_loss[f'hv/obj{obj_idx}'][f'hv/pop{task_idx}'][-1]
                                         for task_idx in range(len(torch_tasks))
                                     ] for obj_idx in range(len(selected_cluster_idxs))])
+                                    ref = args['train.ref']
                                     hv = cal_hv(obj, ref, target='loss')
                                     epoch_val_loss['hv'].append(hv)
                                     obj = np.array([[
