@@ -493,7 +493,7 @@ def train():
                             '''pure_loss to average'''
                             pure_loss = pure_loss / len(num_imgs_clusters)
                             '''step coefficient from 0 to pure_coefficient (default: 1.0)'''
-                            pure_loss = pure_loss * (args['train.pure_coefficient'] * min(i * 2, max_iter) / max_iter)
+                            pure_loss = pure_loss * (args['train.pure_coefficient'] * min(i * 5, max_iter) / max_iter)
                             pure_loss.backward()
 
                             '''log pure loss'''
@@ -623,7 +623,7 @@ def train():
                         if 'hv' in args['train.loss_type']:
 
                             '''step coefficient from 0 to hv_coefficient (default: 1.0)'''
-                            hv_loss = hv_loss * (args['train.hv_coefficient'] * min(i * 2, max_iter) / max_iter)
+                            hv_loss = hv_loss * (args['train.hv_coefficient'] * min(i * 5, max_iter) / max_iter)
                             '''since no torch is saved in the pool, do not need to retain_graph'''
                             # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
                             # hv_loss.backward(retain_graph=retain_graph)
@@ -901,7 +901,7 @@ def train():
             '''Eval Phase'''
             '''----------'''
             # Evaluation inside the training loop
-            if (i + 1) % args['train.eval_freq'] == 0:      # args['train.eval_freq']; 10 for DEBUG
+            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:      # args['train.eval_freq']; 10 for DEBUG
                 print(f"\n>> Iter: {i + 1}, evaluation:")
                 # eval mode
                 model_eval()

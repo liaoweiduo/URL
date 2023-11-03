@@ -30,7 +30,7 @@ class Debugger:
 
         proto = model.selector.prototypes.detach().cpu().numpy()
         if 'proto' in self.storage:
-            dif = np.linalg.norm(proto - self.storage['proto'].ravel(), 2)  # l2 distance
+            dif = np.linalg.norm((proto - self.storage['proto']).ravel(), 2)  # l2 distance
         else:
             dif = 0
         self.storage['proto'] = proto
