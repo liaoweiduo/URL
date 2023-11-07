@@ -100,7 +100,8 @@ class Debugger:
                 if len(img_sim) > 0:
                     # img_sim [num_cls * [num_img, 8]]; cls_sim [num_cls * [8]]
                     sim = np.concatenate([
-                        np.concatenate([img_sim[cls_idx], *[cls_sim[cls_idx][np.newaxis, :]] * len(img_sim[cls_idx])])
+                        np.concatenate([img_sim[cls_idx],
+                                        *[cls_sim[cls_idx][np.newaxis, :]] * (len(img_sim[cls_idx]) // 2)])
                         for cls_idx in range(len(img_sim))
                     ])
                     figure = draw_heatmap(sim, verbose=False)

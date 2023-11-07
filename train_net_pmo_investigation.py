@@ -163,6 +163,7 @@ def train():
         train_dict = {'acc': {'inner': {idx: [] for idx in range(args['train.n_obj'] + args['train.n_mix'])}},
                       'loss': {'inner': {idx: [] for idx in range(args['train.n_obj'] + args['train.n_mix'])}}}
 
+        inner_writer_idx = 0
         for mo_train_idx in range(args['train.n_mo']):
             mo_ncc_dict['acc'][mo_train_idx] = {}     # pop_idx(4): {inner_idx: [2]}
             mo_ncc_dict['loss'][mo_train_idx] = {}    # pop_idx(4): {inner_idx: [2]}
@@ -211,7 +212,7 @@ def train():
                 args_num_clusters1 = copy.deepcopy(args)
                 args_num_clusters1['model.num_clusters'] = 1
                 film_url = get_model_moe(None, args_num_clusters1, base_network_name='url')
-                inner_lr = 1e-4
+                inner_lr = args['train.inner_learning_rate']
                 optimizer_film_url = torch.optim.Adam(
                     film_url.get_trainable_film_parameters(), lr=inner_lr, weight_decay=inner_lr / 50)
 
@@ -255,9 +256,10 @@ def train():
 
                     '''write inner loss/acc for 4 tasks averaging over multiple mo sampling'''
                     debugger.write_scale(stats_dict['acc'], f'inner_acc/taskid{task_idx}',
-                                         i=inner_idx, writer=writer)
+                                         i=inner_writer_idx, writer=writer)
                     debugger.write_scale(stats_dict['loss'], f'inner_loss/taskid{task_idx}',
-                                         i=inner_idx, writer=writer)
+                                         i=inner_writer_idx, writer=writer)
+                    inner_writer_idx += 1
 
             '''write mo image'''
             debugger.write_mo(mo_ncc_dict['acc'][mo_train_idx], pop_labels, i=mo_train_idx, writer=writer, prefix='acc')

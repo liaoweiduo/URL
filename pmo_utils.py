@@ -1286,7 +1286,7 @@ def draw_objs(objs, labels):
     # c = plt.get_cmap('rainbow', pop_size)
 
     sns.scatterplot(data, x='f1', y='f2',
-                    hue='Label', size='Iter', sizes=(20, 100), alpha=0.7, ax=ax)
+                    hue='Label', size='Iter', sizes=(20, 100), alpha=0.5, ax=ax)
 
     # ax.legend()
     return fig
