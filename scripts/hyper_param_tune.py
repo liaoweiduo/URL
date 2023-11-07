@@ -224,9 +224,9 @@ params = []
 exp: try 1 iter = 1 tasks 
 """
 target = 'train_net_pmo_investigation.py'
-num_runs_1sh = 9        # num of runs in 1 sh file
+num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-inv-tuneinlr',
+    'tag': 'pmo-inv-tryadadelta',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
@@ -235,7 +235,6 @@ common_args.update({
     'train.cluster_center_mode': 'mov_avg',
 })
 param_grid = {
-    'train.inner_learning_rate': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1],
     # 'train.learning_rate': [5e-6, 1e-5],
     # 'train.sim_gumbel': [False, True],
     # 'train.loss_type': ['task+kd+ce+pure+hv'],      # +pure+hv
@@ -248,8 +247,7 @@ param_grid = {
     # 'train.pure_coefficient': [0, 0.5, 1],
     # 'train.hv_coefficient': [0, 0.5, 1],
 }
-exp_name_template = common_args['tag'] + \
-                    '-inlr{train.inner_learning_rate}' # + \
+exp_name_template = common_args['tag'] # + \
                     # '-lr{train.learning_rate}' + \
                     # '-gumbel{train.sim_gumbel}' + \
                     # '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \

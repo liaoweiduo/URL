@@ -9,6 +9,8 @@ import os
 import sys
 import pickle
 import copy
+
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -23,6 +25,7 @@ from models.losses import cross_entropy_loss, prototype_loss
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from models.model_helpers import get_model, get_optimizer, get_model_moe
+from models.pa import apply_selection, pa
 from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
@@ -159,14 +162,12 @@ def train():
             for idx in range(args['train.n_mix'] + args['train.n_obj'])
         ]  # ['p0', 'p1', 'm0', 'm1']
         num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
-        mo_ncc_dict = {'acc': {}, 'loss': {}}  # acc/loss: {mo_idx: {pop_idx(4): {inner_idx: [2]}}}
-        train_dict = {'acc': {'inner': {idx: [] for idx in range(args['train.n_obj'] + args['train.n_mix'])}},
-                      'loss': {'inner': {idx: [] for idx in range(args['train.n_obj'] + args['train.n_mix'])}}}
+        mo_ncc_df = pd.DataFrame(columns=['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value'])
+        # Type: ['acc', 'loss']
+        train_df = pd.DataFrame(columns=['Type', 'Tag', 'Task_id', 'Idx', 'Inner_lr', 'Value'])
+        # Tag: ['inner'], Task_id: 0,1,2,3
 
-        inner_writer_idx = 0
         for mo_train_idx in range(args['train.n_mo']):
-            mo_ncc_dict['acc'][mo_train_idx] = {}     # pop_idx(4): {inner_idx: [2]}
-            mo_ncc_dict['loss'][mo_train_idx] = {}    # pop_idx(4): {inner_idx: [2]}
             '''check pool has enough samples and generate 1 setting'''
             n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'],
                                                        min_available_clusters=args['train.n_obj'])
@@ -196,11 +197,6 @@ def train():
 
             '''obtain ncc loss multi-obj matrix'''
             for task_idx, task in enumerate(torch_tasks):
-                mo_ncc_dict['acc'][mo_train_idx][task_idx] = {}     # inner_idx: [2]
-                mo_ncc_dict['loss'][mo_train_idx][task_idx] = {}    # inner_idx: [2]
-                train_dict['acc']['inner'][task_idx].append([])
-                train_dict['loss']['inner'][task_idx].append([])
-
                 context_images = task['context_images']
                 context_labels = task['context_labels']
                 # target_images = task['target_images']
@@ -208,62 +204,73 @@ def train():
 
                 # debugger.write_task(pool, task, task_label, i=0, writer=writer)
 
-                '''new a url with one film for inner update'''
-                args_num_clusters1 = copy.deepcopy(args)
-                args_num_clusters1['model.num_clusters'] = 1
-                film_url = get_model_moe(None, args_num_clusters1, base_network_name='url')
-                inner_lr = args['train.inner_learning_rate']
-                optimizer_film_url = torch.optim.Adam(
-                    film_url.get_trainable_film_parameters(), lr=inner_lr, weight_decay=inner_lr / 50)
+                for inner_lr in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3]:
+                    '''new a url with one film for inner update'''
+                    args_num_clusters1 = copy.deepcopy(args)
+                    args_num_clusters1['model.num_clusters'] = 1
+                    film_url = get_model_moe(None, args_num_clusters1, base_network_name='url')
+                    # inner_lr = args['train.inner_learning_rate']
+                    # optimizer_film_url = torch.optim.Adam(
+                    #     film_url.get_trainable_film_parameters(), lr=inner_lr, weight_decay=inner_lr / 50)
+                    optimizer_film_url = torch.optim.Adadelta(film_url.get_trainable_film_parameters(), lr=inner_lr)
 
-                selection = torch.ones(1, 1).to(device)
-                model_train(film_url)
-                for inner_idx in range(5 + 1):      # 0 is before inner loop
-                    mo_ncc_dict['acc'][mo_train_idx][task_idx][inner_idx] = []     # [2]
-                    mo_ncc_dict['loss'][mo_train_idx][task_idx][inner_idx] = []    # [2]
+                    selection = torch.ones(1, 1).to(device)
+                    model_train(film_url)
+                    for inner_idx in range(5 + 1):      # 0 is before inner loop
 
-                    '''forward with no grad for mo matrix'''
-                    for obj_idx in range(len(selected_cluster_idxs)):       # 2
-                        obj_context_images = torch_tasks[obj_idx]['context_images']
-                        obj_target_images = torch_tasks[obj_idx]['target_images']
-                        obj_context_labels = torch_tasks[obj_idx]['context_labels']
-                        obj_target_labels = torch_tasks[obj_idx]['target_labels']
+                        '''forward with no grad for mo matrix'''
+                        for obj_idx in range(len(selected_cluster_idxs)):       # 2
+                            obj_context_images = torch_tasks[obj_idx]['context_images']
+                            obj_target_images = torch_tasks[obj_idx]['target_images']
+                            obj_context_labels = torch_tasks[obj_idx]['context_labels']
+                            obj_target_labels = torch_tasks[obj_idx]['target_labels']
 
-                        with torch.no_grad():
-                            model_eval(film_url)
-                            obj_context_features = film_url.embed(obj_context_images, selection=selection)
-                            obj_target_features = film_url.embed(obj_target_images, selection=selection)
-                            model_train(film_url)
+                            with torch.no_grad():
+                                model_eval(film_url)
+                                obj_context_features = film_url.embed(obj_context_images, selection=selection)
+                                obj_target_features = film_url.embed(obj_target_images, selection=selection)
+                                model_train(film_url)
 
-                        _, stats_dict, _ = prototype_loss(
-                            obj_context_features, obj_context_labels, obj_target_features, obj_target_labels,
+                            _, stats_dict, _ = prototype_loss(
+                                obj_context_features, obj_context_labels, obj_target_features, obj_target_labels,
+                                distance=args['test.distance'])
+                            mo_ncc_df = mo_ncc_df.append({
+                                'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
+                                'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
+                            mo_ncc_df = mo_ncc_df.append({
+                                'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
+                                'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
+
+                        '''inner update using context set'''
+                        context_features = film_url.embed(context_images, selection=selection)
+                        loss, stats_dict, _ = prototype_loss(
+                            context_features, context_labels, context_features, context_labels,
                             distance=args['test.distance'])
-                        mo_ncc_dict['acc'][mo_train_idx][task_idx][inner_idx].append(stats_dict['acc'])
-                        mo_ncc_dict['loss'][mo_train_idx][task_idx][inner_idx].append(stats_dict['loss'])
 
-                    '''inner update using context set'''
-                    context_features = film_url.embed(context_images, selection=selection)
-                    loss, stats_dict, _ = prototype_loss(
-                        context_features, context_labels, context_features, context_labels,
-                        distance=args['test.distance'])
+                        optimizer_film_url.zero_grad()
+                        loss.backward()
+                        optimizer_film_url.step()
 
-                    optimizer_film_url.zero_grad()
-                    loss.backward()
-                    optimizer_film_url.step()
+                        train_df = train_df.append({
+                            'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
+                            'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
+                        train_df = train_df.append({
+                            'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
+                            'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
-                    train_dict['acc']['inner'][task_idx][-1].append(stats_dict['acc'])
-                    train_dict['loss']['inner'][task_idx][-1].append(stats_dict['loss'])
+        '''write mo image'''
+        debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, prefix='acc')
+        debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, prefix='loss')
 
-                    '''write inner loss/acc for 4 tasks averaging over multiple mo sampling'''
-                    debugger.write_scale(stats_dict['acc'], f'inner_acc/taskid{task_idx}',
-                                         i=inner_writer_idx, writer=writer)
-                    debugger.write_scale(stats_dict['loss'], f'inner_loss/taskid{task_idx}',
-                                         i=inner_writer_idx, writer=writer)
-                    inner_writer_idx += 1
-
-            '''write mo image'''
-            debugger.write_mo(mo_ncc_dict['acc'][mo_train_idx], pop_labels, i=mo_train_idx, writer=writer, prefix='acc')
-            debugger.write_mo(mo_ncc_dict['loss'][mo_train_idx], pop_labels, i=mo_train_idx, writer=writer, prefix='loss')
+        '''write inner loss/acc for 4 tasks averaging over multiple mo sampling'''
+        for inner_idx in range(len(set(train_df.Idx))):
+            for task_idx in range(len(set(train_df.Task_id))):
+                t_df = train_df[(train_df.Task_id == task_idx) & (train_df.Idx == inner_idx) &
+                                (train_df.Tag == 'inner')]
+                debugger.write_scale(t_df[t_df.Type == 'acc'].Value.mean(), f'inner_acc/taskid{task_idx}',
+                                     i=inner_idx, writer=writer)
+                debugger.write_scale(t_df[t_df.Type == 'loss'].Value.mean(), f'inner_loss/taskid{task_idx}',
+                                     i=inner_idx, writer=writer)
 
 
 if __name__ == '__main__':

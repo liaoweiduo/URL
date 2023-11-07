@@ -128,29 +128,42 @@ class Debugger:
         """
         draw mo graph for different inner step.
         Args:
-            mo_dict: {pop_idx: {inner_idx: [n_obj]}}
+            mo_dict: {pop_idx: {inner_idx: [n_obj]}} or
+                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value']
             i:
             writer:
-            prefix:
+            prefix: also for mo_dict's Type selector.
 
         Returns:
 
         """
         if not self.activate:
             return
+        if type(mo_dict) is dict:
+            n_pop, n_inner, n_obj = len(mo_dict), len(mo_dict[0]), len(mo_dict[0][0])
+            objs = np.array([
+                [[mo_dict[pop_idx][inner_idx][obj_idx] for pop_idx in range(n_pop)]
+                 for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+            ])  # [n_inner, n_obj, n_pop]
 
-        n_pop = len(mo_dict)
-        n_inner = len(mo_dict[0])
-        n_obj = len(mo_dict[0][0])
+            '''log objs figure'''
+            figure = draw_objs(objs, pop_labels)
+            writer.add_figure(f"train_image/objs_{prefix}", figure, i + 1)
+        else:
+            for inner_lr in set(mo_dict.Inner_lr):
+                t_df = mo_dict[(mo_dict.Type == prefix) & (mo_dict.Inner_lr == inner_lr)]
+                n_pop = len(set(t_df.Pop_id))
+                n_inner = len(set(t_df.Inner_id))
+                n_obj = len(set(t_df.Obj_id))
+                objs = np.array([[[
+                    t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
+                    for pop_idx in range(n_pop)]for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+                ])  # [n_inner, n_obj, n_pop]
+                objs = np.nan_to_num(objs)
 
-        '''log objs figure'''
-        objs = np.array([
-            [[mo_dict[pop_idx][inner_idx][obj_idx] for pop_idx in range(n_pop)]
-             for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-        ])  # [n_inner, n_obj, n_pop]
-        figure = draw_objs(objs, pop_labels)
-        writer.add_figure(f"train_image/objs_{prefix}", figure, i + 1)
-
+                '''log objs figure'''
+                figure = draw_objs(objs, pop_labels)
+                writer.add_figure(f"train_image/inner_lr_{inner_lr}/objs_{prefix}", figure, i + 1)
 
     # def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
     #
