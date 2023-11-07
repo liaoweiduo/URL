@@ -204,7 +204,7 @@ def train():
 
                 # debugger.write_task(pool, task, task_label, i=0, writer=writer)
 
-                for inner_lr in [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3]:
+                for inner_lr in [10, 30, 50, 100]:
                     '''new a url with one film for inner update'''
                     args_num_clusters1 = copy.deepcopy(args)
                     args_num_clusters1['model.num_clusters'] = 1
