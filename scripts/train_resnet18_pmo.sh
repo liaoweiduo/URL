@@ -1,8 +1,8 @@
 ################### Train Multiple Models with pmo ###################
 ulimit -n 50000
 export META_DATASET_ROOT=../meta-dataset
-#export RECORDS=../datasets/tfrecords
 export RECORDS="D://OneDrive - City University of Hong Kong - Student/datasets/tfrecords"
+#export RECORDS=../datasets/tfrecords
 
 NAME="pmo"
 OUTNAME="pmo-debug"

@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from pymoo.util.ref_dirs import get_reference_directions
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -400,7 +401,7 @@ class Pool(nn.Module):
             if class_mapping[domain_name][str(label.item())][2] == cluster_name:
                 re_label = class_mapping[domain_name][str(label.item())][1]
                 label_str = class_mapping[domain_name][str(label.item())][0]
-                str_label = loader.label_to_str((label.item(), _), domain=0)[0]
+                str_label = loader.label_to_str((label.item(), None), domain=0)[0]
                 assert label_str == str_label
 
                 image_dict = {
@@ -1260,16 +1261,34 @@ def cal_hv(objs, ref=2, target='loss'):
 def draw_objs(objs, labels):
     """
     return a figure of objs.
-    objs: numpy with shape [obj_size, pop_size]
+    objs: numpy with shape [obj_size, pop_size] or [n_iter, obj_size, pop_size] with gradient color
     labels: list of labels: ['p0', 'p1', 'm0', 'm1']
     """
-    obj_size, pop_size = objs.shape
+    n_iter = 1
+    if len(objs.shape) == 2:
+        obj_size, pop_size = objs.shape
+        objs = objs[np.newaxis, :, :]
+    else:
+        n_iter, obj_size, pop_size = objs.shape
+
+    assert obj_size == 2
+
+    '''generate pandas DataFrame for objs'''
+    data = pd.DataFrame({       # for all points
+        'f1': [objs[i_idx, 0, pop_idx] for i_idx in range(n_iter) for pop_idx in range(pop_size)],
+        'f2': [objs[i_idx, 1, pop_idx] for i_idx in range(n_iter) for pop_idx in range(pop_size)],
+        'Iter': [i_idx for i_idx in range(n_iter) for pop_idx in range(pop_size)],
+        'Label': [labels[pop_idx] for i_idx in range(n_iter) for pop_idx in range(pop_size)],
+    })
+
     fig, ax = plt.subplots()
     ax.grid(True)
-    c = plt.get_cmap('rainbow', pop_size)
-    for pop_idx in range(pop_size):
-        ax.scatter(objs[0, pop_idx], objs[1, pop_idx], s=200, color=c(pop_idx), label=labels[pop_idx])
-    ax.legend()
+    # c = plt.get_cmap('rainbow', pop_size)
+
+    sns.scatterplot(data, x='f1', y='f2',
+                    hue='Label', size='Iter', sizes=(20, 100), alpha=0.7, ax=ax)
+
+    # ax.legend()
     return fig
 
 

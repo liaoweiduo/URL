@@ -1,0 +1,62 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="train_net_pmo_investigation" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+    <module name="URL" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="PARENT_ENVS" value="true" />
+    <envs>
+      <env name="META_DATASET_ROOT" value="../meta-dataset" />
+      <env name="RECORDS" value="&quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/tfrecords&quot;" />
+      <env name="PYTHONUNBUFFERED" value="1" />
+    </envs>
+    <option name="SDK_HOME" value="" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="IS_MODULE_SDK" value="true" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <EXTENSION ID="DockerContainerSettingsRunConfigurationExtension">
+      <option name="envVars">
+        <list />
+      </option>
+      <option name="extraHosts">
+        <list />
+      </option>
+      <option name="links">
+        <list />
+      </option>
+      <option name="networkDisabled" value="false" />
+      <option name="networkMode" value="bridge" />
+      <option name="portBindings">
+        <list />
+      </option>
+      <option name="publishAllPorts" value="false" />
+      <option name="runCliOptions" value="--entrypoint= --rm" />
+      <option name="version" value="2" />
+      <option name="volumeBindings">
+        <list>
+          <DockerVolumeBindingImpl>
+            <option name="containerPath" value="/opt/project" />
+            <option name="editable" value="true" />
+            <option name="hostPath" value="$PROJECT_DIR$" />
+            <option name="readOnly" value="false" />
+          </DockerVolumeBindingImpl>
+        </list>
+      </option>
+    </EXTENSION>
+    <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+    <PathMappingSettings>
+      <option name="pathMappings">
+        <list>
+          <mapping local-root="$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/tfrecords" remote-root="/liaoweiduo/datasets/tfrecords" />
+        </list>
+      </option>
+    </PathMappingSettings>
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/train_net_pmo_investigation.py" />
+    <option name="PARAMETERS" value="--tag pmo-invest-local0 --model.name pmo --model.dir &quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/experiments/URL-experiments/saved_results/pmo-invest-local0&quot; --model.num_clusters 10 --model.backbone resnet18_moe --model.pretrained --source &quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/experiments/URL-experiments/saved_results/url&quot; --source_moe &quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/experiments/URL-experiments/saved_results/url&quot; --data.train ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower --data.val ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower --data.test ilsvrc_2012 omniglot aircraft cu_birds dtd quickdraw fungi vgg_flower traffic_sign mscoco mnist cifar10 cifar100 --train.type standard --train.freeze_backbone --train.loss_type task+kd+ce+pure+hv --train.optimizer adam --train.learning_rate 5e-06 --train.weight_decay 1e-07 --train.selector_learning_rate 5e-06 --train.max_iter 1000 --train.summary_freq 100 --train.pool_freq 10 --train.mo_freq 10 --train.n_mo 10 --train.hv_coefficient 0 --train.cosine_anneal_freq 200 --train.eval_freq 200 --train.eval_size 50 --train.n_obj 2 --train.n_mix 2 --train.cond_mode film_opt --train.best_criteria hv --train.cluster_center_mode mov_avg --train.kd_coefficient 1 --train.kd_type kernelcka --train.kd_T_extent 2 --train.pure_coefficient 0 --cluster.logit_scale 0.5 --train.ce_coefficient 1 --train.cluster_loss_type ce" />
+    <option name="SHOW_COMMAND_LINE" value="false" />
+    <option name="EMULATE_TERMINAL" value="false" />
+    <option name="MODULE_MODE" value="false" />
+    <option name="REDIRECT_INPUT" value="false" />
+    <option name="INPUT_FILE" value="" />
+    <method v="2" />
+  </configuration>
+</component>
