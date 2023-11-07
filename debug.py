@@ -144,8 +144,8 @@ class Debugger:
 
         '''log objs figure'''
         objs = np.array([
-            mo_dict[pop_idx][inner_idx][obj_idx]
-            for inner_idx in range(n_inner) for obj_idx in range(n_obj) for pop_idx in range(n_pop)
+            [[mo_dict[pop_idx][inner_idx][obj_idx] for pop_idx in range(n_pop)]
+             for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
         ])  # [n_inner, n_obj, n_pop]
         figure = draw_objs(objs, pop_labels)
         writer.add_figure(f"train_image/objs_{prefix}", figure, i + 1)
