@@ -80,7 +80,7 @@ parser.add_argument('--train.best_criteria', type=str, default='hv', metavar='BE
 # pmo training
 parser.add_argument('--train.selector_learning_rate', type=float, default=0.03, metavar='LR',
                     help='learning rate (default: 0.0001)')
-parser.add_argument('--train.inner_learning_rate', type=float, default=1e-5, metavar='LR',
+parser.add_argument('--train.inner_learning_rate', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.0001) if necessary')
 parser.add_argument('--train.freeze_backbone', action='store_true', help="Freeze resnet18 backbone when using MOE")
 parser.add_argument('--train.cluster_center_mode', type=str, default='prototypes', metavar='CLUSTER_CENTER_MODE',
@@ -108,9 +108,9 @@ parser.add_argument('--train.mo_freq', type=int, default=2000, metavar='MO_FREQ'
                          'Usually equals to train.summary_freq, that do mo train at the last iter before summary.')
 parser.add_argument('--train.recon_weight', type=float, default=0.001, metavar='WEIGHT',
                     help='coeffient for reconstruction loss.')
-parser.add_argument('--train.kd_type', type=str, default='kl', metavar='KD_TYPE',
+parser.add_argument('--train.kd_type', type=str, default='kernelcka', metavar='KD_TYPE',
                     help='choice: kl, kernelcka, film_param_l2')
-parser.add_argument('--train.kd_T_extent', type=float, default=1, metavar='KD_T_EXTENT',
+parser.add_argument('--train.kd_T_extent', type=float, default=2, metavar='KD_T_EXTENT',
                     help='max{kd_coefficient*(1-t/(cosine_anneal_freq*kd_T_extent)), 0}.')
 parser.add_argument('--train.kd_coefficient', type=float, default=1, metavar='KD_COEFFICIENT',
                     help='coeffient for distillation loss.')

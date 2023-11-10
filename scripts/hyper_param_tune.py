@@ -224,9 +224,9 @@ params = []
 exp: try 1 iter = 1 tasks 
 """
 target = 'train_net_pmo_investigation.py'
-num_runs_1sh = 1        # num of runs in 1 sh file
+num_runs_1sh = 6        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-inv-tryadadelta1',
+    'tag': 'pmo-inner0_01-1-tune',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
@@ -235,25 +235,19 @@ common_args.update({
     'train.cluster_center_mode': 'mov_avg',
 })
 param_grid = {
-    # 'train.learning_rate': [5e-6, 1e-5],
-    # 'train.sim_gumbel': [False, True],
-    # 'train.loss_type': ['task+kd+ce+pure+hv'],      # +pure+hv
-    # 'cluster.logit_scale': [0.5],
-    # 'train.cluster_loss_type': ['ce'],      # 'ce', 'kl'
-    # 'train.ce_coefficient': [1],
-    # 'train.kd_type': ['kernelcka'],     # kernelcka, kl, film_param_l2
-    # 'train.kd_T_extent': [2],
-    # 'train.kd_coefficient': [1],
+    'train.learning_rate': [5e-6, 1e-5],
+    'train.sim_gumbel': [False, True],
+    'train.loss_type': ['task+kd+ce+hv'],      # +pure+hv
     # 'train.pure_coefficient': [0, 0.5, 1],
-    # 'train.hv_coefficient': [0, 0.5, 1],
+    'train.hv_coefficient': [0, 0.5, 1],
 }
-exp_name_template = common_args['tag'] # + \
-                    # '-lr{train.learning_rate}' + \
-                    # '-gumbel{train.sim_gumbel}' + \
+exp_name_template = common_args['tag'] + \
+                    '-lr{train.learning_rate}' + \
+                    '-gumbel{train.sim_gumbel}' + \
+                    '-hvc{train.hv_coefficient}' # + \
                     # '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \
                     # '-kd{train.kd_type}{train.kd_coefficient}' + \
                     # '-pc{train.pure_coefficient}' + \
-                    # '-hvc{train.hv_coefficient}' # + \
                     # '-lt{train.loss_type}' + \
                     # '-ls{cluster.logit_scale}' # + \
                     # '-kdt{train.kd_T_extent}' + \

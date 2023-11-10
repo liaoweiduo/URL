@@ -9,6 +9,8 @@ import os
 import sys
 import pickle
 import copy
+from collections import OrderedDict
+
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -494,7 +496,11 @@ def train():
                             pure_loss = pure_loss / len(num_imgs_clusters)
                             '''step coefficient from 0 to pure_coefficient (default: 1.0)'''
                             pure_loss = pure_loss * (args['train.pure_coefficient'] * min(i * 5, max_iter) / max_iter)
+
+                            zero_grad()
                             pure_loss.backward()
+                            optimizer.step()
+                            optimizer_selector.step()
 
                             '''log pure loss'''
                             epoch_loss[f'pure/C{cluster_idx}'].append(stats_dict['loss'])
@@ -584,6 +590,28 @@ def train():
                             sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
                             epoch_loss[f'mo/image_softmax_sim'][task_idx] = sim
 
+                            '''do inner loop on task's sup set itself for pmo's film then cal 2 objs'''
+                            pmo_clone = pmo.clone()
+                            inner_step = 1
+                            inner_lr = args['train.inner_learning_rate']
+                            pmo_clone_opt = torch.optim.Adam(pmo_clone.get_trainable_film_parameters(),
+                                                             lr=inner_lr, weight_decay=inner_lr / 50)
+                            for inner_idx in range(inner_step):
+                                # perform update of model weights
+                                inner_context_features = pmo_clone.embed(task['context_images'], selection=selection)
+                                inner_context_labels = task['context_labels']
+                                loss, stats_dict, _ = prototype_loss(
+                                    inner_context_features, inner_context_labels,
+                                    inner_context_features, inner_context_labels,
+                                    distance=args['test.distance'])
+                                # gradients = torch.autograd.grad(loss, pmo_clone.get_trainable_film_parameters(),
+                                #                                 create_graph=False)     # FOMAML
+
+                                # update weights manually
+                                pmo_clone_opt.zero_grad()
+                                loss.backward(retain_graph=True)
+                                pmo_clone_opt.step()
+
                             '''forward 2 pure tasks as 2 objs'''
                             losses = []  # [2,]
                             for obj_idx in range(len(selected_cluster_idxs)):
@@ -592,12 +620,12 @@ def train():
                                 context_labels = torch_tasks[obj_idx]['context_labels']
                                 target_labels = torch_tasks[obj_idx]['target_labels']
                                 if 'hv' in args['train.loss_type']:
-                                    context_features = pmo.embed(context_images, selection=selection)
-                                    target_features = pmo.embed(target_images, selection=selection)
+                                    context_features = pmo_clone.embed(context_images, selection=selection)
+                                    target_features = pmo_clone.embed(target_images, selection=selection)
                                 else:
                                     with torch.no_grad():
-                                        context_features = pmo.embed(context_images, selection=selection)
-                                        target_features = pmo.embed(target_images, selection=selection)
+                                        context_features = pmo_clone.embed(context_images, selection=selection)
+                                        target_features = pmo_clone.embed(target_images, selection=selection)
 
                                 loss, stats_dict, _ = prototype_loss(
                                     context_features, context_labels, target_features, target_labels,
@@ -627,6 +655,7 @@ def train():
                             '''since no torch is saved in the pool, do not need to retain_graph'''
                             # retain_graph = True if mo_train_idx < args['train.n_mo'] - 1 else False
                             # hv_loss.backward(retain_graph=retain_graph)
+                            zero_grad()
                             hv_loss.backward()
 
                             optimizer.step()
@@ -901,7 +930,7 @@ def train():
             '''Eval Phase'''
             '''----------'''
             # Evaluation inside the training loop
-            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:          # eval at init
+            if (i + 1) % args['train.eval_freq'] == 0:   #  or i == 0:          # eval at init
                 print(f"\n>> Iter: {i + 1}, evaluation:")
                 # eval mode
                 model_eval()
