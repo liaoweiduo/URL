@@ -223,7 +223,8 @@ params = []
 """
 exp: try 1 iter = 1 tasks 
 """
-target = 'train_net_pmo_investigation.py'
+target = 'train_net_pmo.py'
+# target = 'train_net_pmo_investigation.py'
 num_runs_1sh = 6        # num of runs in 1 sh file
 common_args.update({
     'tag': 'pmo-inner0_01-1-tune',
