@@ -591,7 +591,7 @@ def train():
                             epoch_loss[f'mo/image_softmax_sim'][task_idx] = sim
 
                             '''do inner loop on task's sup set itself for pmo's film then cal 2 objs'''
-                            pmo_clone = pmo.clone()
+                            pmo_clone = copy.deepcopy(pmo)
                             inner_step = 1
                             inner_lr = args['train.inner_learning_rate']
                             pmo_clone_opt = torch.optim.Adam(pmo_clone.get_trainable_film_parameters(),
