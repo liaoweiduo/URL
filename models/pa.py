@@ -27,7 +27,8 @@ def apply_selection(features, vartheta):
     return features
 
 
-def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, distance='cos'):
+def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, distance='cos',
+       vartheta_init=None, return_iterator=False):
     """
     PA method: learning a linear transformation per task to adapt the features to a discriminative space 
     on the support set during meta-testing
@@ -35,11 +36,15 @@ def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, d
     input_dim = context_features.size(1)
     output_dim = input_dim
     stdv = 1. / math.sqrt(input_dim)
-    vartheta = []
-    if ad_opt == 'linear':
-        vartheta.append(torch.eye(output_dim, input_dim).unsqueeze(-1).unsqueeze(-1).to(device).requires_grad_(True))
+    if vartheta_init is None:
+        vartheta = []
+        if ad_opt == 'linear':
+            vartheta.append(torch.eye(output_dim, input_dim).unsqueeze(-1).unsqueeze(-1).to(device).requires_grad_(True))
+        optimizer = torch.optim.Adadelta(vartheta, lr=lr)
+    else:
+        vartheta = vartheta_init[0]
+        optimizer = vartheta_init[1]
 
-    optimizer = torch.optim.Adadelta(vartheta, lr=lr) 
     for i in range(max_iter):
         optimizer.zero_grad()
         selected_features = apply_selection(context_features, vartheta)
@@ -48,4 +53,8 @@ def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, d
 
         loss.backward()
         optimizer.step()
-    return vartheta
+        if return_iterator:
+            yield vartheta
+
+    if not return_iterator:
+        return vartheta

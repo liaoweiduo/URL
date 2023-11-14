@@ -8,7 +8,7 @@ import torch.nn as nn
 from typing import List, Dict, Any, Optional
 from torch.utils.tensorboard import SummaryWriter
 
-from pmo_utils import Pool, draw_heatmap, draw_objs
+from pmo_utils import Pool, draw_heatmap, draw_objs, cal_hv
 
 
 class Debugger:
@@ -123,6 +123,37 @@ class Debugger:
             return
 
         writer.add_scalar(key, value, i + 1)
+
+    def write_hv(self, mo_dict, ref=0, writer: Optional[SummaryWriter] = None, prefix='acc'):
+        """
+
+        Args:
+            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value']
+            ref: ref for cal hv
+            writer:
+            prefix: also for mo_dict's Type selector.
+
+        Returns:
+
+        """
+        if not self.activate:
+            return
+
+        for inner_lr in set(mo_dict.Inner_lr):
+            t_df = mo_dict[(mo_dict.Type == prefix) & (mo_dict.Inner_lr == inner_lr)]
+            n_pop = len(set(t_df.Pop_id))
+            n_inner = len(set(t_df.Inner_id))
+            n_obj = len(set(t_df.Obj_id))
+            objs = np.array([[[
+                t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
+                for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+            ])  # [n_inner, n_obj, n_pop]
+            objs = np.nan_to_num(objs)
+
+            '''cal hv for each inner mo'''
+            for inner_step in range(n_inner):
+                hv = cal_hv(objs[inner_step], ref, target=prefix)
+                writer.add_scalar(f'inner_hv/{prefix}', hv, inner_step + 1)
 
     def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, prefix='acc'):
         """
