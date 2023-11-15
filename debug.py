@@ -128,7 +128,7 @@ class Debugger:
         """
 
         Args:
-            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value']
+            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value'] / Exp as tag
             ref: ref for cal hv
             writer:
             prefix: also for mo_dict's Type selector.
@@ -139,28 +139,30 @@ class Debugger:
         if not self.activate:
             return
 
-        for inner_lr in set(mo_dict.Inner_lr):
-            t_df = mo_dict[(mo_dict.Type == prefix) & (mo_dict.Inner_lr == inner_lr)]
-            n_pop = len(set(t_df.Pop_id))
-            n_inner = len(set(t_df.Inner_id))
-            n_obj = len(set(t_df.Obj_id))
-            objs = np.array([[[
-                t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
-                for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-            ])  # [n_inner, n_obj, n_pop]
-            objs = np.nan_to_num(objs)
+        for exp in set(mo_dict.Exp):
+            for inner_lr in set(mo_dict.Inner_lr):
+                t_df = mo_dict[(mo_dict.Type == prefix) &
+                               (mo_dict.Inner_lr == inner_lr) & (mo_dict.Exp == exp)]
+                n_pop = len(set(t_df.Pop_id))
+                n_inner = len(set(t_df.Inner_id))
+                n_obj = len(set(t_df.Obj_id))
+                objs = np.array([[[
+                    t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
+                    for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+                ])  # [n_inner, n_obj, n_pop]
+                objs = np.nan_to_num(objs)
 
-            '''cal hv for each inner mo'''
-            for inner_step in range(n_inner):
-                hv = cal_hv(objs[inner_step], ref, target=prefix)
-                writer.add_scalar(f'inner_hv/inner_lr_{inner_lr}/{prefix}', hv, inner_step + 1)
+                '''cal hv for each inner mo'''
+                for inner_step in range(n_inner):
+                    hv = cal_hv(objs[inner_step], ref, target=prefix)
+                    writer.add_scalar(f'inner_hv_{prefix}_{exp}/inner_lr_{inner_lr}', hv, inner_step + 1)
 
     def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, prefix='acc'):
         """
         draw mo graph for different inner step.
         Args:
             mo_dict: {pop_idx: {inner_idx: [n_obj]}} or
-                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value']
+                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value'] Exp as tag
             i:
             writer:
             prefix: also for mo_dict's Type selector.
@@ -181,20 +183,22 @@ class Debugger:
             figure = draw_objs(objs, pop_labels)
             writer.add_figure(f"train_image/objs_{prefix}", figure, i + 1)
         else:
-            for inner_lr in set(mo_dict.Inner_lr):
-                t_df = mo_dict[(mo_dict.Type == prefix) & (mo_dict.Inner_lr == inner_lr)]
-                n_pop = len(set(t_df.Pop_id))
-                n_inner = len(set(t_df.Inner_id))
-                n_obj = len(set(t_df.Obj_id))
-                objs = np.array([[[
-                    t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
-                    for pop_idx in range(n_pop)]for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-                ])  # [n_inner, n_obj, n_pop]
-                objs = np.nan_to_num(objs)
+            for exp in set(mo_dict.Exp):
+                for inner_lr in set(mo_dict.Inner_lr):
+                    t_df = mo_dict[(mo_dict.Type == prefix) &
+                                   (mo_dict.Exp == exp) & (mo_dict.Inner_lr == inner_lr)]
+                    n_pop = len(set(t_df.Pop_id))
+                    n_inner = len(set(t_df.Inner_id))
+                    n_obj = len(set(t_df.Obj_id))
+                    objs = np.array([[[
+                        t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
+                        for pop_idx in range(n_pop)]for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+                    ])  # [n_inner, n_obj, n_pop]
+                    objs = np.nan_to_num(objs)
 
-                '''log objs figure'''
-                figure = draw_objs(objs, pop_labels)
-                writer.add_figure(f"objs_{prefix}/inner_lr_{inner_lr}", figure, i + 1)
+                    '''log objs figure'''
+                    figure = draw_objs(objs, pop_labels)
+                    writer.add_figure(f"objs_{prefix}_{exp}/inner_lr_{inner_lr}", figure, i + 1)
 
     # def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
     #
