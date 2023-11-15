@@ -203,7 +203,7 @@ def train():
                 model = url
                 with torch.no_grad():
                     context_features = model.embed(task['context_images'])
-                    # target_features = model.embed(task['target_images'])
+                    context_labels = model.embed(task['context_labels'])
 
                 for inner_lr in [0.01, 0.05, 0.1, 0.5, 1, 5, 10]:
                     '''new a url with one film for inner update'''
@@ -222,7 +222,8 @@ def train():
                         # '''record at certain iter'''
                         # if
                         '''inner acc/loss'''
-                        selected_context = apply_selection(context_features, selection_params)
+                        with torch.no_grad():
+                            selected_context = apply_selection(context_features, selection_params)
                         _, stats_dict, _ = prototype_loss(
                             selected_context, context_labels,
                             selected_context, context_labels, distance=args['test.distance'])
