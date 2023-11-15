@@ -153,7 +153,7 @@ class Debugger:
             '''cal hv for each inner mo'''
             for inner_step in range(n_inner):
                 hv = cal_hv(objs[inner_step], ref, target=prefix)
-                writer.add_scalar(f'inner_hv/{prefix}', hv, inner_step + 1)
+                writer.add_scalar(f'inner_hv/inner_lr_{inner_lr}/{prefix}', hv, inner_step + 1)
 
     def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, prefix='acc'):
         """
@@ -194,7 +194,7 @@ class Debugger:
 
                 '''log objs figure'''
                 figure = draw_objs(objs, pop_labels)
-                writer.add_figure(f"train_image/inner_lr_{inner_lr}/objs_{prefix}", figure, i + 1)
+                writer.add_figure(f"objs_{prefix}/inner_lr_{inner_lr}", figure, i + 1)
 
     # def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
     #

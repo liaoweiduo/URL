@@ -202,8 +202,8 @@ def train():
                 '''use url with pa'''
                 model = url
                 with torch.no_grad():
-                    context_features = model.embed(sample['context_images'])
-                    # target_features = model.embed(sample['target_images'])
+                    context_features = model.embed(task['context_images'])
+                    # target_features = model.embed(task['target_images'])
 
                 for inner_lr in [0.01, 0.05, 0.1, 0.5, 1, 5, 10]:
                     '''new a url with one film for inner update'''
@@ -304,7 +304,7 @@ def train():
         debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, prefix='loss')
         '''write hv acc/loss'''
         debugger.write_hv(mo_ncc_df, ref=0, writer=writer, prefix='acc')
-        debugger.write_hv(mo_ncc_df, ref=args['train.ref'], writer=writer, prefix='acc')
+        debugger.write_hv(mo_ncc_df, ref=args['train.ref'], writer=writer, prefix='loss')
 
         '''write inner loss/acc for 4 tasks averaging over multiple mo sampling'''
         for inner_idx in range(len(set(train_df.Idx))):

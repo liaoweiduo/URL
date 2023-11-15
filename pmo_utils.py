@@ -1288,7 +1288,7 @@ def draw_objs(objs, labels):
     sns.scatterplot(data, x='f1', y='f2',
                     hue='Label', size='Iter', sizes=(20, 100), alpha=1., ax=ax)
 
-    ax.legend(loc=2, bbox_to_anchor=(1.05, 0.1), ncol=1)
+    ax.legend(loc='lower left', bbox_to_anchor=(1.05, 0.1), ncol=1)
     return fig
 
 

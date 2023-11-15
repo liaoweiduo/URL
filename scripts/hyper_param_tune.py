@@ -227,7 +227,7 @@ exp: try 1 iter = 1 tasks
 target = 'train_net_pmo_investigation.py'
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-pa-inner-0',
+    'tag': 'pmo-pa-inner-1',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,

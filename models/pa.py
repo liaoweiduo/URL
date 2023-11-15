@@ -45,6 +45,9 @@ def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, d
         vartheta = vartheta_init[0]
         optimizer = vartheta_init[1]
 
+    if return_iterator:
+        yield vartheta
+
     for i in range(max_iter):
         optimizer.zero_grad()
         selected_features = apply_selection(context_features, vartheta)
