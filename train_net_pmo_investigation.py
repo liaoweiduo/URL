@@ -109,7 +109,7 @@ def train():
             optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
                                                   lr=args['train.selector_learning_rate'],
                                                   weight_decay=args['train.selector_learning_rate'] / 50)
-            checkpointer = CheckPointer(args, pmo, optimizer=optimizer, save_all=True)
+            checkpointer = CheckPointer(args_temp, pmo, optimizer=optimizer, save_all=True)
             checkpointer.restore_model(ckpt='best', strict=True)       # load selector
 
             # model_train(model)
