@@ -97,6 +97,10 @@ def train():
         url = get_model(None, args, base_network_name='url', freeze_fe=True)
         # pmo model load from url
         pmo = get_model_moe(None, args, base_network_name='url')    # resnet18_moe
+        optimizer = get_optimizer(pmo, args, params=pmo.get_trainable_film_parameters())
+        optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
+                                              lr=args['train.selector_learning_rate'],
+                                              weight_decay=args['train.selector_learning_rate'] / 50)
 
         '''load many exps to check their clustering's hv'''
         for exp in ['pmo-inner0_01-1-tune-lr5e-06-gumbelTrue-hvc1',
@@ -105,12 +109,8 @@ def train():
             args_temp = copy.deepcopy(args)
             args_temp['model.dir'] = '../URL-experiments/saved_results/' + exp
 
-            optimizer = get_optimizer(pmo, args_temp, params=pmo.get_trainable_film_parameters())
-            optimizer_selector = torch.optim.Adam(pmo.get_trainable_selector_parameters(True),
-                                                  lr=args['train.selector_learning_rate'],
-                                                  weight_decay=args['train.selector_learning_rate'] / 50)
             checkpointer = CheckPointer(args_temp, pmo, optimizer=optimizer, save_all=True)
-            checkpointer.restore_model(ckpt='best', strict=True)       # load selector
+            checkpointer.restore_model(ckpt='best', strict=False)       # load selector
 
             # model_train(model)
             model_eval(pmo)
