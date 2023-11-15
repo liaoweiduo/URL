@@ -203,7 +203,7 @@ def train():
                 model = url
                 with torch.no_grad():
                     context_features = model.embed(task['context_images'])
-                    context_labels = model.embed(task['context_labels'])
+                    context_labels = task['context_labels']
 
                 for inner_lr in [0.01, 0.05, 0.1, 0.5, 1, 5, 10]:
                     '''new a url with one film for inner update'''
