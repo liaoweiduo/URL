@@ -149,7 +149,7 @@ def train():
             pool.buffer2cluster()
             pool.clear_buffer()
 
-            debugger.write_pool(pool, i=0, writer=writer)
+            debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_{exp}')
 
             '''multiple mo sampling'''
             pop_labels = [

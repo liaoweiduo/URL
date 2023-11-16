@@ -234,6 +234,7 @@ common_args.update({
     'train.cond_mode': 'film_opt',      # film_opt, film_random
     'train.best_criteria': 'hv',    # domain; cluster; hv
     'train.cluster_center_mode': 'mov_avg',
+    'model.num_clusters': 8,
 })
 param_grid = {
     # 'train.learning_rate': [5e-6, 1e-5],
