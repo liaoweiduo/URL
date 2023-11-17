@@ -305,7 +305,8 @@ def train():
                             domain = v_indx
 
                             features = pmo.embed(torch.cat([context_images, target_images]))
-                            labels = [domain] * features.size(0).long().to(device)
+                            labels = torch.from_numpy(np.array([domain] * features.size(0))
+                                                      ).long().to(device)
 
                             _, selection_info = pmo.selector(features, gumbel=False, hard=False, average=False)
                             _, stats_dict, _ = cross_entropy_loss(selection_info['dist'], labels)
