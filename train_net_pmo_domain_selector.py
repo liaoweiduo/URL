@@ -208,9 +208,9 @@ def train():
             preds = log_p_y.argmax(1)
             labels = cluster_labels.type(torch.long)
             loss = F.nll_loss(log_p_y, labels, reduction='mean')
-            acc = torch.eq(preds, labels).float().mean()
-            stats_dict = {'loss': loss.item(), 'acc': acc.item()}
-            pred_dict = {'preds': preds.cpu().numpy(), 'labels': labels.cpu().numpy()}
+            # acc = torch.eq(preds, labels).float().mean()
+            # stats_dict = {'loss': loss.item(), 'acc': acc.item()}
+            # pred_dict = {'preds': preds.cpu().numpy(), 'labels': labels.cpu().numpy()}
 
             selection_ce_loss = loss
             '''log ce loss'''
@@ -232,7 +232,7 @@ def train():
                 for c_indx in range(args['model.num_clusters']):
                     center = torch.mean(selection_info['embeddings'][cluster_labels == c_indx], dim=0)     # [64]
                     centers.append(center)
-                centers = torch.stack(centers)
+                centers = torch.stack(centers).detach()
 
                 pmo.selector.update_prototypes(centers)
 

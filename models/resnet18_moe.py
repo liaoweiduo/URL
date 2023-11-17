@@ -382,8 +382,9 @@ class Selector(nn.Module):
 
     def update_prototypes(self, current_centers):
         assert (self.mode == 'mov_avg'), f"call update_prototypes but the mode is {self.mode}."
-        c = current_centers.view(self.prototype_shape)
-        self.prototypes = (1 - self.mov_avg_alpha) * self.prototypes + self.mov_avg_alpha * c
+        with torch.no_grad():
+            c = current_centers.view(self.prototype_shape)
+            self.prototypes = (1 - self.mov_avg_alpha) * self.prototypes + self.mov_avg_alpha * c
 
     def forward(self, inputs, gumbel=True, hard=True, average=True):
         """
