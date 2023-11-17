@@ -103,22 +103,24 @@ def train():
                                               weight_decay=args['train.selector_learning_rate'] / 50)
 
         '''load many exps to check their clustering's hv'''
-        for exp in ['pmo-inner0_01-1-tune-lr5e-06-gumbelTrue-hvc1',
-                    'pmo-mov_avg-tkcph-gumbelFalse-clce1-kdkernelcka1-pc1-hvc1',    # OOD 70
-                    'pmo-mov_avg-tkcph-gumbelTrue-clce1-kdkernelcka1-pc0-hvc0']:
-            args_temp = copy.deepcopy(args)
-            args_temp['model.dir'] = '../URL-experiments/saved_results/' + exp
+        exp = 'pmo-domain_selector-lr0_0001'
+        # for exp in ['pmo-inner0_01-1-tune-lr5e-06-gumbelTrue-hvc1',
+        #             'pmo-mov_avg-tkcph-gumbelFalse-clce1-kdkernelcka1-pc1-hvc1',    # OOD 70
+        #             'pmo-mov_avg-tkcph-gumbelTrue-clce1-kdkernelcka1-pc0-hvc0']:
+        args_temp = copy.deepcopy(args)
+        args_temp['model.dir'] = '../URL-experiments/saved_results/' + exp
 
-            checkpointer = CheckPointer(args_temp, pmo, optimizer=optimizer, save_all=True)
-            checkpointer.restore_model(ckpt='best', strict=False)       # load selector
+        checkpointer = CheckPointer(args_temp, pmo, optimizer=optimizer, save_all=True)
+        checkpointer.restore_model(ckpt='best', strict=False)       # load selector
 
-            # model_train(model)
-            model_eval(pmo)
-            model_eval(url)
+        # model_train(model)
+        model_eval(pmo)
+        model_eval(url)
 
-            '''--------------------------------'''
-            '''fill random pool and investigate'''
-            '''--------------------------------'''
+        for logit_scale in [-10, -5, -1, 0, 0.3, 1]:
+            print(f'logit_scale: {logit_scale}')
+            pool.clear_clusters()
+            pool.clear_buffer()
             '''obtain tasks from train_loaders and put to buffer'''
             # loading images and labels
             for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
@@ -135,7 +137,8 @@ def train():
                 with torch.no_grad():
                     task_features = pmo.embed(torch.cat([context_images, target_images]))
                     _, selection_info = pmo.selector(
-                        task_features, gumbel=False, average=False)  # [bs, n_clusters]
+                        task_features, gumbel=True, hard=True, average=False,
+                        logit_scale=logit_scale)  # [bs, n_clusters]
                     similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
 
                 not_full = pool.put_buffer(
@@ -149,7 +152,7 @@ def train():
             pool.buffer2cluster()
             pool.clear_buffer()
 
-            debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_{exp}')
+            debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_logit_scale{logit_scale}')
 
             '''multiple mo sampling'''
             pop_labels = [
@@ -158,11 +161,11 @@ def train():
             ]  # ['p0', 'p1', 'm0', 'm1']
             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
             mo_ncc_df = pd.DataFrame(columns=['Type', 'Pop_id', 'Obj_id', 'Inner_id',
-                                              'Inner_lr', 'Exp',
+                                              'Inner_lr', 'Exp', 'Logit_scale',
                                               'Value'])
             # Type: ['acc', 'loss']
             train_df = pd.DataFrame(columns=['Type', 'Tag', 'Task_id', 'Idx',
-                                             'Inner_lr', 'Exp',
+                                             'Inner_lr', 'Exp', 'Logit_scale',
                                              'Value'])
             # Tag: ['inner'], Task_id: 0,1,2,3
             for mo_train_idx in range(args['train.n_mo']):
@@ -232,11 +235,11 @@ def train():
                             selected_context, context_labels, distance=args['test.distance'])
                         train_df = train_df.append({
                             'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx,
-                            'Inner_lr': inner_lr, 'Exp': exp,
+                            'Inner_lr': inner_lr, 'Exp': exp, 'Logit_scale': logit_scale,
                             'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
                         train_df = train_df.append({
                             'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx,
-                            'Inner_lr': inner_lr, 'Exp': exp,
+                            'Inner_lr': inner_lr, 'Exp': exp, 'Logit_scale': logit_scale,
                             'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
                         '''forward with no grad for mo matrix'''
@@ -258,11 +261,11 @@ def train():
 
                             mo_ncc_df = mo_ncc_df.append({
                                 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
-                                'Inner_lr': inner_lr, 'Exp': exp,
+                                'Inner_lr': inner_lr, 'Exp': exp, 'Logit_scale': logit_scale,
                                 'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
                             mo_ncc_df = mo_ncc_df.append({
                                 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
-                                'Inner_lr': inner_lr, 'Exp': exp,
+                                'Inner_lr': inner_lr, 'Exp': exp, 'Logit_scale': logit_scale,
                                 'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
                         # for inner_idx in range(5 + 1):      # 0 is before inner loop
@@ -308,11 +311,11 @@ def train():
                         #         'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
             '''write mo image'''
-            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, prefix='acc')
-            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, prefix='loss')
+            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
+            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='loss')
             '''write hv acc/loss'''
-            debugger.write_hv(mo_ncc_df, ref=0, writer=writer, prefix='acc')
-            debugger.write_hv(mo_ncc_df, ref=args['train.ref'], writer=writer, prefix='loss')
+            debugger.write_hv(mo_ncc_df, ref=0, writer=writer, target='acc')
+            debugger.write_hv(mo_ncc_df, ref=args['train.ref'], writer=writer, target='loss')
 
             '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
             for inner_idx in range(len(set(train_df.Idx))):

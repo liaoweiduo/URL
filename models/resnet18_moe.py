@@ -386,12 +386,13 @@ class Selector(nn.Module):
             c = current_centers.view(self.prototype_shape)
             self.prototypes = (1 - self.mov_avg_alpha) * self.prototypes + self.mov_avg_alpha * c
 
-    def forward(self, inputs, gumbel=True, hard=True, average=True):
+    def forward(self, inputs, gumbel=True, hard=True, average=True, logit_scale=None):
         """
         :param inputs: [batch_size, fea_embed], [bs,512]
         :param gumbel: whether to use gumbel softmax for selection
         :param hard: whether to use hard selection.
         :param average: whether to average after encoder.
+        :param logit_scale: if used, use this instead of self.logit_scale
         :return selection: hard selection [bs, n_class] if not average, else [1, n_class]
         """
         bs = inputs.shape[0]
@@ -403,7 +404,7 @@ class Selector(nn.Module):
         embeddings = torch.tanh(embeddings)          # apply activation on embeddings
         embeddings = embeddings.view(bs, self.rep_dim, *self.prot_shape)    # [bs, 64, 1, 1]
 
-        dist = self._distance(embeddings).view(bs, self.n_class)        # [bs, n_proto]  similarity
+        dist = self._distance(embeddings, logit_scale).view(bs, self.n_class)        # [bs, n_proto]  similarity
 
         if self.metric == 'euclidean':
             dist = -dist        # dist to similarity -> warning: since no sqrt, value is very large
@@ -435,18 +436,19 @@ class Selector(nn.Module):
             'dist': dist,
         }
 
-    def _distance(self, x):
+    def _distance(self, x, logit_scale=None):
+        logit_scale = self.logit_scale if logit_scale is None else torch.ones_like(self.logit_scale) * logit_scale
         if callable(self.metric):
             dist = self.metric(x)
         elif self.metric == 'dot':      # checked,    == torch.mm(x, proto.T)
-            # dist = self.logit_scale.exp() * F.conv2d(x, weight=self.prototypes)
+            # dist = logit_scale.exp() * F.conv2d(x, weight=self.prototypes)
             dist = F.conv2d(x, weight=self.prototypes)
         elif self.metric == 'euclidean':
             dist = self._l2_convolution(x)      # checked,  == torch.sum((a-b)**2)
         elif self.metric == 'cosine':   # checked
             x = x / x.norm(dim=1, keepdim=True)
             weight = self.prototypes / self.prototypes.norm(dim=1, keepdim=True)
-            dist = self.logit_scale.exp() * F.conv2d(x, weight=weight)
+            dist = logit_scale.exp() * F.conv2d(x, weight=weight)
         else:
             raise NotImplementedError('Metric {} not implemented.'.format(self.metric))
 

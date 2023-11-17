@@ -224,11 +224,11 @@ params = []
 exp: try 1 iter = 1 tasks 
 """
 # target = 'train_net_pmo.py'
-# target = 'train_net_pmo_investigation.py'
-target = 'train_net_pmo_domain_selector.py'
+target = 'train_net_pmo_investigation.py'
+# target = 'train_net_pmo_domain_selector.py'
 num_runs_1sh = 5        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-domain_selector',
+    'tag': 'pmo-pa-inner-logit_scale-0',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
@@ -238,14 +238,14 @@ common_args.update({
     'model.num_clusters': 8,
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+    # 'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
     # 'train.sim_gumbel': [False, True],
     # 'train.loss_type': ['task+kd+ce+hv'],      # +pure+hv
     # 'train.pure_coefficient': [0, 0.5, 1],
     # 'train.hv_coefficient': [0, 0.5, 1],
 }
-exp_name_template = common_args['tag'] + \
-                    '-lr{train.learning_rate}' # + \
+exp_name_template = common_args['tag'] # + \
+                    # '-lr{train.learning_rate}' # + \
                     # '-gumbel{train.sim_gumbel}' + \
                     # '-hvc{train.hv_coefficient}' # + \
                     # '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \
