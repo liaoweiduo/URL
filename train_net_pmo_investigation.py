@@ -117,7 +117,7 @@ def train():
         model_eval(pmo)
         model_eval(url)
 
-        for logit_scale in [-10, -5, -1, 0, 0.3, 1]:
+        for logit_scale in [-1, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0]:
             print(f'logit_scale: {logit_scale}')
             pool.clear_clusters()
             pool.clear_buffer()
@@ -223,7 +223,7 @@ def train():
                     # selection = torch.ones(1, 1).to(device)
 
                     for inner_idx, selection_params in enumerate(
-                            pa(context_features, context_labels, max_iter=10, lr=inner_lr,
+                            pa(context_features, context_labels, max_iter=40, lr=inner_lr,
                                distance=args['test.distance'], return_iterator=True)):
                         # '''record at certain iter'''
                         # if
