@@ -1237,7 +1237,10 @@ def cal_hv(objs, ref=2, target='loss'):
     from pymoo.indicators.hv import HV
 
     num_obj, num_sol = objs.shape[0], objs.shape[1]
-    ref_point = np.array([ref for _ in range(num_obj)])
+    if type(ref) is not list:
+        ref_point = np.array([ref for _ in range(num_obj)])
+    else:
+        ref_point = np.array(ref)
 
     # obtain np objs
     if type(objs) is torch.Tensor:
