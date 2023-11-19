@@ -1242,6 +1242,8 @@ def cal_hv(objs, ref=2, target='loss'):
     else:
         ref_point = np.array(ref)
 
+    assert len(ref_point.shape) == 1
+
     # obtain np objs
     if type(objs) is torch.Tensor:
         objs_np = objs.detach().cpu().numpy()

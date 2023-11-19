@@ -156,7 +156,7 @@ class Debugger:
 
                     '''cal hv for each inner mo'''
                     if ref == 'relative':
-                        ref = np.mean(objs[0], axis=-1)     # [n_obj]
+                        ref = np.mean(objs[0], axis=-1).tolist()     # [n_obj]   to be list
                     for inner_step in range(n_inner):
                         hv = cal_hv(objs[inner_step], ref, target=target)
                         writer.add_scalar(f'inner_hv_{target}_{exp}_innerlr_{inner_lr}/logit_scale_{logit_scale}', hv, inner_step + 1)

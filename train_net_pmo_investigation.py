@@ -117,36 +117,64 @@ def train():
         model_eval(pmo)
         model_eval(url)
 
+        mo_ncc_df = pd.DataFrame(columns=['Type', 'Pop_id', 'Obj_id', 'Inner_id',
+                                          'Inner_lr', 'Exp', 'Logit_scale',
+                                          'Value'])
+        # Type: ['acc', 'loss']
+        train_df = pd.DataFrame(columns=['Type', 'Tag', 'Task_id', 'Idx',
+                                         'Inner_lr', 'Exp', 'Logit_scale',
+                                         'Value'])
+
+        pool.clear_clusters()
+        pool.clear_buffer()
+        '''obtain tasks from train_loaders and put to buffer'''
+        # loading images and labels
+        for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
+            sample = train_loader.get_train_task(session, d=device)
+
+            context_images, target_images = sample['context_images'], sample['target_images']
+            context_labels, target_labels = sample['context_labels'], sample['target_labels']
+            context_gt_labels, target_gt_labels = sample['context_gt'], sample['target_gt']
+
+            '''samples put to buffer'''
+            task_images = torch.cat([context_images, target_images]).cpu()
+            gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
+            domain = np.array([t_indx] * len(gt_labels))  # [domain, domain, domain,...]
+            with torch.no_grad():
+                task_features = pmo.embed(torch.cat([context_images, target_images]))
+                # _, selection_info = pmo.selector(
+                #     task_features, gumbel=True, hard=True, average=False,
+                #     logit_scale=logit_scale)  # [bs, n_clusters]
+                # similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
+            similarities = np.array([0] * len(gt_labels))  # no use
+
+            not_full = pool.put_buffer(
+                task_images, {'domain': domain, 'gt_labels': gt_labels,
+                              'similarities': similarities, 'features': task_features.cpu().numpy()},
+                maintain_size=False)
+        print(f'Buffer contains {len(pool.buffer)} classes.')
+        pool.buffer_backup = copy.deepcopy(pool.buffer)
+
         for logit_scale in [-0.25, -0.2, -0.15, -0.1, -0.05, 0]:
             print(f'logit_scale: {logit_scale}')
+            for pool_idx in range(10):      # try different gumbel randomness
+                print(f'pool construction idx: {pool_idx}')
 
-            for pool_idx in range(10):
-                pool.clear_clusters()
-                pool.clear_buffer()
-                '''obtain tasks from train_loaders and put to buffer'''
-                # loading images and labels
-                for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
-                    sample = train_loader.get_train_task(session, d=device)
+                pool.buffer = copy.deepcopy(pool.buffer_backup)
 
-                    context_images, target_images = sample['context_images'], sample['target_images']
-                    context_labels, target_labels = sample['context_labels'], sample['target_labels']
-                    context_gt_labels, target_gt_labels = sample['context_gt'], sample['target_gt']
+                '''cal similarities for specific logit_scale (gumbel)'''
+                for cls in pool.buffer:
+                    # cal sim from stored features
+                    features = torch.from_numpy(cls['features']).to(device)
+                    # images = torch.from_numpy(cls['images'])
 
-                    '''samples put to buffer'''
-                    task_images = torch.cat([context_images, target_images]).cpu()
-                    gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
-                    domain = np.array([t_indx] * len(gt_labels))        # [domain, domain, domain,...]
                     with torch.no_grad():
-                        task_features = pmo.embed(torch.cat([context_images, target_images]))
+                        # features = pmo.embed(images.to(device))
                         _, selection_info = pmo.selector(
-                            task_features, gumbel=True, hard=True, average=False,
-                            logit_scale=logit_scale)  # [bs, n_clusters]
-                        similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
+                            features, gumbel=True, average=False, logit_scale=logit_scale)  # [bs, n_clusters]
+                        similarities = selection_info['y_soft'].detach().cpu().numpy()  # [bs, n_clusters]
 
-                    not_full = pool.put_buffer(
-                        task_images, {'domain': domain, 'gt_labels': gt_labels,
-                                      'similarities': similarities, 'features': task_features.cpu().numpy()},
-                        maintain_size=False)
+                    cls['similarities'] = similarities
 
                 '''buffer -> clusters'''
                 print(f'Buffer contains {len(pool.buffer)} classes.')
@@ -162,13 +190,6 @@ def train():
                     for idx in range(args['train.n_mix'] + args['train.n_obj'])
                 ]  # ['p0', 'p1', 'm0', 'm1']
                 num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
-                mo_ncc_df = pd.DataFrame(columns=['Type', 'Pop_id', 'Obj_id', 'Inner_id',
-                                                  'Inner_lr', 'Exp', 'Logit_scale',
-                                                  'Value'])
-                # Type: ['acc', 'loss']
-                train_df = pd.DataFrame(columns=['Type', 'Tag', 'Task_id', 'Idx',
-                                                 'Inner_lr', 'Exp', 'Logit_scale',
-                                                 'Value'])
                 # Tag: ['inner'], Task_id: 0,1,2,3
                 for mo_train_idx in range(args['train.n_mo']):
                     '''check pool has enough samples and generate 1 setting'''
@@ -312,24 +333,24 @@ def train():
                             #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
                             #         'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
-                '''write mo image'''
-                debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
-                debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='loss')
-                '''write hv acc/loss'''
-                debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='acc')     # 0
-                debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='loss')    # args['train.ref']
+            '''write mo image'''
+            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
+            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='loss')
+            '''write hv acc/loss'''
+            debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='acc')     # 0
+            debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='loss')    # args['train.ref']
 
-                '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
-                for inner_idx in range(len(set(train_df.Idx))):
-                    for task_idx in range(len(set(train_df.Task_id))):
-                        t_df = train_df[(train_df.Task_id == task_idx) & (train_df.Idx == inner_idx) &
-                                        (train_df.Tag == 'inner')]
-                        debugger.write_scale(t_df[t_df.Type == 'acc'].Value.mean(),
-                                             f'inner_acc_{exp}/taskid{task_idx}',
-                                             i=inner_idx, writer=writer)
-                        debugger.write_scale(t_df[t_df.Type == 'loss'].Value.mean(),
-                                             f'inner_loss_{exp}/taskid{task_idx}',
-                                             i=inner_idx, writer=writer)
+            '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
+            for inner_idx in range(len(set(train_df.Idx))):
+                for task_idx in range(len(set(train_df.Task_id))):
+                    t_df = train_df[(train_df.Task_id == task_idx) & (train_df.Idx == inner_idx) &
+                                    (train_df.Tag == 'inner')]
+                    debugger.write_scale(t_df[t_df.Type == 'acc'].Value.mean(),
+                                         f'inner_acc_{exp}/taskid{task_idx}',
+                                         i=inner_idx, writer=writer)
+                    debugger.write_scale(t_df[t_df.Type == 'loss'].Value.mean(),
+                                         f'inner_loss_{exp}/taskid{task_idx}',
+                                         i=inner_idx, writer=writer)
 
 
 if __name__ == '__main__':
