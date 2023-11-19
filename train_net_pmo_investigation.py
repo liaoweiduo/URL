@@ -155,7 +155,7 @@ def train():
         print(f'Buffer contains {len(pool.buffer)} classes.')
         pool.buffer_backup = copy.deepcopy(pool.buffer)
 
-        for logit_scale in [-0.25, -0.2, -0.15, -0.1, -0.05, 0]:
+        for logit_scale in [-10, -1, 0, 1]:
             print(f'logit_scale: {logit_scale}')
             for pool_idx in range(10):      # try different gumbel randomness
                 print(f'pool construction idx: {pool_idx}')
@@ -182,7 +182,7 @@ def train():
                 pool.buffer2cluster()
                 pool.clear_buffer()
 
-                debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_logit_scale{logit_scale}')
+                debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_logit_scale{logit_scale}_{pool_idx}')
 
                 '''multiple mo sampling'''
                 pop_labels = [
