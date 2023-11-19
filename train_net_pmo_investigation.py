@@ -333,24 +333,24 @@ def train():
                             #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
                             #         'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
-            '''write mo image'''
-            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
-            debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='loss')
-            '''write hv acc/loss'''
-            debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='acc')     # 0
-            debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='loss')    # args['train.ref']
+        '''write mo image'''
+        debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
+        debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='loss')
+        '''write hv acc/loss'''
+        debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='acc')     # 0
+        debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='loss')    # args['train.ref']
 
-            '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
-            for inner_idx in range(len(set(train_df.Idx))):
-                for task_idx in range(len(set(train_df.Task_id))):
-                    t_df = train_df[(train_df.Task_id == task_idx) & (train_df.Idx == inner_idx) &
-                                    (train_df.Tag == 'inner')]
-                    debugger.write_scale(t_df[t_df.Type == 'acc'].Value.mean(),
-                                         f'inner_acc_{exp}/taskid{task_idx}',
-                                         i=inner_idx, writer=writer)
-                    debugger.write_scale(t_df[t_df.Type == 'loss'].Value.mean(),
-                                         f'inner_loss_{exp}/taskid{task_idx}',
-                                         i=inner_idx, writer=writer)
+        '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
+        for inner_idx in range(len(set(train_df.Idx))):
+            for task_idx in range(len(set(train_df.Task_id))):
+                t_df = train_df[(train_df.Task_id == task_idx) & (train_df.Idx == inner_idx) &
+                                (train_df.Tag == 'inner')]
+                debugger.write_scale(t_df[t_df.Type == 'acc'].Value.mean(),
+                                     f'inner_acc_{exp}/taskid{task_idx}',
+                                     i=inner_idx, writer=writer)
+                debugger.write_scale(t_df[t_df.Type == 'loss'].Value.mean(),
+                                     f'inner_loss_{exp}/taskid{task_idx}',
+                                     i=inner_idx, writer=writer)
 
 
 if __name__ == '__main__':
