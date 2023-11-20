@@ -182,8 +182,6 @@ def train():
                 pool.buffer2cluster()
                 pool.clear_buffer()
 
-                debugger.write_pool(pool, i=0, writer=writer, prefix=f'pool_logit_scale{logit_scale}_{pool_idx}')
-
                 '''multiple mo sampling'''
                 pop_labels = [
                     f"p{idx}" if idx < args['train.n_obj'] else f"m{idx - args['train.n_obj']}"
@@ -291,47 +289,50 @@ def train():
                                     'Inner_lr': inner_lr, 'Exp': exp, 'Logit_scale': logit_scale,
                                     'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
-                            # for inner_idx in range(5 + 1):      # 0 is before inner loop
-                            #
-                            #     '''forward with no grad for mo matrix'''
-                            #     for obj_idx in range(len(selected_cluster_idxs)):       # 2
-                            #         obj_context_images = torch_tasks[obj_idx]['context_images']
-                            #         obj_target_images = torch_tasks[obj_idx]['target_images']
-                            #         obj_context_labels = torch_tasks[obj_idx]['context_labels']
-                            #         obj_target_labels = torch_tasks[obj_idx]['target_labels']
-                            #
-                            #         with torch.no_grad():
-                            #             model_eval(model)
-                            #             obj_context_features = model.embed(obj_context_images, selection=selection)
-                            #             obj_target_features = model.embed(obj_target_images, selection=selection)
-                            #             model_train(model)
-                            #
-                            #         _, stats_dict, _ = prototype_loss(
-                            #             obj_context_features, obj_context_labels, obj_target_features, obj_target_labels,
-                            #             distance=args['test.distance'])
-                            #         mo_ncc_df = mo_ncc_df.append({
-                            #             'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
-                            #             'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
-                            #         mo_ncc_df = mo_ncc_df.append({
-                            #             'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
-                            #             'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
-                            #
-                            #     '''inner update using context set'''
-                            #     context_features = model.embed(context_images, selection=selection)
-                            #     loss, stats_dict, _ = prototype_loss(
-                            #         context_features, context_labels, context_features, context_labels,
-                            #         distance=args['test.distance'])
-                            #
-                            #     optimizer_model.zero_grad()
-                            #     loss.backward()
-                            #     optimizer_model.step()
-                            #
-                            #     train_df = train_df.append({
-                            #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
-                            #         'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
-                            #     train_df = train_df.append({
-                            #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
-                            #         'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
+            debugger.write_pool(pool, i=0, writer=writer,
+                                prefix=f'pool_logit_scale{logit_scale}')    # only record last pool
+
+            # for inner_idx in range(5 + 1):      # 0 is before inner loop
+            #
+            #     '''forward with no grad for mo matrix'''
+            #     for obj_idx in range(len(selected_cluster_idxs)):       # 2
+            #         obj_context_images = torch_tasks[obj_idx]['context_images']
+            #         obj_target_images = torch_tasks[obj_idx]['target_images']
+            #         obj_context_labels = torch_tasks[obj_idx]['context_labels']
+            #         obj_target_labels = torch_tasks[obj_idx]['target_labels']
+            #
+            #         with torch.no_grad():
+            #             model_eval(model)
+            #             obj_context_features = model.embed(obj_context_images, selection=selection)
+            #             obj_target_features = model.embed(obj_target_images, selection=selection)
+            #             model_train(model)
+            #
+            #         _, stats_dict, _ = prototype_loss(
+            #             obj_context_features, obj_context_labels, obj_target_features, obj_target_labels,
+            #             distance=args['test.distance'])
+            #         mo_ncc_df = mo_ncc_df.append({
+            #             'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
+            #             'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
+            #         mo_ncc_df = mo_ncc_df.append({
+            #             'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx, 'Inner_lr': inner_lr,
+            #             'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
+            #
+            #     '''inner update using context set'''
+            #     context_features = model.embed(context_images, selection=selection)
+            #     loss, stats_dict, _ = prototype_loss(
+            #         context_features, context_labels, context_features, context_labels,
+            #         distance=args['test.distance'])
+            #
+            #     optimizer_model.zero_grad()
+            #     loss.backward()
+            #     optimizer_model.step()
+            #
+            #     train_df = train_df.append({
+            #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
+            #         'Type': 'acc', 'Value': stats_dict['acc']}, ignore_index=True)
+            #     train_df = train_df.append({
+            #         'Tag': 'inner', 'Task_id': task_idx, 'Idx': inner_idx, 'Inner_lr': inner_lr,
+            #         'Type': 'loss', 'Value': stats_dict['loss']}, ignore_index=True)
 
         '''write mo image'''
         debugger.write_mo(mo_ncc_df, pop_labels, i=0, writer=writer, target='acc')
@@ -339,6 +340,9 @@ def train():
         '''write hv acc/loss'''
         debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='acc')     # 0
         debugger.write_hv(mo_ncc_df, ref='relative', writer=writer, target='loss')    # args['train.ref']
+        '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
+        debugger.write_avg_span(mo_ncc_df, writer=writer, target='acc')
+        debugger.write_avg_span(mo_ncc_df, writer=writer, target='loss')
 
         '''write inner loss/acc for 4 tasks averaging over multiple mo sampling(and inner lr settings)'''
         for inner_idx in range(len(set(train_df.Idx))):

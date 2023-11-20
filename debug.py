@@ -1,7 +1,9 @@
 import copy
+import json
 import os
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 
@@ -128,7 +130,7 @@ class Debugger:
         """
 
         Args:
-            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value'] / Exp as tag
+            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] / Exp as tag
             ref: ref for cal hv
             writer:
             target: also for mo_dict's Type selector.
@@ -161,12 +163,46 @@ class Debugger:
                         hv = cal_hv(objs[inner_step], ref, target=target)
                         writer.add_scalar(f'inner_hv_{target}_{exp}_innerlr_{inner_lr}/logit_scale_{logit_scale}', hv, inner_step + 1)
 
-    def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, target='acc', prefix=''):
+    def write_avg_span(self, mo_dict, writer: Optional[SummaryWriter] = None, target='acc'):
+        """
+        E_i(max(f_i) - min(f_i))
+        Args:
+            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] / Exp as tag
+            writer:
+            target: also for mo_dict's Type selector.
+
+        Returns:
+
+        """
+        if not self.activate:
+            return
+
+        for exp in set(mo_dict.Exp):
+            for inner_lr in set(mo_dict.Inner_lr):
+                for logit_scale in set(mo_dict.Logit_scale):
+                    t_df = mo_dict[(mo_dict.Type == target) &
+                                   (mo_dict.Inner_lr == inner_lr) & (mo_dict.Exp == exp) &
+                                   (mo_dict.Logit_scale == logit_scale)]
+                    n_pop = len(set(t_df.Pop_id))
+                    n_inner = len(set(t_df.Inner_id))
+                    n_obj = len(set(t_df.Obj_id))
+                    objs = np.array([[[
+                        t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
+                        for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+                    ])  # [n_inner, n_obj, n_pop]
+                    objs = np.nan_to_num(objs)
+
+                    '''cal avg span for each inner mo'''
+                    for inner_step in range(n_inner):
+                        avg_span = np.mean([np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in range(n_obj)])
+                        writer.add_scalar(f'inner_avg_span_{target}_{exp}_innerlr_{inner_lr}/logit_scale_{logit_scale}', avg_span, inner_step + 1)
+
+    def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, target='acc', prefix='train_image'):
         """
         draw mo graph for different inner step.
         Args:
             mo_dict: {pop_idx: {inner_idx: [n_obj]}} or
-                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr', 'Value'] Exp as tag
+                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] Exp as tag
             i:
             writer:
             target: for mo_dict's Type selector.
@@ -177,6 +213,7 @@ class Debugger:
         """
         if not self.activate:
             return
+
         if type(mo_dict) is dict:
             n_pop, n_inner, n_obj = len(mo_dict), len(mo_dict[0]), len(mo_dict[0][0])
             objs = np.array([
@@ -186,7 +223,10 @@ class Debugger:
 
             '''log objs figure'''
             figure = draw_objs(objs, pop_labels)
-            writer.add_figure(f"train_image{prefix}/objs_{target}", figure, i + 1)
+            writer.add_figure(f"{prefix}/objs_{target}", figure, i + 1)
+
+            with open(os.path.join(writer.log_dir, f'{prefix}_mo_dict_{target}.json'), 'w') as f:
+                json.dump(mo_dict, f)
         else:
             for exp in set(mo_dict.Exp):
                 for inner_lr in set(mo_dict.Inner_lr):
@@ -207,6 +247,10 @@ class Debugger:
                         figure = draw_objs(objs, pop_labels)
                         writer.add_figure(f"objs_{target}_{exp}_innerlr_{inner_lr}{prefix}/logit_scale_{logit_scale}",
                                           figure, i + 1)
+
+            '''save mo dict'''
+            mo_dict.to_json(os.path.join(writer.log_dir, f'{prefix}_mo_dict_{target}.json'))
+
 
     # def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
     #
