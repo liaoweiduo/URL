@@ -3,6 +3,7 @@ import json
 import os
 
 import numpy as np
+import pandas
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -248,11 +249,10 @@ class Debugger:
                         writer.add_figure(f"objs_{target}_{exp}_innerlr_{inner_lr}{prefix}/logit_scale_{logit_scale}",
                                           figure, i + 1)
 
-            '''save mo dict'''
-            mo_dict.to_json(os.path.join(writer.log_dir, f'{prefix}_mo_dict_{target}.json'))
+    def save_df(self, df: pandas.DataFrame, writer: Optional[SummaryWriter] = None, name='df.json'):
+        df.to_json(os.path.join(writer.log_dir, name))
 
-
-    # def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
+# def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
     #
     #     '''log img sim in the task'''
     #     with torch.no_grad():
