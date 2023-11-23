@@ -124,7 +124,7 @@ def train():
     config = tf.compat.v1.ConfigProto()
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
-    with (tf.compat.v1.Session(config=config) as session):
+    with tf.compat.v1.Session(config=config) as session:
         # initialize datasets and loaders
         trainsets = TRAIN_METADATASET_NAMES
         valsets = TRAIN_METADATASET_NAMES
