@@ -28,7 +28,7 @@ def apply_selection(features, vartheta):
 
 
 def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, distance='cos',
-       vartheta_init=None, return_iterator=False):
+       vartheta_init=None, return_iterator=False, create_graph=False):
     """
     PA method: learning a linear transformation per task to adapt the features to a discriminative space 
     on the support set during meta-testing
@@ -54,7 +54,7 @@ def pa(context_features, context_labels, max_iter=40, ad_opt='linear', lr=0.1, d
         loss, stat, _ = prototype_loss(selected_features, context_labels,
                                        selected_features, context_labels, distance=distance)
 
-        loss.backward()
+        loss.backward(create_graph=create_graph)
         optimizer.step()
         if return_iterator:
             yield vartheta

@@ -63,6 +63,8 @@ class BasicBlockFilm(nn.Module):
             self.film1_betas = nn.Parameter(torch.zeros(film_head, planes))
             self.film2_gammas = nn.Parameter(torch.ones(film_head, planes))
             self.film2_betas = nn.Parameter(torch.zeros(film_head, planes))
+        elif cond_mode == 'pa':
+            pass
         else:
             raise Exception(f'un-implemented cond mode: {cond_mode}.')
 
@@ -75,15 +77,14 @@ class BasicBlockFilm(nn.Module):
         out = self.conv1(x)
         out = self.bn1(out)
 
-        if selection is not None:
-            gamma = torch.mm(selection, self.film1_gammas)      # [bs, planes]
-            beta = torch.mm(selection, self.film1_betas)        # [bs, planes]
+        if selection is not None and 'film' in self.cond_mode:      # for pa, selection is no use
+            if type(selection) is dict:
+                gamma = selection['film1_gammas']
+                beta = selection['film1_betas']
+            else:
+                gamma = torch.mm(selection, self.film1_gammas)      # [bs, planes]
+                beta = torch.mm(selection, self.film1_betas)        # [bs, planes]
             out = film(out, gamma, beta)
-
-            # film_out = []
-            # for idx in range(self.film_head):
-            #     film_out.append(self.film1[idx](out) * selection[:, idx].view(len(x), 1, 1, 1))
-            # out = torch.sum(torch.stack(film_out), dim=0)
 
         out = self.relu(out)
 
@@ -91,8 +92,12 @@ class BasicBlockFilm(nn.Module):
         out = self.bn2(out)
 
         if selection is not None:
-            gamma = torch.mm(selection, self.film2_gammas)      # [bs, planes]
-            beta = torch.mm(selection, self.film2_betas)        # [bs, planes]
+            if type(selection) is dict:
+                gamma = selection['film2_gammas']
+                beta = selection['film2_betas']
+            else:
+                gamma = torch.mm(selection, self.film2_gammas)      # [bs, planes]
+                beta = torch.mm(selection, self.film2_betas)        # [bs, planes]
             out = film(out, gamma, beta)
 
             # film_out = []
@@ -126,6 +131,9 @@ class ResNet(nn.Module):
         elif cond_mode == 'film_opt':
             self.film_normalize_gammas = nn.Parameter(torch.ones(film_head, 3))
             self.film_normalize_betas = nn.Parameter(torch.zeros(film_head, 3))
+        elif cond_mode == 'pa':
+            self.pas = nn.Parameter(torch.stack([torch.eye(512, 512) for _ in range(film_head)]))
+            #   [film_head, 512, 512]
         else:
             raise Exception(f'un-implemented cond mode: {cond_mode}.')
 
@@ -229,13 +237,18 @@ class ResNet(nn.Module):
         selection is None: forward resnet18 backbone and skip films.
         """
         if selection is not None:
-            assert (selection.shape[1] == self.film_head
+            assert (type(selection) is dict or selection.shape[1] == self.film_head
                     ), f"Input selection: {selection} does not match `film_head' {self.film_head}."
 
         """Computing the features"""
-        if selection is not None:
-            gamma = torch.mm(selection, self.film_normalize_gammas)      # [bs, 3]
-            beta = torch.mm(selection, self.film_normalize_betas)        # [bs, 3]
+        if selection is not None and 'film' in self.cond_mode:
+            if type(selection) is dict:
+                gamma = selection['film_normalize_gammas']
+                beta = selection['film_normalize_betas']
+            else:
+                gamma = torch.mm(selection, self.film_normalize_gammas)      # [bs, 3]
+                beta = torch.mm(selection, self.film_normalize_betas)        # [bs, 3]
+
             x = film(x, gamma, beta)
 
             # film_out = []
@@ -263,7 +276,8 @@ class ResNet(nn.Module):
         # x = self.layer4(x)
 
         x = self.avgpool(x)
-        return x.flatten(1)         # x.squeeze()
+        x = x.flatten(1)         # x.squeeze()
+        return x
 
     def freeze_backbone(self):
         for k, v in self.named_parameters():
@@ -277,7 +291,7 @@ class ResNet(nn.Module):
         else:
             """Outputs the state elements that are domain-specific"""
             return {k: v for k, v in self.state_dict().items()
-                    if 'selector' in k or 'film' in k or 'cls' in k or 'running' in k}
+                    if 'selector' in k or 'film' in k or 'cls' in k or 'running' in k or 'pa' in k}
 
     def get_parameters(self, whole=False):
         if whole:
@@ -295,6 +309,10 @@ class ResNet(nn.Module):
     def get_trainable_film_parameters(self):
         return [v for k, v in self.named_parameters()
                 if v.requires_grad and 'film' in k]
+
+    def get_trainable_pa_parameters(self):
+        return [v for k, v in self.named_parameters()
+                if v.requires_grad and 'pas' in k]
 
     def get_trainable_selector_parameters(self, include_cluster_center=True):
         if include_cluster_center:

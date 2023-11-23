@@ -3,8 +3,10 @@ import json
 import os
 
 import numpy as np
-import pandas
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 import torch
 import torch.nn as nn
 
@@ -15,8 +17,9 @@ from pmo_utils import Pool, draw_heatmap, draw_objs, cal_hv
 
 
 class Debugger:
-    def __init__(self, activate=True):
-        self.activate = activate
+    def __init__(self, level='DEBUG'):
+        self.levels = ['DEBUG', 'INFO']
+        self.level = self.levels.index(level)   # 0 or 1
         self.storage = {}
 
     def print_prototype_change(self, model: nn.Module, i, writer: Optional[SummaryWriter] = None):
@@ -30,7 +33,8 @@ class Debugger:
         Returns:
 
         """
-        if not self.activate:
+        level = self.levels.index('DEBUG')
+        if level < self.level:
             return
 
         proto = model.selector.prototypes.detach().cpu().numpy()
@@ -42,7 +46,7 @@ class Debugger:
 
         print(f'proto diff (l2) is {dif}.\nmov_avg_alpha is {model.selector.mov_avg_alpha.item()}.')
         if writer is not None:
-            writer.add_scalar('train_image/cluster-centers-dif', dif, i + 1)
+            writer.add_scalar('params/cluster-centers-dif', dif, i + 1)
             writer.add_scalar('params/mov_avg_alpha', model.selector.mov_avg_alpha.item(), i + 1)
 
     def print_grad(self, model: nn.Module, key=None, prefix=''):
@@ -56,8 +60,10 @@ class Debugger:
         Returns:
 
         """
-        if not self.activate:
+        level = self.levels.index('DEBUG')
+        if level < self.level:
             return
+
         vs = []
         with torch.no_grad():
             for k, v in model.named_parameters():
@@ -85,7 +91,8 @@ class Debugger:
         Returns:
 
         """
-        if not self.activate:
+        level = self.levels.index('INFO')
+        if level < self.level:
             return
 
         print(f'iter {i}: {prefix} num_cls info: '
@@ -108,111 +115,157 @@ class Debugger:
                         for cls_idx in range(len(img_sim))
                     ])
                     figure = draw_heatmap(sim, verbose=False)
-                    writer.add_figure(f"{prefix}-img-sim/{cluster_id}", figure, i+1)
+                    writer.add_figure(f"{prefix}-img-sim/{cluster_id}", figure, i + 1)
 
-    def write_scale(self, value, key, i, writer: Optional[SummaryWriter] = None):
+    def write_scaler(self, df, key, i, writer: Optional[SummaryWriter] = None, prefix=''):
         """
 
         Args:
-            value:
-            key: name
+            df: [Tag, Idx, Value]
+            key: in Tag
             i:
             writer:
+            prefix:
 
-        Returns:
+        Returns: last Idx's avg_value or -1
 
         """
-        if not self.activate:
+        level = self.levels.index('INFO')
+        if level < self.level:
             return
 
-        writer.add_scalar(key, value, i + 1)
+        t_df = df[df.Tag == key]
+        value = -1
+        for idx in sorted(set(t_df.Idx)):
+            value = t_df[t_df.Idx == idx].Value.mean()
+            value = np.nan_to_num(value)
+            writer.add_scalar(f'{prefix}{key}/{idx}', value, i + 1)
 
-    def write_hv(self, mo_dict, ref=0, writer: Optional[SummaryWriter] = None, target='acc'):
+        print(f'{prefix}{key}: {value:.5f}.')
+
+        return value
+
+    def write_inner(self, df, key, i, writer: Optional[SummaryWriter] = None, prefix=''):
         """
 
         Args:
-            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] / Exp as tag
-            ref: ref for cal hv
-            writer:
-            target: also for mo_dict's Type selector.
-
-        Returns:
-
-        """
-        if not self.activate:
-            return
-
-        for exp in set(mo_dict.Exp):
-            for inner_lr in set(mo_dict.Inner_lr):
-                for logit_scale in set(mo_dict.Logit_scale):
-                    t_df = mo_dict[(mo_dict.Type == target) &
-                                   (mo_dict.Inner_lr == inner_lr) & (mo_dict.Exp == exp) &
-                                   (mo_dict.Logit_scale == logit_scale)]
-                    n_pop = len(set(t_df.Pop_id))
-                    n_inner = len(set(t_df.Inner_id))
-                    n_obj = len(set(t_df.Obj_id))
-                    objs = np.array([[[
-                        t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
-                        for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-                    ])  # [n_inner, n_obj, n_pop]
-                    objs = np.nan_to_num(objs)
-
-                    '''cal hv for each inner mo'''
-                    if ref == 'relative':
-                        ref = np.mean(objs[0], axis=-1).tolist()     # [n_obj]   to be list
-                    for inner_step in range(n_inner):
-                        hv = cal_hv(objs[inner_step], ref, target=target)
-                        writer.add_scalar(f'inner_hv_{target}_{exp}_innerlr_{inner_lr}/logit_scale_{logit_scale}', hv, inner_step + 1)
-
-    def write_avg_span(self, mo_dict, writer: Optional[SummaryWriter] = None, target='acc'):
-        """
-        E_i(max(f_i) - min(f_i))
-        Args:
-            mo_dict: dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] / Exp as tag
-            writer:
-            target: also for mo_dict's Type selector.
-
-        Returns:
-
-        """
-        if not self.activate:
-            return
-
-        for exp in set(mo_dict.Exp):
-            for inner_lr in set(mo_dict.Inner_lr):
-                for logit_scale in set(mo_dict.Logit_scale):
-                    t_df = mo_dict[(mo_dict.Type == target) &
-                                   (mo_dict.Inner_lr == inner_lr) & (mo_dict.Exp == exp) &
-                                   (mo_dict.Logit_scale == logit_scale)]
-                    n_pop = len(set(t_df.Pop_id))
-                    n_inner = len(set(t_df.Inner_id))
-                    n_obj = len(set(t_df.Obj_id))
-                    objs = np.array([[[
-                        t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
-                        for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-                    ])  # [n_inner, n_obj, n_pop]
-                    objs = np.nan_to_num(objs)
-
-                    '''cal avg span for each inner mo'''
-                    for inner_step in range(n_inner):
-                        avg_span = np.mean([np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in range(n_obj)])
-                        writer.add_scalar(f'inner_avg_span_{target}_{exp}_innerlr_{inner_lr}/logit_scale_{logit_scale}', avg_span, inner_step + 1)
-
-    def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, target='acc', prefix='train_image'):
-        """
-        draw mo graph for different inner step.
-        Args:
-            mo_dict: {pop_idx: {inner_idx: [n_obj]}} or
-                dataframe ['Type', 'Pop_id', 'Obj_id', 'Inner_id', 'Inner_lr',..., 'Value'] Exp as tag
+            df: [Tag, Idx, Value]
+            key: in Tag
             i:
             writer:
-            target: for mo_dict's Type selector.
             prefix:
 
         Returns:
 
         """
-        if not self.activate:
+        level = self.levels.index('INFO')
+        if level < self.level:
+            return
+
+        t_df = df[df.Tag == key]
+
+        fig, ax = plt.subplots()
+        ax.grid(True)
+        sns.lineplot(t_df, x='Idx', y='Value', ax=ax)
+
+        writer.add_figure(f"{prefix}{key}", fig, i + 1)
+
+    def write_hv(self, mo_dict, ref=0, writer: Optional[SummaryWriter] = None, target='acc',
+                 prefix='hv'):
+        """
+
+        Args:
+            mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
+            ref: ref for cal hv
+            writer:
+            target: also for mo_dict's Tag selector.
+            prefix:
+
+        Returns:
+
+        """
+        level = self.levels.index('INFO')
+        if level < self.level:
+            return
+
+        t_df = mo_dict[mo_dict.Tag == target]
+        n_pop = len(set(t_df.Pop_id))
+        n_inner = len(set(t_df.Inner_id))
+        n_obj = len(set(t_df.Obj_id))
+        objs = np.array([[[
+            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
+                        t_df.Inner_id == inner_idx)].Value.mean()
+            for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+        ])  # [n_inner, n_obj, n_pop]
+        objs = np.nan_to_num(objs)
+
+        '''cal hv for each inner mo'''
+        if ref == 'relative':
+            ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
+        for inner_step in range(n_inner):
+            hv = cal_hv(objs[inner_step], ref, target=target)
+            writer.add_scalar(f'{prefix}/{target}', hv, inner_step + 1)
+
+        print(f"==>> {prefix}: {target} {hv:.3f}.")
+
+    def write_avg_span(self, mo_dict, writer: Optional[SummaryWriter] = None, target='acc',
+                       prefix='avg_span'):
+        """
+        E_i(max(f_i) - min(f_i))
+        Args:
+            mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
+            writer:
+            target: also for mo_dict's Tag selector.
+            prefix:
+
+        Returns:
+
+        """
+        level = self.levels.index('INFO')
+        if level < self.level:
+            return
+
+        t_df = mo_dict[mo_dict.Tag == target]
+        n_pop = len(set(t_df.Pop_id))
+        n_inner = len(set(t_df.Inner_id))
+        n_obj = len(set(t_df.Obj_id))
+        objs = np.array([[[
+            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
+                        t_df.Inner_id == inner_idx)].Value.mean()
+            for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+        ])  # [n_inner, n_obj, n_pop]
+        objs = np.nan_to_num(objs)
+
+        '''cal avg span for each inner mo'''
+        avg_span = -1
+        for inner_step in range(n_inner):
+            avg_span = np.mean(
+                [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
+                 range(n_obj)])
+            writer.add_scalar(f'{prefix}/{target}', avg_span, inner_step + 1)
+
+        print(f"==>> {prefix}: {target} {avg_span:.5f}.")
+
+        return avg_span
+
+    def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, target='acc',
+                 prefix='train_image'):
+        """
+        draw mo graph for different inner step.
+        Args:
+            mo_dict: {pop_idx: {inner_idx: [n_obj]}} or
+                dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
+            pop_labels:
+            i:
+            writer:
+            target: for mo_dict's Tag selector.
+            prefix:
+
+        Returns:
+
+        """
+        level = self.levels.index('INFO')
+        if level < self.level:
             return
 
         if type(mo_dict) is dict:
@@ -229,54 +282,59 @@ class Debugger:
             with open(os.path.join(writer.log_dir, f'{prefix}_mo_dict_{target}.json'), 'w') as f:
                 json.dump(mo_dict, f)
         else:
-            for exp in set(mo_dict.Exp):
-                for inner_lr in set(mo_dict.Inner_lr):
-                    for logit_scale in set(mo_dict.Logit_scale):
-                        t_df = mo_dict[(mo_dict.Type == target) &
-                                       (mo_dict.Exp == exp) & (mo_dict.Inner_lr == inner_lr) &
-                                       (mo_dict.Logit_scale == logit_scale)]
-                        n_pop = len(set(t_df.Pop_id))
-                        n_inner = len(set(t_df.Inner_id))
-                        n_obj = len(set(t_df.Obj_id))
-                        objs = np.array([[[
-                            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (t_df.Inner_id == inner_idx)].Value.mean()
-                            for pop_idx in range(n_pop)]for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-                        ])  # [n_inner, n_obj, n_pop]
-                        objs = np.nan_to_num(objs)
+            # for exp in set(mo_dict.Exp):
+            #     for inner_lr in set(mo_dict.Inner_lr):
+            #         for logit_scale in set(mo_dict.Logit_scale):
+            #             t_df = mo_dict[(mo_dict.Tag == target) &
+            #                            (mo_dict.Exp == exp) & (mo_dict.Inner_lr == inner_lr) &
+            #                            (mo_dict.Logit_scale == logit_scale)]
+            t_df = mo_dict[mo_dict.Tag == target]
+            n_pop = len(set(t_df.Pop_id))
+            n_inner = len(set(t_df.Inner_id))
+            n_obj = len(set(t_df.Obj_id))
+            objs = np.array([[[
+                t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
+                            t_df.Inner_id == inner_idx)].Value.mean()
+                for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+            ])  # [n_inner, n_obj, n_pop]
+            objs = np.nan_to_num(objs)
 
-                        '''log objs figure'''
-                        figure = draw_objs(objs, pop_labels)
-                        writer.add_figure(f"objs_{target}_{exp}_innerlr_{inner_lr}{prefix}/logit_scale_{logit_scale}",
-                                          figure, i + 1)
+            '''log objs figure'''
+            figure = draw_objs(objs, pop_labels)
+            # writer.add_figure(f"objs_{target}_{exp}_innerlr_{inner_lr}{prefix}/logit_scale_{logit_scale}",
+            #                   figure, i + 1)
+            writer.add_figure(f"{prefix}/objs_{target}", figure, i + 1)
 
-    def save_df(self, df: pandas.DataFrame, writer: Optional[SummaryWriter] = None, name='df.json'):
-        df.to_json(os.path.join(writer.log_dir, name))
+    def write_task(self, pmo, task: dict, task_title, i, writer: Optional[SummaryWriter] = None, prefix='mo-image'):
+        """
 
-# def write_task(self, pool: Pool, task: dict, i, writer: Optional[SummaryWriter] = None, prefix='pool'):
-    #
-    #     '''log img sim in the task'''
-    #     with torch.no_grad():
-    #         img_features = torch_task_features  # [img_size, 512]
-    #         _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-    #         img_sim = selection_info['y_soft']  # [img_size, 10]
-    #         _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-    #         tsk_sim = selection_info['y_soft']  # [1, 10]
-    #     sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
-    #     epoch_loss[f'mo/image_softmax_sim'][task_idx] = sim
-    #
-    #     '''write task images'''
-    #     writer.add_images(f"task-image/image", task_images, i + 1)  # task images
-    #     sim = epoch_loss['task/image_softmax_sim']
-    #     figure = draw_heatmap(sim, verbose=False)
-    #     writer.add_figure(f"task-image/sim", figure, i + 1)
-    #     with torch.no_grad():
-    #         img_features = task_features  # [img_size, 512]
-    #         # img_features = pmo.embed(task_images.to(device))    # [img_size, 512]
-    #         _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
-    #         img_sim = selection_info['y_soft']  # [img_size, 10]
-    #         _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
-    #         tsk_sim = selection_info['y_soft']  # [1, 10]
-    #     sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
-    #     figure = draw_heatmap(sim, verbose=False)
-    #     writer.add_figure(f"task-image/sim-re-cal", figure, i + 1)
+        Args:
+            pmo:
+            task: ['context_images', 'target_images', 'context_labels', 'target_labels']
+            task_title:
+            i:
+            writer:
+            prefix:
 
+        Returns:
+
+        """
+        level = self.levels.index('DEBUG')
+        if level < self.level:
+            return
+
+        '''write images'''
+        imgs = torch.cat([task['context_images'], task['target_images']]).cuda()
+        numpy_imgs = imgs.cpu().numpy()
+        writer.add_images(f"{prefix}/{task_title}", numpy_imgs, i+1)
+
+        '''log img sim in the task'''
+        with torch.no_grad():
+            img_features = pmo.embed(imgs)
+            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False, average=False)
+            img_sim = selection_info['y_soft']  # [img_size, 10]
+            _, selection_info = pmo.selector(img_features, gumbel=False, hard=False)
+            tsk_sim = selection_info['y_soft']  # [1, 10]
+        sim = torch.cat([img_sim, *[tsk_sim] * (img_sim.shape[0] // 10)]).cpu().numpy()
+        figure = draw_heatmap(sim, verbose=False)
+        writer.add_figure(f"{prefix}/{task_title}/sim", figure, i + 1)

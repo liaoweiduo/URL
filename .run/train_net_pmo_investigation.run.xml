@@ -4,9 +4,9 @@
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
-      <env name="META_DATASET_ROOT" value="../meta-dataset" />
-      <env name="RECORDS" value="&quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/tfrecords&quot;" />
+      <env name="META_DATASET_ROOT" value="$PROJECT_DIR$/../../..//Documents/Github/meta-dataset" />
       <env name="PYTHONUNBUFFERED" value="1" />
+      <env name="RECORDS" value="&quot;$PROJECT_DIR$/../../..//OneDrive - City University of Hong Kong - Student/datasets/tfrecords&quot;" />
     </envs>
     <option name="SDK_HOME" value="" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />

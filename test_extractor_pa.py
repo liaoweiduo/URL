@@ -75,7 +75,7 @@ def main(test_model='best', no_selection=False):
             for i in tqdm(range(TEST_SIZE)):
                 with torch.no_grad():
                     sample = test_loader.get_test_task(session, dataset)
-                    if args['model.name'] == 'pmo':
+                    if args['model.name'] == 'pmo' and 'film' in args['train.cond_mode']:
                         if no_selection:
                             context_features = model.embed(sample['context_images'], selection=torch.Tensor([[1]]).cuda())
                             target_features = model.embed(sample['target_images'], selection=torch.Tensor([[1]]).cuda())
@@ -85,9 +85,22 @@ def main(test_model='best', no_selection=False):
                             [context_features, target_features], selection_info = model(
                                 [sample['context_images'], sample['target_images']], task_features,
                                 gumbel=False, hard=args['train.sim_gumbel'])
+
+                    elif args['model.name'] == 'pmo' and 'pa' in args['train.cond_mode']:
+                        context_features = model._embed(sample['context_images'])
+                        target_features = model._embed(sample['target_images'])
+                        task_features = model.embed(
+                            torch.cat([sample['context_images'], sample['target_images']]))
+                        selection, selection_info = model.selector(
+                            task_features, gumbel=False, hard=False)
+                        selection_params = [torch.mm(selection, model.pas.flatten(1)).view(512, 512, 1, 1)]
+                        context_features = apply_selection(context_features, selection_params)
+                        target_features = apply_selection(target_features, selection_params)
+
                     else:
                         context_features = model.embed(sample['context_images'])
                         target_features = model.embed(sample['target_images'])
+
                     context_labels = sample['context_labels']
                     target_labels = sample['target_labels']
 

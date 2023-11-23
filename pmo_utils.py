@@ -33,7 +33,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=10, max_num_images=20, mode='hierarchical', buffer_size=200):
+    def __init__(self, capacity=8, max_num_classes=20, max_num_images=100, mode='hierarchical', buffer_size=200):
         """
         :param capacity: Number of clusters. Typically, 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
@@ -1291,7 +1291,7 @@ def draw_objs(objs, labels):
     # c = plt.get_cmap('rainbow', pop_size)
 
     sns.scatterplot(data, x='f1', y='f2',
-                    hue='Label', size='Iter', sizes=(20, 100), alpha=1., ax=ax)
+                    hue='Label', size='Iter', sizes=(100, 200), alpha=1., ax=ax)
 
     # ax.legend(loc='lower left', bbox_to_anchor=(1.05, 0.1), ncol=1)
     return fig
@@ -1470,6 +1470,45 @@ def task_to_device(task, d='numpy'):
         new_task['target_labels'] = torch.from_numpy(task['target_labels']).long().to(d)
 
     return new_task
+
+
+def inner_update(context_features, context_labels, model, max_iter=40, lr=0.1, distance='cos', return_iterator=False):
+    """
+    apply inner updates on film inited with params in model.
+    Args:
+        context_features:
+        context_labels:
+        model:
+        max_iter:
+        lr:
+        distance:
+        return_iterator: True support yield.
+
+    Returns:
+
+    """
+    '''init film params'''
+
+    '''iter'''
+    # for inner_idx in range(5 + 1):      # 0 is before inner loop
+    #
+    #     '''forward with no grad for mo matrix'''
+    #     for obj_idx in range(len(selected_cluster_idxs)):       # 2
+    #         obj_context_images = torch_tasks[obj_idx]['context_images']
+    #         obj_target_images = torch_tasks[obj_idx]['target_images']
+    #         obj_context_labels = torch_tasks[obj_idx]['context_labels']
+    #         obj_target_labels = torch_tasks[obj_idx]['target_labels']
+    #
+    #         with torch.no_grad():
+    #             model_eval(model)
+    #             obj_context_features = model.embed(obj_context_images, selection=selection)
+    #             obj_target_features = model.embed(obj_target_images, selection=selection)
+    #             model_train(model)
+    #
+    #     optimizer_model.zero_grad()
+    #     loss.backward()
+    #     optimizer_model.step()
+    #
 
 
 if __name__ == '__main__':
