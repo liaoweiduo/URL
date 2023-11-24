@@ -281,7 +281,7 @@ class ResNet(nn.Module):
 
     def freeze_backbone(self):
         for k, v in self.named_parameters():
-            if 'selector' not in k and 'film' not in k and 'cls' not in k and 'running' not in k:
+            if 'selector' not in k and 'film' not in k and 'pa' not in k and 'cls' not in k and 'running' not in k:
                 v.requires_grad = False
 
     def get_state_dict(self, whole=True):
