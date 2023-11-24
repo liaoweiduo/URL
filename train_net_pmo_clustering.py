@@ -124,7 +124,7 @@ def train():
     config = tf.compat.v1.ConfigProto()
     # config.gpu_options.allow_growth = True
     config.gpu_options.allow_growth = False
-    with tf.compat.v1.Session(config=config) as session:
+    with (tf.compat.v1.Session(config=config) as session):
         # initialize datasets and loaders
         trainsets = TRAIN_METADATASET_NAMES
         valsets = TRAIN_METADATASET_NAMES
@@ -159,10 +159,10 @@ def train():
             # loading images and labels
             numpy_samples, sample_domain_names = [], []
             for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
-                numpy_sample = train_loader.get_train_task(session, d='numpy')
+                sample = train_loader.get_train_task(session, d=device)
+                numpy_sample = task_to_device(sample, 'numpy')
                 numpy_samples.append(numpy_sample)
                 sample_domain_names.append(name)
-                sample = task_to_device(numpy_sample, device)
 
                 context_images, target_images = sample['context_images'], sample['target_images']
                 context_labels, target_labels = sample['context_labels'], sample['target_labels']
@@ -349,7 +349,7 @@ def train():
             '''Update condition model with some training samples'''
             print(f"\n>> Iter: {i}, update pmo.pas: len(tasks): {len(numpy_samples)}.")
             task_losses = []
-            for task_id, numpy_sample in enumerate(numpy_samples):
+            for task_idx, numpy_sample in enumerate(numpy_samples):
                 task = task_to_device(numpy_sample, device)
                 '''use url with pa'''
                 model = url
