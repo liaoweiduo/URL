@@ -263,12 +263,17 @@ def train():
                         task_features, gumbel=False, hard=False)
                     vartheta = [torch.mm(selection, pmo.pas.detach().flatten(1)).view(512, 512, 1, 1)]
                     # detach from pas to only train clustering and not train pas
-
-                    max_iter, inner_lr = 1, 1
-                    selection_params = pa(context_features, context_labels, max_iter=max_iter, lr=inner_lr,
-                                          distance=args['test.distance'],
-                                          vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)],
-                                          create_graph=True)
+                    selected_features = apply_selection(context_features, vartheta)
+                    inner_loss, _, _ = prototype_loss(
+                        selected_features, context_labels, selected_features, context_labels,
+                        distance=args['test.distance'])
+                    inner_lr = 1
+                    grad = torch.autograd.grad(inner_loss, vartheta, create_graph=True)
+                    selection_params = list(map(lambda p: p[1] - inner_lr * p[0], zip(grad, vartheta)))
+                    # selection_params = pa(context_features, context_labels, max_iter=max_iter, lr=inner_lr,
+                    #                       distance=args['test.distance'],
+                    #                       vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)],
+                    #                       create_graph=True)
                     '''forward to get mo matrix'''
                     for obj_idx in range(len(selected_cluster_idxs)):       # 2
                         obj_context_images = torch_tasks[obj_idx]['context_images']
