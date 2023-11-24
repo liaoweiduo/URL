@@ -337,13 +337,18 @@ def train():
             if args['train.cluster_center_mode'] == 'mov_avg':
                 print(f"\n>> Iter: {i}, update prototypes: ")
                 centers = []
-                for cluster in pool.clusters:
-                    # cat features and forward with average embedding
-                    features = torch.cat([torch.from_numpy(cls['features']) for cls in cluster]).to(device)
-                    with torch.no_grad():
-                        _, selection_info = pmo.selector(
-                            features, gumbel=False, average=True)
-                        center = selection_info['embeddings']  # [1, 64]
+                for cluster_idx, cluster in enumerate(pool.clusters):
+                    # if no samples use the old center
+                    if len(cluster) == 0:
+                        print(f'cluster {cluster_idx} has no samples')
+                        center = pmo.selector.prototypes[cluster_idx:cluster_idx+1].flatten(1)  # [1, 64]
+                    else:
+                        # cat features and forward with average embedding
+                        features = torch.cat([torch.from_numpy(cls['features']) for cls in cluster]).to(device)
+                        with torch.no_grad():
+                            _, selection_info = pmo.selector(
+                                features, gumbel=False, average=True)
+                            center = selection_info['embeddings']  # [1, 64]
                     centers.append(center)
                 centers = torch.stack(centers)
 
