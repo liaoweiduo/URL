@@ -39,9 +39,10 @@ class Debugger:
 
         proto = model.selector.prototypes.detach().cpu().numpy()
         if 'proto' in self.storage:
-            dif = np.linalg.norm((proto - self.storage['proto']).ravel(), 2)  # l2 distance
+            old_proto = self.storage['proto']
         else:
-            dif = proto
+            old_proto = 0
+        dif = np.linalg.norm((proto - old_proto).ravel(), 2)  # l2 distance
         self.storage['proto'] = proto
 
         print(f'proto diff (l2) is {dif}.\nmov_avg_alpha is {model.selector.mov_avg_alpha.item()}.')
