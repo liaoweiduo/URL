@@ -301,9 +301,6 @@ def train():
                                 {'Tag': 'acc', 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': 0,
                                  'Value': stats_dict['acc']}])])
 
-            for task_idx, task in enumerate(torch_tasks):  # only visual the last task
-                debugger.write_task(pmo, task, pop_labels[task_idx], i=i, writer=writer)
-
             '''calculate HV loss for n_mo matrix'''
             ref = args['train.ref']
             ncc_losses_multi_obj = torch.stack([torch.stack([
@@ -341,14 +338,14 @@ def train():
                     # if no samples use the old center
                     if len(cluster) == 0:
                         print(f'cluster {cluster_idx} has no samples')
-                        center = pmo.selector.prototypes[cluster_idx:cluster_idx+1].flatten(1)  # [1, 64]
+                        center = pmo.selector.prototypes[cluster_idx:cluster_idx+1]  # [1, 64, 1, 1]
                     else:
                         # cat features and forward with average embedding
                         features = torch.cat([torch.from_numpy(cls['features']) for cls in cluster]).to(device)
                         with torch.no_grad():
                             _, selection_info = pmo.selector(
                                 features, gumbel=False, average=True)
-                            center = selection_info['embeddings']  # [1, 64]
+                            center = selection_info['embeddings']  # [1, 64, 1, 1]
                     centers.append(center)
                 centers = torch.stack(centers)
 
@@ -415,19 +412,23 @@ def train():
                 with open(os.path.join(args['out.dir'], 'summary', 'train_log.pickle'), 'wb') as f:
                     pickle.dump(epoch_train_history, f)
 
+                '''write sampled mo images'''
+                for task_idx, task in enumerate(torch_tasks):  # only visual the last task
+                    debugger.write_task(pmo, task, pop_labels[task_idx], i=i, writer=writer, prefix='mo-image')
+
                 '''write pool'''
                 debugger.write_pool(pool, i=i, writer=writer, prefix=f'pool')
 
-                '''write mo image'''
+                '''write mo'''
                 debugger.write_mo(epoch_log['mo_df'], pop_labels, i=i, writer=writer, target='acc')
                 debugger.write_mo(epoch_log['mo_df'], pop_labels, i=i, writer=writer, target='loss')
 
                 '''write hv acc/loss'''
-                debugger.write_hv(epoch_log['mo_df'], ref=0, writer=writer, target='acc')  # 0
-                debugger.write_hv(epoch_log['mo_df'], ref=args['train.ref'], writer=writer, target='loss')
+                debugger.write_hv(epoch_log['mo_df'], i, ref=0, writer=writer, target='acc')  # 0
+                debugger.write_hv(epoch_log['mo_df'], i, ref=args['train.ref'], writer=writer, target='loss')
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
-                debugger.write_avg_span(epoch_log['mo_df'], writer=writer, target='acc')
-                debugger.write_avg_span(epoch_log['mo_df'], writer=writer, target='loss')
+                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='acc')
+                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='loss')
 
                 debugger.write_scaler(epoch_log['scaler_df'], key='ce/loss', i=i, writer=writer)
                 debugger.write_scaler(epoch_log['scaler_df'], key='hv_loss', i=i, writer=writer)
@@ -561,7 +562,7 @@ def train():
 
                             inner_lr = 1
                             for inner_idx, selection_params in enumerate(
-                                    pa(context_features, context_labels, max_iter=40, lr=inner_lr,
+                                    pa(context_features, context_labels, max_iter=1, lr=inner_lr,
                                        distance=args['test.distance'],
                                        vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)],
                                        return_iterator=True)):
@@ -614,13 +615,15 @@ def train():
                 debugger.write_mo(val_log['mo_df'], pop_labels, i=i, writer=writer, target='loss', prefix='val_image')
 
                 '''write hv acc/loss'''
-                debugger.write_hv(val_log['mo_df'], ref=0, writer=writer, target='acc', prefix='val_hv')  # 0
-                debugger.write_hv(val_log['mo_df'], ref=args['train.ref'], writer=writer, target='loss', prefix='val_hv')
+                debugger.write_hv(val_log['mo_df'], i, ref=0, writer=writer, target='acc',
+                                  prefix='val_hv')  # 0
+                debugger.write_hv(val_log['mo_df'], i, ref=args['train.ref'], writer=writer, target='loss',
+                                  prefix='val_hv')
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
                 val_avg_span_acc = debugger.write_avg_span(
-                    val_log['mo_df'], writer=writer, target='acc', prefix='val_avg_span')
+                    val_log['mo_df'], i, writer=writer, target='acc', prefix=f'val_avg_span')
                 val_avg_span_loss = debugger.write_avg_span(
-                    val_log['mo_df'], writer=writer, target='loss', prefix='val_avg_span')
+                    val_log['mo_df'], i, writer=writer, target='loss', prefix=f'val_avg_span')
 
                 '''task/loss'''
                 avg_log = {'loss': [], 'acc': []}

@@ -33,7 +33,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=20, max_num_images=100, mode='hierarchical', buffer_size=200):
+    def __init__(self, capacity=8, max_num_classes=20, max_num_images=30, mode='hierarchical', buffer_size=200):
         """
         :param capacity: Number of clusters. Typically, 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.

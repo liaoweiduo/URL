@@ -406,7 +406,7 @@ def train():
                         with torch.no_grad():
                             _, selection_info = pmo.selector(
                                 features, gumbel=False, average=True)
-                            center = selection_info['embeddings']  # [1, 64]
+                            center = selection_info['embeddings']  # [1, 64, 1, 1]
                         centers.append(center)
                     centers = torch.stack(centers)
 

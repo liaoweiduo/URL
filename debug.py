@@ -171,7 +171,7 @@ class Debugger:
 
         writer.add_figure(f"{prefix}{key}", fig, i + 1)
 
-    def write_hv(self, mo_dict, ref=0, writer: Optional[SummaryWriter] = None, target='acc',
+    def write_hv(self, mo_dict, i, ref=0, writer: Optional[SummaryWriter] = None, target='acc',
                  prefix='hv'):
         """
 
@@ -181,6 +181,7 @@ class Debugger:
             writer:
             target: also for mo_dict's Tag selector.
             prefix:
+            i: indicate x axis
 
         Returns:
 
@@ -201,15 +202,17 @@ class Debugger:
         objs = np.nan_to_num(objs)
 
         '''cal hv for each inner mo'''
+        hv = -1
         if ref == 'relative':
             ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
         for inner_step in range(n_inner):
             hv = cal_hv(objs[inner_step], ref, target=target)
-            writer.add_scalar(f'{prefix}/{target}', hv, inner_step + 1)
+            writer.add_scalar(f'{prefix}/{target}/{i}', hv, inner_step + 1)
+        writer.add_scalar(f'{prefix}/{target}', hv, i + 1)
 
         print(f"==>> {prefix}: {target} {hv:.3f}.")
 
-    def write_avg_span(self, mo_dict, writer: Optional[SummaryWriter] = None, target='acc',
+    def write_avg_span(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc',
                        prefix='avg_span'):
         """
         E_i(max(f_i) - min(f_i))
@@ -218,6 +221,7 @@ class Debugger:
             writer:
             target: also for mo_dict's Tag selector.
             prefix:
+            i: indicate x axis
 
         Returns:
 
@@ -243,7 +247,8 @@ class Debugger:
             avg_span = np.mean(
                 [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
                  range(n_obj)])
-            writer.add_scalar(f'{prefix}/{target}', avg_span, inner_step + 1)
+            writer.add_scalar(f'{prefix}/{target}/{i}', avg_span, inner_step + 1)
+        writer.add_scalar(f'{prefix}/{target}', avg_span, i + 1)
 
         print(f"==>> {prefix}: {target} {avg_span:.5f}.")
 
@@ -306,7 +311,7 @@ class Debugger:
             #                   figure, i + 1)
             writer.add_figure(f"{prefix}/objs_{target}", figure, i + 1)
 
-    def write_task(self, pmo, task: dict, task_title, i, writer: Optional[SummaryWriter] = None, prefix='mo-image'):
+    def write_task(self, pmo, task: dict, task_title, i, writer: Optional[SummaryWriter] = None, prefix='task'):
         """
 
         Args:
