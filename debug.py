@@ -13,7 +13,7 @@ import torch.nn as nn
 from typing import List, Dict, Any, Optional
 from torch.utils.tensorboard import SummaryWriter
 
-from pmo_utils import Pool, draw_heatmap, draw_objs, cal_hv
+from pmo_utils import Pool, draw_heatmap, draw_objs, cal_hv, cal_min_crowding_distance
 
 
 class Debugger:
@@ -207,7 +207,7 @@ class Debugger:
             ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
         for inner_step in range(n_inner):
             hv = cal_hv(objs[inner_step], ref, target=target)
-            writer.add_scalar(f'{prefix}/{target}/{i}', hv, inner_step + 1)
+            writer.add_scalar(f'{prefix}_details/{target}/{i}', hv, inner_step + 1)
         writer.add_scalar(f'{prefix}/{target}', hv, i + 1)
 
         print(f"==>> {prefix}: {target} {hv:.3f}.")
@@ -247,12 +247,57 @@ class Debugger:
             avg_span = np.mean(
                 [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
                  range(n_obj)])
-            writer.add_scalar(f'{prefix}/{target}/{i}', avg_span, inner_step + 1)
+            writer.add_scalar(f'{prefix}_details/{target}/{i}', avg_span, inner_step + 1)
         writer.add_scalar(f'{prefix}/{target}', avg_span, i + 1)
 
         print(f"==>> {prefix}: {target} {avg_span:.5f}.")
 
         return avg_span
+
+    def write_min_crowding_distance(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc',
+                                    prefix='min_cd'):
+        """
+        only for nd solutions. if min cd is inf, use avg_span instead.
+        Args:
+            mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
+            writer:
+            target: also for mo_dict's Tag selector.
+            prefix:
+            i: indicate x axis
+
+        Returns:
+
+        """
+        level = self.levels.index('INFO')
+        if level < self.level:
+            return
+
+        t_df = mo_dict[mo_dict.Tag == target]
+        n_pop = len(set(t_df.Pop_id))
+        n_inner = len(set(t_df.Inner_id))
+        n_obj = len(set(t_df.Obj_id))
+        objs = np.array([[[
+            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
+                        t_df.Inner_id == inner_idx)].Value.mean()
+            for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+        ])  # [n_inner, n_obj, n_pop]
+        objs = np.nan_to_num(objs)
+
+        '''cal min crowding distance for each inner mo (after nd sort)'''
+        cd = -1
+        for inner_step in range(n_inner):
+            cd = cal_min_crowding_distance(objs[inner_step])
+            if cd == np.inf:
+                avg_span = np.mean(
+                    [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
+                     range(n_obj)])
+                cd = avg_span
+            writer.add_scalar(f'{prefix}_details/{target}/{i}', cd, inner_step + 1)
+        writer.add_scalar(f'{prefix}/{target}', cd, i + 1)
+
+        print(f"==>> {prefix}: {target} {cd:.5f}.")
+
+        return cd
 
     def write_mo(self, mo_dict, pop_labels, i, writer: Optional[SummaryWriter] = None, target='acc',
                  prefix='train_image'):

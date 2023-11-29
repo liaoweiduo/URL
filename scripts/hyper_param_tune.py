@@ -228,17 +228,17 @@ target = 'train_net_pmo_clustering.py'
 # target = 'train_net_pmo_domain_selector.py'
 num_runs_1sh = 5        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-pa-inner-avg_span-1',
-    'train.max_iter': 100, 'train.summary_freq': 10, 'train.pool_freq': 10,
+    'tag': 'pmo-pa-inner-et-0',
+    'train.max_iter': 200, 'train.summary_freq': 20, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
-    'train.cosine_anneal_freq': 20, 'train.eval_freq': 20,
+    'train.cosine_anneal_freq': 40, 'train.eval_freq': 40,
     'train.cond_mode': 'pa',      # film_opt, film_random, pa
-    'train.best_criteria': 'avg_span',    # domain; cluster; hv
+    'train.best_criteria': 'min_cd',    # domain; cluster; hv
     'train.cluster_center_mode': 'mov_avg',
     'model.num_clusters': 8,
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+    'train.learning_rate': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
     # 'train.sim_gumbel': [False, True],
     # 'train.loss_type': ['task+kd+ce+hv'],      # +pure+hv
     # 'train.pure_coefficient': [0, 0.5, 1],

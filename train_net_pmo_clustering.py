@@ -25,7 +25,7 @@ from models.losses import cross_entropy_loss, prototype_loss, DistillKL
 from models.model_utils import (CheckPointer, UniformStepLR,
                                 CosineAnnealRestartLR, ExpDecayLR)
 from models.model_helpers import get_model, get_optimizer, get_model_moe
-from models.pa import apply_selection, pa
+from models.pa import apply_selection, pa_iterator
 from utils import Accumulator, device, set_determ, check_dir
 from config import args
 
@@ -214,7 +214,7 @@ def train():
             ce_loss = fn(dist, cluster_labels)
             epoch_log['scaler_df'] = pd.concat([
                 epoch_log['scaler_df'], pd.DataFrame.from_records([{
-                    'Tag': 'ce/loss', 'Idx': 0, 'Value': ce_loss.item()}])])
+                    'Tag': 'loss/ce_loss', 'Idx': 0, 'Value': ce_loss.item()}])])
 
             '''multiple mo sampling'''
             print(f"\n>> Iter: {i}, start mo sampling: ")
@@ -270,7 +270,7 @@ def train():
                     inner_lr = 1
                     grad = torch.autograd.grad(inner_loss, vartheta, create_graph=True)
                     selection_params = list(map(lambda p: p[1] - inner_lr * p[0], zip(grad, vartheta)))
-                    # selection_params = pa(context_features, context_labels, max_iter=max_iter, lr=inner_lr,
+                    # selection_params = pa_iterator(context_features, context_labels, max_iter=max_iter, lr=inner_lr,
                     #                       distance=args['test.distance'],
                     #                       vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)],
                     #                       create_graph=True)
@@ -310,15 +310,87 @@ def train():
             hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
             epoch_log['scaler_df'] = pd.concat([
                 epoch_log['scaler_df'], pd.DataFrame.from_records([{
-                    'Tag': 'hv_loss', 'Idx': 0, 'Value': hv_loss.item()}])])
+                    'Tag': 'loss/hv_loss', 'Idx': 0, 'Value': hv_loss.item()}])])
 
             # '''hv loss to average'''
             # hv_loss = hv_loss / args['train.n_mo']
 
-            '''backward ce_coef * clustering_ce_loss + hv_coef * hv_loss'''
+            '''entanglement within one cluster'''
+            ncc_losses_et = []
+            for cluster_idx, cluster in enumerate(pool.clusters):
+                if len(cluster) > 0:
+                    for et_train_idx in range(args['train.n_et_cond']):
+                        '''check pool has enough samples and generate 1 setting'''
+                        n_way, n_shot, n_query = available_setting(
+                            [num_imgs_clusters[cluster_idx]], args['train.mo_task_type'])
+                        if n_way == -1:  # not enough samples
+                            print(f"==>> pool has not enough samples. skip MO")
+                            break
+
+                        '''sample a task to condition model'''
+                        et_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+
+                        '''use url with pa'''
+                        model = url
+                        with torch.no_grad():
+                            task_features = pmo.embed(
+                                torch.cat([et_task['context_images'], et_task['target_images']]))
+                            context_features = model.embed(et_task['context_images'])
+                            context_labels = et_task['context_labels']
+
+                        selection, selection_info = pmo.selector(
+                            task_features, gumbel=False, hard=False)
+                        vartheta = [torch.mm(selection, pmo.pas.detach().flatten(1)).view(512, 512, 1, 1)]
+                        # detach from pas to only train clustering and not train pas
+                        selected_features = apply_selection(context_features, vartheta)
+                        inner_loss, _, _ = prototype_loss(
+                            selected_features, context_labels, selected_features, context_labels,
+                            distance=args['test.distance'])
+                        inner_lr = 1
+                        grad = torch.autograd.grad(inner_loss, vartheta, create_graph=True)
+                        selection_params = list(map(lambda p: p[1] - inner_lr * p[0], zip(grad, vartheta)))
+
+                        '''sample train.n_et_update tasks for ncc losses'''
+                        for et_update_idx in range(args['train.n_et_update']):
+                            n_way, n_shot, n_query = available_setting(
+                                [num_imgs_clusters[cluster_idx]], args['train.mo_task_type'])
+                            up_task = pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+
+                            obj_context_images = up_task['context_images']
+                            obj_target_images = up_task['target_images']
+                            obj_context_labels = up_task['context_labels']
+                            obj_target_labels = up_task['target_labels']
+
+                            obj_context_features = apply_selection(model.embed(obj_context_images),
+                                                                   selection_params)
+                            obj_target_features = apply_selection(model.embed(obj_target_images),
+                                                                  selection_params)
+
+                            obj_loss, stats_dict, _ = prototype_loss(
+                                obj_context_features, obj_context_labels, obj_target_features, obj_target_labels,
+                                distance=args['test.distance'])
+                            ncc_losses_et.append(obj_loss)
+                            epoch_log['scaler_df'] = pd.concat([
+                                epoch_log['scaler_df'], pd.DataFrame.from_records([
+                                    {'Tag': 'et/loss', 'Idx': 0, 'Value': stats_dict['loss']},
+                                    {'Tag': 'et/acc', 'Idx': 0, 'Value': stats_dict['acc']}])])
+
+            '''average ncc_losses_et'''
+            if len(ncc_losses_et) > 0:
+                et_loss = torch.mean(torch.stack(ncc_losses_et))
+                scaler = et_loss.item()
+            else:
+                et_loss = 0
+                scaler = 0
+            epoch_log['scaler_df'] = pd.concat([
+                epoch_log['scaler_df'], pd.DataFrame.from_records([{
+                    'Tag': 'loss/et_loss', 'Idx': 0, 'Value': scaler}])])
+
+            '''backward above losses'''
             ce_loss = ce_loss * args['train.ce_coefficient']
             hv_loss = hv_loss * args['train.hv_coefficient']
-            loss = ce_loss + hv_loss
+            et_loss = et_loss * args['train.et_coefficient']
+            loss = ce_loss + hv_loss + et_loss
             # '''step coefficient from 0 to hv_coefficient (default: 1.0)'''
             # hv_loss = hv_loss * (args['train.hv_coefficient'] * min(i * 5, max_iter) / max_iter)
 
@@ -429,11 +501,17 @@ def train():
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
                 debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='acc')
                 debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='loss')
+                '''write min crowding distance'''
+                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='acc')
+                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='loss')
 
-                debugger.write_scaler(epoch_log['scaler_df'], key='ce/loss', i=i, writer=writer)
-                debugger.write_scaler(epoch_log['scaler_df'], key='hv_loss', i=i, writer=writer)
+                debugger.write_scaler(epoch_log['scaler_df'], key='loss/ce_loss', i=i, writer=writer)
+                debugger.write_scaler(epoch_log['scaler_df'], key='loss/hv_loss', i=i, writer=writer)
+                debugger.write_scaler(epoch_log['scaler_df'], key='loss/et_loss', i=i, writer=writer)
                 debugger.write_scaler(epoch_log['scaler_df'], key='task/loss', i=i, writer=writer)
                 debugger.write_scaler(epoch_log['scaler_df'], key='task/acc', i=i, writer=writer)
+                debugger.write_scaler(epoch_log['scaler_df'], key='et/loss', i=i, writer=writer)
+                debugger.write_scaler(epoch_log['scaler_df'], key='et/acc', i=i, writer=writer)
 
                 epoch_log = init_train_log()
 
@@ -562,10 +640,10 @@ def train():
 
                             inner_lr = 1
                             for inner_idx, selection_params in enumerate(
-                                    pa(context_features, context_labels, max_iter=1, lr=inner_lr,
-                                       distance=args['test.distance'],
-                                       vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)],
-                                       return_iterator=True)):
+                                    pa_iterator(
+                                        context_features, context_labels, max_iter=1, lr=inner_lr,
+                                        distance=args['test.distance'],
+                                        vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)])):
                                 '''inner acc/loss'''
                                 with torch.no_grad():
                                     selected_context = apply_selection(context_features, selection_params)
@@ -624,6 +702,11 @@ def train():
                     val_log['mo_df'], i, writer=writer, target='acc', prefix=f'val_avg_span')
                 val_avg_span_loss = debugger.write_avg_span(
                     val_log['mo_df'], i, writer=writer, target='loss', prefix=f'val_avg_span')
+                '''write min crowding distance'''
+                val_min_cd_acc = debugger.write_min_crowding_distance(
+                    val_log['mo_df'], i, writer=writer, target='acc', prefix=f'val_min_cd')
+                val_min_cd_loss = debugger.write_min_crowding_distance(
+                    val_log['mo_df'], i, writer=writer, target='loss', prefix=f'val_min_cd')
 
                 '''task/loss'''
                 avg_log = {'loss': [], 'acc': []}
@@ -653,6 +736,8 @@ def train():
                 '''best_criteria'''
                 if args['train.best_criteria'] == 'avg_span':
                     avg_val_loss, avg_val_acc = avg_val_source_loss, val_avg_span_loss
+                elif args['train.best_criteria'] == 'min_cd':
+                    avg_val_loss, avg_val_acc = avg_val_source_loss, val_min_cd_loss
                 else:
                     avg_val_loss, avg_val_acc = avg_val_source_loss, avg_val_source_acc
 

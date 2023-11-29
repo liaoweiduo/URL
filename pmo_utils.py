@@ -1263,6 +1263,56 @@ def cal_hv(objs, ref=2, target='loss'):
     return hv
 
 
+def cal_min_crowding_distance(objs):
+    """
+    code from pymoo, remove normalization part, return the min cd.
+    Args:
+        objs: Tensor/ndarry with shape(obj_size, pop_size)     e.g., (3, 6)
+
+    Returns:
+
+    """
+    from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
+    # obtain np objs: F
+    if type(objs) is torch.Tensor:
+        F = objs.detach().cpu().numpy().T
+    else:
+        F = objs.T
+
+    non_dom = NonDominatedSorting().do(F, only_non_dominated_front=True)
+    F = np.copy(F[non_dom, :])
+
+    n_points, n_obj = F.shape
+
+    # sort each column and get index
+    I = np.argsort(F, axis=0, kind='mergesort')
+
+    # sort the objective space values for the whole matrix
+    F = F[I, np.arange(n_obj)]
+
+    # calculate the distance from each point to the last and next
+    dist = np.row_stack([F, np.full(n_obj, np.inf)]) - np.row_stack([np.full(n_obj, -np.inf), F])
+
+    # # calculate the norm for each objective - set to NaN if all values are equal
+    # norm = np.max(F, axis=0) - np.min(F, axis=0)
+    # norm[norm == 0] = np.nan
+
+    # prepare the distance to last and next vectors
+    dist_to_last, dist_to_next = dist, np.copy(dist)
+    # dist_to_last, dist_to_next = dist_to_last[:-1] / norm, dist_to_next[1:] / norm
+    dist_to_last, dist_to_next = dist_to_last[:-1], dist_to_next[1:]
+
+    # if we divide by zero because all values in one columns are equal replace by none
+    dist_to_last[np.isnan(dist_to_last)] = 0.0
+    dist_to_next[np.isnan(dist_to_next)] = 0.0
+
+    # sum up the distance to next and last and norm by objectives - also reorder from sorted list
+    J = np.argsort(I, axis=0)
+    cd = np.sum(dist_to_last[J, np.arange(n_obj)] + dist_to_next[J, np.arange(n_obj)], axis=1) / n_obj
+
+    return min(cd)
+
+
 def draw_objs(objs, labels):
     """
     return a figure of objs.

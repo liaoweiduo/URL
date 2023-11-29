@@ -75,7 +75,7 @@ parser.add_argument('--train.eval_size', type=int, default=300, metavar='EVAL_SI
 parser.add_argument('--train.resume', type=int, default=1, metavar='RESUME_TRAIN',
                     help="Resume training starting from the last checkpoint (default: True)")
 parser.add_argument('--train.best_criteria', type=str, default='domain', metavar='BEST_MODEL',
-                    help='Best model based on which [hv, cluster, domain, avg_span]')
+                    help='Best model based on which [hv, cluster, domain, avg_span, min_cd]')
 
 # pmo training
 parser.add_argument('--train.selector_learning_rate', type=float, default=0.03, metavar='LR',
@@ -120,11 +120,19 @@ parser.add_argument('--train.pure_coefficient', type=float, default=1, metavar='
                     help='coeffient for pure task ncc loss.')
 parser.add_argument('--train.hv_coefficient', type=float, default=1, metavar='HV_COEFFICIENT',
                     help='coeffient for hv loss.')
+parser.add_argument('--train.et_coefficient', type=float, default=1, metavar='ET_COEFFICIENT',
+                    help='coeffient for et loss.')
 parser.add_argument('--train.max_sampling_iter_for_pool', type=int, default=1, metavar='ITER',
                     help='Number of sampling iteration for sampling tasks to put into pool.')
 parser.add_argument('--train.n_mo', type=int, default=9, metavar='N_MO',
                     help='number of MO sampling to train. '
                          'each sample chooses n_obj clusters randomly to construct 1 mo_obj.')
+parser.add_argument('--train.n_et_cond', type=int, default=1, metavar='N_ET',
+                    help='entanglement improvement: number of task sampling for each cluster. '
+                         'each sample is used to condition model.')
+parser.add_argument('--train.n_et_update', type=int, default=1, metavar='N_ET',
+                    help='entanglement improvement: number of task sampling for each condition model. '
+                         'each sample is used to generate query ncc loss.')
 parser.add_argument('--train.mo_task_type', type=str, choices=['standard', '1shot', '5shot'],
                     default='standard', metavar='TASK_TYPE',
                     help="meta-train type for task sampling from pool, "
