@@ -207,7 +207,7 @@ class Debugger:
             ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
         for inner_step in range(n_inner):
             hv = cal_hv(objs[inner_step], ref, target=target)
-            writer.add_scalar(f'{prefix}_details/{target}/{i}', hv, inner_step + 1)
+            writer.add_scalar(f'{prefix}_details/{target}/{i+1}', hv, inner_step + 1)
         writer.add_scalar(f'{prefix}/{target}', hv, i + 1)
 
         print(f"==>> {prefix}: {target} {hv:.3f}.")
@@ -247,7 +247,7 @@ class Debugger:
             avg_span = np.mean(
                 [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
                  range(n_obj)])
-            writer.add_scalar(f'{prefix}_details/{target}/{i}', avg_span, inner_step + 1)
+            writer.add_scalar(f'{prefix}_details/{target}/{i+1}', avg_span, inner_step + 1)
         writer.add_scalar(f'{prefix}/{target}', avg_span, i + 1)
 
         print(f"==>> {prefix}: {target} {avg_span:.5f}.")
@@ -292,7 +292,7 @@ class Debugger:
                     [np.max(objs[inner_step][obj_idx]) - np.min(objs[inner_step][obj_idx]) for obj_idx in
                      range(n_obj)])
                 cd = avg_span
-            writer.add_scalar(f'{prefix}_details/{target}/{i}', cd, inner_step + 1)
+            writer.add_scalar(f'{prefix}_details/{target}/{i+1}', cd, inner_step + 1)
         writer.add_scalar(f'{prefix}/{target}', cd, i + 1)
 
         print(f"==>> {prefix}: {target} {cd:.5f}.")

@@ -168,73 +168,6 @@ class Pool(nn.Module):
         else:
             raise Exception(f'Un implemented mode: {self.mode} for Pool.')
 
-    def put_batch(self, images, cluster_idxs, info_dict):
-        """
-        Put samples (batch of torch cpu images) into clusters.
-            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
-                              #  `selection`.  # torch cuda
-        """
-        '''unpack'''
-        domain, gt_labels = info_dict['domain'], info_dict['gt_labels']
-        similarities = info_dict['similarities']
-        features = info_dict['features']
-        # similarities, selection = info_dict['similarities'], info_dict['selection']
-
-        for sample_idx in range(len(cluster_idxs)):
-            cluster_idx = cluster_idxs[sample_idx]
-            '''pop stored images and cat new images'''
-            label = np.array([gt_labels[sample_idx], domain[sample_idx]])
-            position = self.find_label(label, cluster_idx=cluster_idx)
-            if position != -1:      # find exist label, cat onto it and re-put
-                stored = self.clusters[position[0]].pop(position[1])
-                stored_images = stored['images']
-                stored_images = np.concatenate([stored_images, images[sample_idx:sample_idx+1].numpy()])
-                stored_similarities = stored['similarities']
-                stored_similarities = np.concatenate([stored_similarities, similarities[sample_idx:sample_idx+1]])
-                stored_features = stored['features']
-                stored_features = np.concatenate([stored_features, features[sample_idx:sample_idx+1]])
-                # stored_selection = stored['selection']
-                # stored_selection = torch.cat([stored_selection, selection[sample_idx:sample_idx+1]])
-            else:
-                stored_images = images[sample_idx:sample_idx+1].numpy()
-                stored_similarities = similarities[sample_idx:sample_idx+1]
-                stored_features = features[sample_idx:sample_idx+1]
-                # stored_selection = selection[sample_idx:sample_idx+1]
-
-            '''sort within class '''
-            indexs = np.argsort(stored_similarities[:, cluster_idx])[::-1]      # descending order
-            stored_images = stored_images[indexs]
-            stored_similarities = stored_similarities[indexs]
-            stored_features = stored_features[indexs]
-
-            '''remove several images with smaller sim to satisfy max_num_images'''
-            if stored_images.shape[0] > self.max_num_images:
-                stored_images = stored_images[:self.max_num_images]
-                stored_similarities = stored_similarities[:self.max_num_images]
-                stored_features = stored_features[:self.max_num_images]
-                # stored_selection = stored_selection[:self.max_num_images]
-
-            '''put to cluster: cluster_idx'''
-            self.clusters[cluster_idx].append({
-                'images': stored_images, 'features': stored_features, 'label': label,    # 'selection': stored_selection,
-                'similarities': stored_similarities,
-                'class_similarity': np.mean(stored_similarities, axis=0),       # mean over all samples [n_clusters]
-            })
-
-        '''after put all samples into pool, handle for full clusters'''
-        for cluster_idx, cluster in enumerate(self.clusters):
-            '''sort class according to the corresponding similarity (mean over all samples in the class)'''
-            self.clusters[cluster_idx].sort(
-                key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
-
-            if len(self.clusters[cluster_idx]) > self.max_num_classes:
-                '''need to remove all classes only contain 1 image, since they are high probability to be outliers'''
-                self.clusters[cluster_idx] = [cls for cls in cluster if cls['images'].shape[0] > 1]
-
-            if len(self.clusters[cluster_idx]) > self.max_num_classes:
-                '''need to remove one with smallest similarity: last one to satisfy max_num_classes'''
-                self.clusters[cluster_idx] = self.clusters[cluster_idx][:self.max_num_classes]
-
     def put_buffer(self, images, info_dict, maintain_size=True):
         """
         Put samples (batch of torch cpu images) into buffer.
@@ -333,403 +266,76 @@ class Pool(nn.Module):
             '''remove empty cls'''
             self.buffer = [cls for cls in self.buffer if len(cls['images']) > 0]
 
-    '''
-    OLD PUT
-    '''
-
-    '''Buffer'''
-    def put_into_buffer(self, images_list, label_list):
-        """Put a list of classes to the buffer
-        :param images_list: list of numpy images with shape [bs, c, h, w]
-        :param label_list: list of int tuple: (gt_label, domain)
+    def put(self, images, info_dict):
         """
-        for images, label in zip(images_list, label_list):
+        Put samples (batch of torch cpu images) into clusters.
+            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
+
+        """
+        '''unpack'''
+        domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        similarities, features = info_dict['similarities'], info_dict['features']
+
+        labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
+
+        for label in np.unique(labels, axis=0):     # unique along first axis
+            mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
+            assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
+            assert gt_labels[mask][0] == label[0] and domains[mask][0] == label[1]
+            class_images = images[mask].numpy()
+            class_features = features[mask]
+            class_similarities = similarities[mask]
+
             '''pop stored images and cat new images'''
-            position = self.find_label(label, target='buffer')
-            if position != -1:      # find exist label, cat onto it and reput into buffer
-                stored = self.buffer.pop(position)
-                assert stored['label'] == label
-                stored_images = np.concatenate([stored['images'], images])
+            position = self.find_label(label, target='clusters')
+            if position != -1:  # find exist label, cat onto it
+                cluster_idx, cls_idx = position
+                # stored = self.clusters[cluster_idx][cls_idx]
+                stored = self.clusters[cluster_idx].pop(cls_idx)
+                assert (stored['label'] == label).all()
+                stored_images = np.concatenate([stored['images'], class_images])
+                stored_features = np.concatenate([stored['features'], class_features])
+                stored_similarities = np.concatenate([stored['similarities'], class_similarities])
             else:
-                stored_images = images
+                stored_images = class_images
+                stored_features = class_features
+                stored_similarities = class_similarities
 
-            '''remove first several images to satisfy max_num_images'''
-            if stored_images.shape[0] > self.max_num_images:
-                stored_images = stored_images[-self.max_num_images:]
+            '''remove same image'''
+            stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
+            stored_features = stored_features[img_idxes]
+            stored_similarities = stored_similarities[img_idxes]
 
-            class_dict = {
-                'images': stored_images,
-                'label': label,
+            cls = {
+                'images': stored_images, 'label': label,  # 'selection': stored_selection,
+                'similarities': stored_similarities,
+                'features': stored_features,
+                # 'class_similarity': np.mean(stored_similarities, axis=0),  # mean over all samples [n_clusters]
             }
 
+            '''sort within class '''
+            indexes = np.argsort(cls['similarities'][:, cluster_idx])[::-1]  # descending order
+            chosen_images = cls['images'][indexes][:self.max_num_images]
+            remain_images = cls['images'][indexes][self.max_num_images:]
+            chosen_features = cls['features'][indexes][:self.max_num_images]
+            remain_features = cls['features'][indexes][self.max_num_images:]
+            # can be empty array([], shape=(0, 3, 84, 84)) len(remain_images) = 0
+            chosen_similarities = cls['similarities'][indexes][:self.max_num_images]
+            remain_similarities = cls['similarities'][indexes][self.max_num_images:]
+            class_similarity = np.mean(chosen_similarities, axis=0)
+            # mean over max_num_img samples [n_clusters]
+            cls['remain_images'], cls['remain_similarities'] = remain_images, remain_similarities
+            cls['chosen_images'], cls['chosen_similarities'] = chosen_images, chosen_similarities
+            cls['chosen_features'], cls['remain_features'] = chosen_features, remain_features
+            cls['class_similarity'] = class_similarity
+
             '''put into buffer'''
-            self.buffer.append(class_dict)
-
-    def task_put_into_buffer(self, images, re_labels, gt_labels, domain):
-        """Put the classes in the tasks to the buffer. Classes are separated by re_labels.
-        :param images: Numpy images with shape [bs, c, h, w]
-        :param re_labels: Numpy relative labels with shape [bs]
-        :param gt_labels: Numpy ground truth labels with shape [bs]
-        :param domain: Int domain
-        """
-        images_list, label_list = [], []
-        for re_label in range(len(np.unique(re_labels))):
-            mask = re_labels == re_label
-            class_images, class_gt_label = images[mask], gt_labels[mask][0].item()
-            images_list.append(class_images)
-            label_list.append((class_gt_label, domain))
-
-        self.put_into_buffer(images_list, label_list)
-
-    def cluster_put_into_buffer(self):
-        """Put the classes in the clusters to the buffer."""
-        images_list, label_list = [], []
-        for cluster_idx, (cls_list_in_cluster, img_list_in_cluster) in enumerate(
-                zip(self.current_classes(), self.current_images())):
-            images_list.extend(img_list_in_cluster)
-            label_list.extend([cls_with_img_num[0] for cls_with_img_num in cls_list_in_cluster])
-
-        self.clear_clusters()
-
-        self.put_into_buffer(images_list, label_list)
-
-    def batch_put_into_buffer(self, sample, class_mapping, domain_name, cluster_name, loader):
-        """put batch sample into the buffer with specific domain_str and cluster_name"""
-        images = sample['images']       # Tensor images [bs, c, h, w] in device
-        labels = sample['labels']       # Tensor labels [bs] in device
-        for idx, label in enumerate(labels):
-            if class_mapping[domain_name][str(label.item())][2] == cluster_name:
-                re_label = class_mapping[domain_name][str(label.item())][1]
-                label_str = class_mapping[domain_name][str(label.item())][0]
-                str_label = loader.label_to_str((label.item(), None), domain=0)[0]
-                assert label_str == str_label
-
-                image_dict = {
-                    'image': images[idx],
-                    'label': re_label,
-                }
-
-                '''put into buffer'''
-                self.buffer.append(image_dict)
-
-    '''Cluster'''
-    def cluster_and_assign_from_buffer(self, feature_extractor, model):
-        """Perform clustering on classes in the buffer"""
-
-        '''construct a big task for all classes in the buffer'''
-        images, re_labels, gt_labels, sampled_images = [], [], [], []
-        for re_label, class_dict in enumerate(self.buffer):
-            n_img = class_dict['images'].shape[0]
-            images.append(class_dict['images'])
-            sampled_images.append(class_dict['images'][0])
-            re_labels.append(np.repeat(re_label, n_img))
-            gt_labels.append(class_dict['label'])
-
-        n_cls = len(self.buffer)
-        images_numpy = np.concatenate(images)           # [bs, c, h, w]
-        re_labels_numpy = np.concatenate(re_labels)     # [bs]
-
-        '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, self.cluster_device)
-        labels_torch = to_device(re_labels_numpy, self.cluster_device)
-
-        '''clear buffer'''
-        self.clear_buffer()
-
-        # obtain embeddings after url
-        embeddings = feature_extractor.embed(images_torch)
-
-        if self.mode == 'kmeans':
-            embeddings = model([embeddings.to(self.cluster_device)])[0]
-
-            with torch.no_grad():
-                class_centroids = compute_prototypes(embeddings, labels_torch, n_cls).cpu().numpy()     # [n_cls, emb_dim]
-
-            '''get cluster centers'''
-            centers = self.centers.cpu().numpy() if self.centers is not None else 'k-means++'
-
-            '''do k-means on class_centroids init with centers'''
-            km = KMeans(n_clusters=self.capacity, init=centers, n_init=1)
-            km.fit(class_centroids)
-            # similarities = km.fit_transform(class_centroids)        # [n_cls, n_cluster]
-            updated_centers = km.cluster_centers_
-            self.centers = torch.from_numpy(updated_centers).to(self.cluster_device)
-
-            cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
-                embeddings, labels_torch)
-
-            '''put into clusters'''
-            for re_label in range(len(cluster_idxs)):
-                class_images = images[re_label]
-                label = gt_labels[re_label]
-                # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
-                similarities_numpy = similarities[re_label]  # [n_cluster]
-                self.put(class_images, label, grad_ones[re_label],
-                         {'similarities': similarities_numpy},
-                         cluster_idxs[re_label], class_centroids[re_label])
-
-        elif self.mode == 'hierarchical':
-            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
-            similarities, loss_rec, assigns, gates = model(class_centroids)     # [n_cls, 8]
-
-            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities)
-
-            similarities = similarities.detach().cpu().numpy()
-
-            '''put into clusters'''
-            for re_label in range(len(cluster_idxs)):
-                class_images = images[re_label]
-                label = gt_labels[re_label]
-                # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
-                similarities_numpy = similarities[re_label]  # [n_cluster]
-                self.put(class_images, label, grad_ones[re_label],
-                         {'similarities': similarities[re_label],
-                          'assigns': assigns[:, re_label],
-                          'gates': gates[:, :, re_label]},
-                         cluster_idxs[re_label], class_centroids[re_label])
-
-        else:
-            raise Exception('')
-
-        '''return info for tsne'''
-        return {
-            'labels': gt_labels,  # n_cls * (gt, domain)
-            'cluster_idxs': cluster_idxs,  # [n_cls,]
-            'class_centroids': class_centroids.detach().cpu().numpy(),  # [n_cls, emb_dim]
-            'sample_images': np.stack(sampled_images),  # [n_cls, c, h, w]
-            'similarities': similarities,  # [n_cls, n_cluster]
-            'loss_rec': loss_rec,
-        }
-
-    def cluster_from_similarities(self, similarities, softmax_mode='gumbel'):
-        """Compute cluster_idxs and grad_ones with specific softmax mode"""
-
-        '''cluster_idx is obtained with based on similarities'''
-        if softmax_mode == 'gumbel':
-            hard_gumbel_softmax = F.gumbel_softmax(similarities, tau=args['train.gumbel_tau'], hard=True)
-            cluster_idxs = torch.argmax(hard_gumbel_softmax, dim=1).detach().cpu().numpy()    # numpy [n_way,]
-            grad_ones = torch.stack([
-                hard_gumbel_softmax[idx, cluster_idx] for idx, cluster_idx in enumerate(cluster_idxs)])
-            # Tensor [1, 1,...] shape [n_way,]
-        elif softmax_mode == 'softmax':
-            sftmx = F.softmax(similarities, dim=1).detach().cpu().numpy()
-            cluster_idxs = np.argmax(sftmx, axis=1)
-            grad_ones = torch.ones(similarities.shape[0]).to(similarities.device)
-        else:
-            raise Exception(f'Un implemented softmax_mode: {softmax_mode} for Pool to do clustering.')
-
-        return cluster_idxs, grad_ones
-
-    def cluster_from_emb(self, embeddings, labels_torch, softmax_mode='gumbel'):
-        """Apply clustering on embeddings with specific softmax mode"""
-        centers = self.centers if self.centers is not None else torch.randn(self.capacity, self.emb_dim).to(self.cluster_device)
-        similarities, class_centroids = prototype_similarity(
-            embeddings, labels_torch, centers, distance=args['test.distance'])
-        # similarities shape [n_way, n_clusters] and class_centroids shape [n_way, emb_dim]
-
-        cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
-
-        return cluster_idxs, grad_ones, similarities.detach().cpu().numpy(), class_centroids
-
-    def cluster_and_assign(
-            self, images_numpy, re_labels_numpy, gt_labels_numpy, domain,
-            feature_extractor, model,
-            update_cluster_centers=False,
-            softmax_mode='gumbel',
-            put=True):
-        """
-        Do clustering based on class centroid similarities with cluster centers.
-        :param images_numpy: numpy/tensor with shape [bs, c, h, w]
-        :param re_labels_numpy: related labels, numpy/tensor with shape [bs,]
-        :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
-        :param domain: int domain or same size numpy as labels [bs,].
-        :param feature_extractor: feature_extractor to obtain image features.
-        :param model: clustering model to obtain img embedding and class centroid.
-        :param update_cluster_centers: whether to update the cluster center.
-            only activated for mov avg approach, not for trainable cluster centers.
-        :param softmax_mode: how similarity do softmax.
-            choices=[gumbel, softmax]
-        :param put: whether to put classes into clusters.
-        """
-        '''move images to device where model locates'''
-        images_torch = to_device(images_numpy, self.cluster_device)
-        labels_torch = to_device(re_labels_numpy, self.cluster_device)
-
-        embeddings = feature_extractor.embed(images_torch)
-
-        if self.mode == 'kmeans':
-            embeddings = model([embeddings.to(self.cluster_device)])[0]
-
-            cluster_idxs, grad_ones, similarities, class_centroids = self.cluster_from_emb(
-                embeddings, labels_torch, softmax_mode)
-
-        elif self.mode == 'hierarchical':
-            n_cls = len(labels_torch.unique())
-            class_centroids = compute_prototypes(embeddings, labels_torch, n_cls)       # [n_cls, 512]
-            similarities, loss_rec, assigns, gates = model(class_centroids)     # [n_cls, 8]
-
-            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
-
-            similarities = similarities.detach().cpu().numpy()
-
-        else:
-            raise Exception('')
-
-        labels = []
-        sample_images = []
-        sims = []
-        for re_label in range(len(cluster_idxs)):
-            images = images_numpy[re_labels_numpy == re_label]
-            # embeddings_numpy = embeddings[re_labels_numpy == re_label].detach().cpu().numpy()
-            gt_label = gt_labels_numpy[re_labels_numpy == re_label][0].item()
-            similarities_numpy = similarities[re_label]  # [num_cluster]
-            if type(domain) is np.ndarray:
-                image_domains = domain[re_labels_numpy == re_label]
-                label = (gt_label, image_domains[0].item())
+            if position == -1:
+                self.buffer.append(cls)
             else:
-                label = (gt_label, domain)
-            labels.append(label)
-            sample_images.append(images[0])
-            sims.append(similarities_numpy)
+                self.buffer[position] = cls
 
-            '''put samples into pool with (gt_label, domain)'''
-            if put:
-                self.put(images, label, grad_ones[re_label], {'similarities': similarities_numpy},
-                         cluster_idxs[re_label], class_centroids[re_label], update_cluster_centers)
-
-        '''return info for tsne'''
-        return {
-            'labels': np.array(labels),                                     # [n_way, gt, domain]
-            'cluster_idxs': cluster_idxs,                                   # [n_way,]
-            'class_centroids': class_centroids.detach().cpu().numpy(),      # [n_way, emb_dim]
-            'sample_images': np.stack(sample_images),                       # [n_way, c, h, w]
-            'similarities': np.stack(sims)                                  # [n_way, num_cluster]
-        }
-
-    def cluster_and_assign_with_class_mapping(
-            self, images_numpy, gt_labels_numpy, domain, domain_name,
-            class_mapping, cluster_name, cluster_idx):
-        """
-        Use class_mapping to filter class belongs to specific cluster_name
-        :param images_numpy: numpy/tensor with shape [bs, c, h, w]
-        :param gt_labels_numpy: true labels in the domain, numpy with shape [bs,]
-        :param domain: int domain or same size numpy as labels [bs,]. Should be consistent with domain_name.
-        :param domain_name: string domain or list of string with same size as labels [bs, ]
-        :param class_mapping: {domain_name: {gt_label: [label_str, re_label, cluster_name]}}
-        :param cluster_name: C0-C7.
-        :param cluster_idx: 0-7
-        """
-        label_set = np.unique(gt_labels_numpy)
-        for label in label_set:
-            if class_mapping[domain_name][str(label.item())][2] == cluster_name:
-                re_label = class_mapping[domain_name][str(label.item())][1]
-                label_str = class_mapping[domain_name][str(label.item())][0]
-                images = images_numpy[gt_labels_numpy == label]
-                tuple_label = (label, domain)
-
-                '''put to clusters'''
-                self.put(images=images, label=tuple_label, grad_one=torch.ones(1)[0],
-                         info_dict=None,
-                         cluster_idx=cluster_idx, class_centroid=None)
-
-    def cluster_for_task(self, images_numpy, feature_extractor, model, softmax_mode='gumbel'):
-        """Clustering for task centroid.
-        :param images_numpy: numpy/tensor with shape [bs, c, h, w]
-        :param model: clustering model to obtain img embedding and class centroid.
-        :param softmax_mode: how similarity do softmax.
-            choices=[gumbel, softmax]
-        Return cluster_idx: numpy(), grad_one: tensor(), similarity: numpy(8), task_centroid: tensor(512)
-        """
-        re_labels_numpy = np.array([0 for _ in range(images_numpy.shape[0])])
-        images_torch = to_device(images_numpy, self.cluster_device)
-        labels_torch = to_device(re_labels_numpy, self.cluster_device)
-
-        if self.mode == 'kmeans':
-            embeddings = model.embed(images_torch)
-            cluster_idxs, grad_ones, similarities, task_centroids = self.cluster_from_emb(
-                embeddings, labels_torch, softmax_mode)
-            # [1], [1], [1, 8], [1, 512]
-
-        elif self.mode == 'hierarchical':
-            # obtain embeddings after url
-            embeddings = feature_extractor.embed(images_torch)
-            task_centroids = compute_prototypes(embeddings, labels_torch, n_way=1)  # [1, 512]
-            similarities, loss_rec, assigns, gates = model(task_centroids)  # [1, 8]
-
-            cluster_idxs, grad_ones = self.cluster_from_similarities(similarities, softmax_mode)
-
-            similarities = similarities.detach().cpu().numpy()
-
-        return cluster_idxs[0], grad_ones[0], similarities[0], task_centroids[0], loss_rec
-
-    def re_clustering(self, model):
-        """
-        collect classes in the pool then clear clusters and cluster for those classes
-        """
-        images, re_labels, gt_labels, domains = [], [], [], []
-        re_idx = 0
-        for cluster_idx, (cls_list_in_cluster, img_list_in_cluster) in enumerate(
-                zip(self.current_classes(), self.current_images())):
-            for class_idx, (cls, img) in enumerate(zip(cls_list_in_cluster, img_list_in_cluster)):
-                images.append(img)                                          # [20, 3, 84, 84]
-                re_labels.append(np.repeat(re_idx, img.shape[0]))           # [20]
-                gt_labels.append(np.repeat(cls[0][0], img.shape[0]))        # [20]
-                domains.append(np.repeat(cls[0][1], img.shape[0]))          # [20]
-                re_idx += 1
-
-        if len(images) > 0:
-            self.clear_clusters()
-            self.cluster_and_assign(
-                np.concatenate(images), np.concatenate(re_labels), np.concatenate(gt_labels), np.concatenate(domains),
-                model
-            )
-
-    def put(self, images, label, grad_one,
-            info_dict,
-            cluster_idx, class_centroid,
-            update_cluster_centers=False):
-        """
-        Put class samples (batch of numpy images) into clusters.
-        Issues to handle:
-            Maximum number of classes.
-                just remove the earliest one.
-            Already stored class in same cluster or other cluster.
-                cat images with max size: max_num_images.
-            Update cluster centers with class_centroid: [feature_size, ]
-            info_dict should contain `similarities`.
-        """
-        '''pop stored images and cat new images'''
-        position = self.find_label(label)
-        if position != -1:      # find exist label, cat onto it and change to current cluster_idx
-            stored = self.clusters[position[0]].pop(position[1])
-            stored_images = stored['images']
-            stored_images = np.concatenate([stored_images, images])
-            # stored_embeddings = stored['embeddings']
-            # stored_embeddings = np.concatenate([stored_embeddings, embeddings])
-        else:
-            stored_images = images
-            # stored_embeddings = embeddings
-
-        '''remove first several images to satisfy max_num_images'''
-        if stored_images.shape[0] > self.max_num_images:
-            stored_images = stored_images[-self.max_num_images:]
-            # stored_embeddings = stored_embeddings[-self.max_num_images:]
-
-        '''put to cluster: cluster_idx'''
-        self.clusters[cluster_idx].append({'images': stored_images, 'label': label,
-                                           'grad_one': grad_one.repeat(*images.shape[-3:]),     # c,h,w
-                                           'class_centroid': class_centroid.detach().cpu().numpy() if class_centroid is not None else None,
-                                           **info_dict
-                                           })
-        '''sort according to the corresponding similarity'''
-        self.clusters[cluster_idx].sort(key=lambda x: x['similarities'][cluster_idx], reverse=True)   # descending order
-        if len(self.clusters[cluster_idx]) == self.max_num_classes + 1:
-            '''need to remove one with smallest similarity: last one'''
-            self.clusters[cluster_idx].pop(-1)
-
-        '''update cluster centers: mov avg'''
-        if self.mode == 'mov_avg' and update_cluster_centers:
-            self.update_cluster_centers(cluster_idx, class_centroid)
+        return True
 
     def update_cluster_centers(self, cluster_idx, class_centroid):
         """
@@ -983,28 +589,6 @@ class Pool(nn.Module):
             self.clusters[cluster_idx] = class_items
 
         return task_dict
-
-    def batch_sample(self, cluster_idx):
-        """
-        Batch sampler for train.
-        """
-        pass
-
-    def batch_sample_from_buffer(self, batch_size):
-        """
-        Batch sampler for train from buffer.
-        Buffer is a list of image_dict = {'image': image, 'label': re_label}.
-        The first batch_size sample is pop and return.
-        """
-        image_dicts = self.buffer[:batch_size]  # can be less than batch_size
-        images = torch.stack([image_dict['image'] for image_dict in image_dicts])
-        labels = torch.stack([image_dict['label'] for image_dict in image_dicts])
-
-        '''pop these sample'''
-        self.buffer = self.buffer[batch_size:]  # can be less than batch_size
-
-        return {'images': images, 'labels': labels}
-
 
 class Mixer:
     """

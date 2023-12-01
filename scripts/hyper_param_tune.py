@@ -228,24 +228,27 @@ target = 'train_net_pmo_clustering.py'
 # target = 'train_net_pmo_domain_selector.py'
 num_runs_1sh = 5        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-pa-inner-et-0',
-    'train.max_iter': 200, 'train.summary_freq': 20, 'train.pool_freq': 10,
+    'tag': 'pmo-pa-inner-et-kl-0',
+    'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
-    'train.cosine_anneal_freq': 40, 'train.eval_freq': 40,
+    'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
     'train.cond_mode': 'pa',      # film_opt, film_random, pa
     'train.best_criteria': 'min_cd',    # domain; cluster; hv
     'train.cluster_center_mode': 'mov_avg',
     'model.num_clusters': 8,
+    'train.cluster_loss_type': 'kl',
 })
 param_grid = {
-    'train.learning_rate': [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
+    'train.learning_rate': [1e-4],
+    'train.selector_learning_rate': [1e-4],
     # 'train.sim_gumbel': [False, True],
     # 'train.loss_type': ['task+kd+ce+hv'],      # +pure+hv
     # 'train.pure_coefficient': [0, 0.5, 1],
     # 'train.hv_coefficient': [0, 0.5, 1],
 }
 exp_name_template = common_args['tag'] + \
-                    '-lr{train.learning_rate}' # + \
+                    '-lr{train.learning_rate}' + \
+                    '-slr{train.selector_learning_rate}' # + \
                     # '-gumbel{train.sim_gumbel}' + \
                     # '-hvc{train.hv_coefficient}' # + \
                     # '-cl{train.cluster_loss_type}{train.ce_coefficient}' + \
@@ -258,7 +261,7 @@ exp_name_template = common_args['tag'] + \
 params_temp = generate_params(common_args, param_grid, exp_name_template)
 for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
-    p['train.selector_learning_rate'] = p['train.learning_rate']
+    # p['train.selector_learning_rate'] = p['train.learning_rate']
 params.extend(params_temp)
 
 
