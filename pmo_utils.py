@@ -282,7 +282,7 @@ class Pool(nn.Module):
             class_similarities = similarities[mask]
 
             '''put to each cluster'''
-            for cluster_idx, cluster in self.clusters:
+            for cluster_idx, cluster in enumerate(self.clusters):
                 position = self.find_label(label, cluster_idx=cluster_idx)
                 if position != -1:  # find exist label, cat onto it
                     _, cls_idx = position       # cluster_idx, cls_idx
