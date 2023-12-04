@@ -155,7 +155,27 @@ def train():
         print(f'\n>>>> Train start from {start_iter}.')
         for i in tqdm(range(start_iter, max_iter), ncols=100):      # every iter, load one task from all loaders
             print(f"\n>> Iter: {i}, collect training samples: ")
-            '''obtain tasks from train_loaders and put to buffer'''
+
+            '''init pool and retain invalid classes by re-calculating similarities'''
+            if i % 2 == 0:      # init pool every 2 iters
+                invalid_samples = pool.current_invalid_classes()
+                pool.clear_clusters()
+
+                if len(invalid_samples) > 0:
+                    task_images = np.concatenate([sample['images'] for sample in invalid_samples])
+                    cat_labels = np.concatenate([sample['labels'] for sample in invalid_samples])
+                    task_features = torch.from_numpy(np.concatenate(
+                        [sample['features'] for sample in invalid_samples])).to(device)
+                    with torch.no_grad():
+                        _, selection_info = pmo.selector(
+                            task_features, gumbel=False, hard=False, average=False)  # [bs, n_clusters]
+                        similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
+
+                    pool.put(
+                        task_images, {'cat_labels': cat_labels,
+                                      'similarities': similarities, 'features': task_features.cpu().numpy()})
+
+            '''obtain tasks from train_loaders and put to buffer/clusters'''
             # loading images and labels
             numpy_samples, sample_domain_names = [], []
             for t_indx, (name, train_loader) in enumerate(train_loaders.items()):
@@ -172,6 +192,7 @@ def train():
                 task_images = torch.cat([context_images, target_images]).cpu()
                 gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
                 domain = np.array([t_indx] * len(gt_labels))  # [domain, domain, domain,...]
+                cat_labels = np.stack([gt_labels, domain], axis=1)  # [n_img, 2]
                 with torch.no_grad():
                     task_features = pmo.embed(torch.cat([context_images, target_images]))
                     _, selection_info = pmo.selector(
@@ -179,18 +200,21 @@ def train():
                     similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
                 # similarities = np.array([0] * len(gt_labels))  # no use
 
-                not_full = pool.put_buffer(
-                    task_images, {'domain': domain, 'gt_labels': gt_labels,
-                                  'similarities': similarities, 'features': task_features.cpu().numpy()},
-                    maintain_size=False)
-            print(f'Buffer contains {len(pool.buffer)} classes.')
-            # pool.buffer_backup = copy.deepcopy(pool.buffer)
-            # pool.buffer = copy.deepcopy(pool.buffer_backup)
-
-            '''buffer -> clusters'''
-            pool.clear_clusters()
-            pool.buffer2cluster()
-            pool.clear_buffer()
+                pool.put(
+                    task_images, {'cat_labels': cat_labels,
+                                  'similarities': similarities, 'features': task_features.cpu().numpy()})
+                # not_full = pool.put_buffer(
+                #     task_images, {'cat_labels': cat_labels
+                #                   'similarities': similarities, 'features': task_features.cpu().numpy()},
+                #     maintain_size=False)
+            # print(f'Buffer contains {len(pool.buffer)} classes.')
+            # # pool.buffer_backup = copy.deepcopy(pool.buffer)
+            # # pool.buffer = copy.deepcopy(pool.buffer_backup)
+            #
+            # '''buffer -> clusters'''
+            # pool.clear_clusters()
+            # pool.buffer2cluster()
+            # pool.clear_buffer()
 
             '''selection CE loss on all clusters'''
             print(f"\n>> Iter: {i}, clustering ce loss calculation: ")
@@ -566,28 +590,31 @@ def train():
                         task_images = torch.cat([context_images, target_images]).cpu()
                         gt_labels = torch.cat([context_gt_labels, target_gt_labels]).cpu().numpy()
                         domain = np.array([domain] * len(gt_labels))
-
+                        cat_labels = np.stack([gt_labels, domain], axis=1)  # [n_img, 2]
                         with torch.no_grad():
                             _, selection_info = pmo.selector(
                                 task_features, gumbel=False, average=False)  # [bs, n_clusters]
                             similarities = selection_info[
                                 'y_soft'].cpu().numpy()  # [bs, n_clusters]
 
-                        not_full = val_pool.put_buffer(
-                            task_images, {'domain': domain, 'gt_labels': gt_labels,
-                                          'similarities': similarities, 'features': task_features.cpu().numpy()},
-                            maintain_size=False)
+                        val_pool.put(
+                            task_images, {'cat_labels': cat_labels,
+                                          'similarities': similarities, 'features': task_features.cpu().numpy()})
+                        # not_full = val_pool.put_buffer(
+                        #     task_images, {'cat_labels': cat_labels,
+                        #                   'similarities': similarities, 'features': task_features.cpu().numpy()},
+                        #     maintain_size=False)
 
                     if (j + 1) % 5 == 0:
                         '''collect pool clusters and do mo'''
-                        verbose = False
-                        if verbose:
-                            print(f'Buffer contains {len(val_pool.buffer)} classes.')
-
-                        '''buffer -> clusters'''
-                        val_pool.clear_clusters()
-                        val_pool.buffer2cluster()
-                        val_pool.clear_buffer()
+                        # verbose = False
+                        # if verbose:
+                        #     print(f'Buffer contains {len(val_pool.buffer)} classes.')
+                        #
+                        # '''buffer -> clusters'''
+                        # val_pool.clear_clusters()
+                        # val_pool.buffer2cluster()
+                        # val_pool.clear_buffer()
 
                         '''repeat collecting MO acc on val pool'''
                         num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in

@@ -228,7 +228,7 @@ target = 'train_net_pmo_clustering.py'
 # target = 'train_net_pmo_domain_selector.py'
 num_runs_1sh = 5        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-pa-inner-et-kl-0',
+    'tag': 'pmo-pa-inner-et-kl-1',
     'train.max_iter': 1000, 'train.summary_freq': 100, 'train.pool_freq': 10,
     'train.mo_freq': 10, 'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
     'train.cosine_anneal_freq': 200, 'train.eval_freq': 200,
@@ -239,8 +239,8 @@ common_args.update({
     'train.cluster_loss_type': 'kl',
 })
 param_grid = {
-    'train.learning_rate': [1e-4],
-    'train.selector_learning_rate': [1e-4],
+    'train.learning_rate': [3e-4],
+    'train.selector_learning_rate': [3e-4],
     # 'train.sim_gumbel': [False, True],
     # 'train.loss_type': ['task+kd+ce+hv'],      # +pure+hv
     # 'train.pure_coefficient': [0, 0.5, 1],

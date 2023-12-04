@@ -33,17 +33,21 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=20, max_num_images=30, mode='hierarchical', buffer_size=200):
+    def __init__(self, capacity=8, max_num_classes=20, max_num_images=30,
+                 thres_num_images=15,
+                 mode='hierarchical', buffer_size=200):
         """
         :param capacity: Number of clusters. Typically, 8 columns of classes.
         :param max_num_classes: Maximum number of classes can be stored in each cluster.
         :param max_num_images: Maximum number of images can be stored in each class.
+        :param thres_num_images: a class with more than thres_num_images is a valid class ready for sampling.
         :param mode: mode for cluster centers, choice=[kmeans, hierarchical].
         """
         super(Pool, self).__init__()
         self.capacity = capacity
         self.max_num_classes = max_num_classes
         self.max_num_images = max_num_images
+        self.thres_num_images = thres_num_images
         self.mode = mode
         self.emb_dim = 512
         self.load_path = os.path.join(args['model.dir'], 'weights', 'pool')
@@ -170,25 +174,20 @@ class Pool(nn.Module):
 
     def put_buffer(self, images, info_dict, maintain_size=True):
         """
-        Put samples (batch of torch cpu images) into buffer.
-            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
+        Put samples (batch of torch cpu or numpy images) into buffer.
+            info_dict should contain `cat_labels`, `similarities`,     # numpy
         If maintain_size, then check buffer size before put into buffer.
         """
         if len(self.buffer) >= self.buffer_size and maintain_size:     # do not exceed buffer size
             return False
 
         '''unpack'''
-        domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        labels = info_dict['cat_labels']
         similarities, features = info_dict['similarities'], info_dict['features']
-
-        '''images for one class'''
-        labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
 
         for label in np.unique(labels, axis=0):     # unique along first axis
             mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
-            assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
-            assert gt_labels[mask][0] == label[0] and domains[mask][0] == label[1]
-            class_images = images[mask].numpy()
+            class_images = images[mask].numpy() if type(images) == torch.Tensor else images[mask]
             class_features = features[mask]
             class_similarities = similarities[mask]
 
@@ -268,74 +267,80 @@ class Pool(nn.Module):
 
     def put(self, images, info_dict):
         """
-        Put samples (batch of torch cpu images) into clusters.
-            info_dict should contain `domain`, `gt_labels`, `similarities`,     # numpy
+        Put samples (batch of torch cpu or numpy images) into clusters.
+            info_dict should contain `cat_labels`, `similarities`,     # numpy
 
         """
         '''unpack'''
-        domains, gt_labels = info_dict['domain'], info_dict['gt_labels']
+        labels = info_dict['cat_labels']
         similarities, features = info_dict['similarities'], info_dict['features']
-
-        labels = np.stack([gt_labels, domains], axis=1)     # [n_img, 2]
 
         for label in np.unique(labels, axis=0):     # unique along first axis
             mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])      # gt label and domain all the same
-            assert len(np.unique(gt_labels[mask])) == len(np.unique(domains[mask])) == 1
-            assert gt_labels[mask][0] == label[0] and domains[mask][0] == label[1]
-            class_images = images[mask].numpy()
+            class_images = images[mask].numpy() if type(images) == torch.Tensor else images[mask]
             class_features = features[mask]
             class_similarities = similarities[mask]
 
-            '''pop stored images and cat new images'''
-            position = self.find_label(label, target='clusters')
-            if position != -1:  # find exist label, cat onto it
-                cluster_idx, cls_idx = position
-                # stored = self.clusters[cluster_idx][cls_idx]
-                stored = self.clusters[cluster_idx].pop(cls_idx)
-                assert (stored['label'] == label).all()
-                stored_images = np.concatenate([stored['images'], class_images])
-                stored_features = np.concatenate([stored['features'], class_features])
-                stored_similarities = np.concatenate([stored['similarities'], class_similarities])
-            else:
-                stored_images = class_images
-                stored_features = class_features
-                stored_similarities = class_similarities
+            '''put to each cluster'''
+            for cluster_idx, cluster in self.clusters:
+                position = self.find_label(label, cluster_idx=cluster_idx)
+                if position != -1:  # find exist label, cat onto it
+                    _, cls_idx = position       # cluster_idx, cls_idx
+                    # stored = self.clusters[cluster_idx][cls_idx]
+                    stored = cluster.pop(cls_idx)
+                    # assert (stored['label'] == label).all()
+                    stored_images = np.concatenate([stored['images'], class_images])
+                    stored_features = np.concatenate([stored['features'], class_features])
+                    stored_similarities = np.concatenate([stored['similarities'], class_similarities])
+                else:
+                    stored_images = class_images
+                    stored_features = class_features
+                    stored_similarities = class_similarities
 
-            '''remove same image'''
-            stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
-            stored_features = stored_features[img_idxes]
-            stored_similarities = stored_similarities[img_idxes]
+                '''remove same image'''
+                stored_images, img_idxes = np.unique(stored_images, return_index=True, axis=0)
+                stored_features = stored_features[img_idxes]
+                stored_similarities = stored_similarities[img_idxes]
 
-            cls = {
-                'images': stored_images, 'label': label,  # 'selection': stored_selection,
-                'similarities': stored_similarities,
-                'features': stored_features,
-                # 'class_similarity': np.mean(stored_similarities, axis=0),  # mean over all samples [n_clusters]
-            }
+                '''sort within class '''
+                indexes = np.argsort(stored_similarities[:, cluster_idx])[::-1]  # descending order
+                stored_images = stored_images[indexes][:self.max_num_images]
+                stored_features = stored_features[indexes][:self.max_num_images]
+                stored_similarities = stored_similarities[indexes][:self.max_num_images]
+                class_similarity = np.mean(stored_similarities, axis=0)
+                # mean over max_num_img samples [n_clusters]
 
-            '''sort within class '''
-            indexes = np.argsort(cls['similarities'][:, cluster_idx])[::-1]  # descending order
-            chosen_images = cls['images'][indexes][:self.max_num_images]
-            remain_images = cls['images'][indexes][self.max_num_images:]
-            chosen_features = cls['features'][indexes][:self.max_num_images]
-            remain_features = cls['features'][indexes][self.max_num_images:]
-            # can be empty array([], shape=(0, 3, 84, 84)) len(remain_images) = 0
-            chosen_similarities = cls['similarities'][indexes][:self.max_num_images]
-            remain_similarities = cls['similarities'][indexes][self.max_num_images:]
-            class_similarity = np.mean(chosen_similarities, axis=0)
-            # mean over max_num_img samples [n_clusters]
-            cls['remain_images'], cls['remain_similarities'] = remain_images, remain_similarities
-            cls['chosen_images'], cls['chosen_similarities'] = chosen_images, chosen_similarities
-            cls['chosen_features'], cls['remain_features'] = chosen_features, remain_features
-            cls['class_similarity'] = class_similarity
+                '''put into cluster'''
+                cluster.append({
+                    'images': stored_images, 'label': label,  # 'selection': stored_selection,
+                    'similarities': stored_similarities,
+                    'features': stored_features,
+                    'class_similarity': class_similarity,
+                })
 
-            '''put into buffer'''
-            if position == -1:
-                self.buffer.append(cls)
-            else:
-                self.buffer[position] = cls
+                '''maintain num valid cls'''
+                while self.num_valid_class(cluster_idx) > self.max_num_classes:
+                    '''remove one image with smallest similarity and maintain class_similarity'''
+                    min_idx, min_sim = 0, 1
+                    for cls_idx, cls in enumerate(cluster):
+                        if cls['similarities'][-1, cluster_idx] < min_sim:
+                            min_sim = cls['similarities'][-1, cluster_idx]
+                            min_idx = cls_idx
+                    if len(cluster[min_idx]['images']) > 1:
+                        cluster[min_idx]['images'] = cluster[min_idx]['images'][:-1]
+                        cluster[min_idx]['similarities'] = cluster[min_idx]['similarities'][:-1]
+                        cluster[min_idx]['features'] = cluster[min_idx]['features'][:-1]
+                        cluster[min_idx]['class_similarity'] = np.mean(
+                            cluster[min_idx]['similarities'], axis=0)
+                    else:
+                        cluster.pop(min_idx)
 
-        return True
+                '''sort cluster according to class_similarity'''
+                cluster.sort(
+                    key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
+
+    def num_valid_class(self, cluster_idx):
+        return len([cls for cls in self.clusters[cluster_idx] if len(cls['images']) >= self.thres_num_images])
 
     def update_cluster_centers(self, cluster_idx, class_centroid):
         """
@@ -424,6 +429,33 @@ class Pool(nn.Module):
             clses.append(clses_in_cluster)
         return clses
 
+    def current_invalid_classes(self):
+        classes = [cls for cluster in self.clusters
+                    for cls in cluster if len(cls['images']) < self.thres_num_images]
+        if len(classes) == 0:
+            return []
+
+        labels = np.concatenate([np.stack([cls['label'] for _ in range(len(cls['images']))])
+                                 for cls in classes])  # [n_imgs, 2]
+        images = np.concatenate([cls['images'] for cls in classes])
+        features = np.concatenate([cls['features'] for cls in classes])
+
+        classes = []
+        for label in np.unique(labels, axis=0):  # unique along first axis
+            mask = (labels[:, 0] == label[0]) & (labels[:, 1] == label[1])  # gt label and domain all the same
+            class_images = images[mask]     # numpy images
+            class_features = features[mask]
+
+            '''remove same image'''
+            class_images, img_idxes = np.unique(class_images, return_index=True, axis=0)
+            class_features = class_features[img_idxes]
+
+            classes.append({
+                'images': class_images, 'labels': labels[mask],  # 'selection': stored_selection,
+                'features': class_features,
+            })
+        return classes
+
     def current_images(self, single_image=False):
         """
         # Return a batch of images (torch.Tensor) in the current pool with pool_montage.
@@ -443,14 +475,23 @@ class Pool(nn.Module):
             images.append(imgs)
 
         if single_image:
+            '''obtain width of images'''
+            # max_num_imgs = self.max_num_images
+            max_num_imgs = 0
+            for cluster_idx, cluster in enumerate(images):
+                for cls_idx, cls in enumerate(cluster):
+                    num_imgs = cls.shape[0]
+                    if num_imgs > max_num_imgs:
+                        max_num_imgs = num_imgs
+
             '''construct a single image for each cluster'''
             for cluster_idx, cluster in enumerate(images):
                 for cls_idx, cls in enumerate(cluster):
-                    imgs = np.zeros((self.max_num_images, *cls.shape[1:]))
+                    imgs = np.zeros((max_num_imgs, *cls.shape[1:]))
                     if len(cls) > 0:    # contain images
                         imgs[:cls.shape[0]] = cls
                     cluster[cls_idx] = np.concatenate([
-                        imgs[img_idx] for img_idx in range(self.max_num_images)], axis=-1)
+                        imgs[img_idx] for img_idx in range(max_num_imgs)], axis=-1)
                 if len(cluster) > 0:
                     images[cluster_idx] = np.concatenate(cluster, axis=-2)
                     # [3, 84*num_class, 84*max_num_images_in_class]
