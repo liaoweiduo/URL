@@ -307,7 +307,7 @@ class Pool(nn.Module):
                 stored_images = stored_images[indexes][:self.max_num_images]
                 stored_features = stored_features[indexes][:self.max_num_images]
                 stored_similarities = stored_similarities[indexes][:self.max_num_images]
-                class_similarity = np.mean(stored_similarities, axis=0)
+                # class_similarity = np.mean(stored_similarities, axis=0)
                 # mean over max_num_img samples [n_clusters]
 
                 '''put into cluster'''
@@ -315,25 +315,26 @@ class Pool(nn.Module):
                     'images': stored_images, 'label': label,  # 'selection': stored_selection,
                     'similarities': stored_similarities,
                     'features': stored_features,
-                    'class_similarity': class_similarity,
+                    # 'class_similarity': class_similarity,
                 })
 
                 '''maintain num valid cls'''
                 while self.num_valid_class(cluster_idx) > self.max_num_classes:
                     '''remove one image with smallest similarity and maintain class_similarity'''
-                    min_idx, min_sim = 0, 1
-                    for cls_idx, cls in enumerate(cluster):
-                        if cls['similarities'][-1, cluster_idx] < min_sim:
-                            min_sim = cls['similarities'][-1, cluster_idx]
-                            min_idx = cls_idx
+                    min_idx = np.argmin([cls['similarities'][-1, cluster_idx] for cls in cluster])
+
                     if len(cluster[min_idx]['images']) > 1:
                         cluster[min_idx]['images'] = cluster[min_idx]['images'][:-1]
                         cluster[min_idx]['similarities'] = cluster[min_idx]['similarities'][:-1]
                         cluster[min_idx]['features'] = cluster[min_idx]['features'][:-1]
-                        cluster[min_idx]['class_similarity'] = np.mean(
-                            cluster[min_idx]['similarities'], axis=0)
+                        # cluster[min_idx]['class_similarity'] = np.mean(
+                        #     cluster[min_idx]['similarities'], axis=0)
                     else:
                         cluster.pop(min_idx)
+
+                '''maintain class_similarity'''
+                for cls in cluster:
+                    cls['class_similarity'] = np.mean(cls['similarities'], axis=0)
 
                 '''sort cluster according to class_similarity'''
                 cluster.sort(

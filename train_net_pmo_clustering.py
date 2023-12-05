@@ -9,6 +9,7 @@ import os
 import sys
 import pickle
 import copy
+from datetime import datetime
 
 import pandas as pd
 import torch
@@ -36,6 +37,9 @@ from debug import Debugger
 
 import warnings
 warnings.filterwarnings('ignore')
+
+def return_time():
+    return datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 def train():
     # Set seed
@@ -152,12 +156,13 @@ def train():
         '''Training loop'''
         '''-------------'''
         max_iter = args['train.max_iter']
-        print(f'\n>>>> Train start from {start_iter}.')
+        print(f'\n>>>> {return_time()} Train start from {start_iter}.')
         for i in tqdm(range(start_iter, max_iter), ncols=100):      # every iter, load one task from all loaders
-            print(f"\n>> Iter: {i}, collect training samples: ")
+            print(f"\n>> {return_time()} Iter: {i}, collect training samples: ")
 
             '''init pool and retain invalid classes by re-calculating similarities'''
             if i % 2 == 0:      # init pool every 2 iters
+                print(f"\n>> {return_time()} Iter: {i}, re-init pool and retain invalid classes: ")
                 invalid_samples = pool.current_invalid_classes()
                 pool.clear_clusters()
 
@@ -217,7 +222,7 @@ def train():
             # pool.clear_buffer()
 
             '''selection CE loss on all clusters'''
-            print(f"\n>> Iter: {i}, clustering ce loss calculation: ")
+            print(f"\n>> {return_time()} Iter: {i}, clustering ce loss calculation: ")
             features_batch, cluster_labels = [], []
             for cluster_idx, cluster in enumerate(pool.clusters):
                 if len(cluster) > 0:
@@ -241,7 +246,7 @@ def train():
                     'Tag': 'loss/ce_loss', 'Idx': 0, 'Value': ce_loss.item()}])])
 
             '''multiple mo sampling'''
-            print(f"\n>> Iter: {i}, start mo sampling: ")
+            print(f"\n>> {return_time()} Iter: {i}, start mo sampling: ")
             num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in pool.current_classes()]
             ncc_losses_mo = dict()  # f'p{task_idx}_o{obj_idx}'
             for mo_train_idx in range(args['train.n_mo']):
@@ -435,7 +440,7 @@ def train():
 
             '''mov_avg update pool's centers'''
             if args['train.cluster_center_mode'] == 'mov_avg':
-                print(f"\n>> Iter: {i}, update prototypes: ")
+                print(f"\n>> {return_time()} Iter: {i}, update prototypes: ")
                 centers = []
                 for cluster_idx, cluster in enumerate(pool.clusters):
                     # if no samples use the old center
@@ -457,7 +462,7 @@ def train():
             debugger.print_prototype_change(pmo, i=i, writer=writer)
 
             '''Update condition model with some training samples'''
-            print(f"\n>> Iter: {i}, update pmo.pas with tasks: {len(numpy_samples)}: {sample_domain_names}.")
+            print(f"\n>> {return_time()} Iter: {i}, update pmo.pas with tasks: {len(numpy_samples)}: {sample_domain_names}.")
             task_losses = []
             for task_idx, numpy_sample in enumerate(numpy_samples):
                 task = task_to_device(numpy_sample, device)
@@ -505,7 +510,7 @@ def train():
             writer.add_scalar('params/learning_rate', optimizer.param_groups[0]['lr'], i + 1)
 
             if (i + 1) % args['train.summary_freq'] == 0:
-                print(f">> Iter: {i + 1}, train summary:")
+                print(f">> {return_time()} Iter: {i + 1}, train summary:")
                 '''save train_log'''
                 epoch_train_history = dict()
                 if os.path.exists(os.path.join(args['out.dir'], 'summary', 'train_log.pickle')):
@@ -547,7 +552,7 @@ def train():
                 epoch_log = init_train_log()
 
             if (i + 1) % args['train.eval_freq'] == 0:    # eval at init  or i == 0
-                print(f"\n>> Iter: {i + 1}, evaluation:")
+                print(f"\n>> {return_time()} Iter: {i + 1}, evaluation:")
 
                 # eval mode
                 model_eval(pmo)
@@ -796,7 +801,7 @@ def train():
                 with open(os.path.join(args['out.dir'], 'summary', 'val_log.pickle'), 'wb') as f:
                     pickle.dump({'epoch': i + 1, 'val_log': val_log}, f)
 
-                print(f"====>> Trained and evaluated at {i + 1}.\n")
+                print(f"====>> {return_time()} Trained and evaluated at {i + 1}.\n")
 
     '''Close the writers'''
     writer.close()
