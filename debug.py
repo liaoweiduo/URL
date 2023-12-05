@@ -112,7 +112,7 @@ class Debugger:
                     # img_sim [num_cls * [num_img, 8]]; cls_sim [num_cls * [8]]
                     sim = np.concatenate([
                         np.concatenate([img_sim[cls_idx],
-                                        *[cls_sim[cls_idx][np.newaxis, :]] * (len(img_sim[cls_idx]) // 2)])
+                                        *[cls_sim[cls_idx][np.newaxis, :]] * max(10, len(img_sim[cls_idx]) // 2)])
                         for cls_idx in range(len(img_sim))
                     ])
                     figure = draw_heatmap(sim, verbose=False)
@@ -241,6 +241,11 @@ class Debugger:
         ])  # [n_inner, n_obj, n_pop]
         objs = np.nan_to_num(objs)
 
+        '''for normalization'''
+        min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
+        max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
+        objs = (objs - min_objs) / (max_objs - min_objs)
+
         '''cal avg span for each inner mo'''
         avg_span = -1
         for inner_step in range(n_inner):
@@ -282,6 +287,11 @@ class Debugger:
             for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
         ])  # [n_inner, n_obj, n_pop]
         objs = np.nan_to_num(objs)
+
+        '''for normalization'''
+        min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
+        max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
+        objs = (objs - min_objs) / (max_objs - min_objs)
 
         '''cal min crowding distance for each inner mo (after nd sort)'''
         cd = -1
