@@ -546,7 +546,7 @@ def train():
 
                 epoch_log = init_train_log()
 
-            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:    # eval at init
+            if (i + 1) % args['train.eval_freq'] == 0:    # eval at init  or i == 0
                 print(f"\n>> Iter: {i + 1}, evaluation:")
 
                 # eval mode

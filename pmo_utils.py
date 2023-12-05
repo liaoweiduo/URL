@@ -451,7 +451,7 @@ class Pool(nn.Module):
             class_features = class_features[img_idxes]
 
             classes.append({
-                'images': class_images, 'labels': np.concatenate([label for _ in range(len(class_images))]),
+                'images': class_images, 'labels': np.stack([label for _ in range(len(class_images))]),
                 'features': class_features,
             })
         return classes
