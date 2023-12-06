@@ -230,11 +230,13 @@ def train():
             features_batch, cluster_labels = [], []
             for cluster_idx, cluster in enumerate(pool.clusters):
                 if len(cluster) > 0:
-                    features = np.concatenate([
-                        cls['features'] for cls in cluster if len(cls['images']) >= pool.thres_num_images])
-                    # only for valid classes
-                    features_batch.append(features)
-                    cluster_labels.append([cluster_idx] * features.shape[0])
+                    features = [
+                        cls['features'] for cls in cluster if len(cls['images']) >= pool.thres_num_images]
+                    if len(features) > 0:
+                        features = np.concatenate(features)
+                        # only for valid classes
+                        features_batch.append(features)
+                        cluster_labels.append([cluster_idx] * features.shape[0])
             features_batch = torch.from_numpy(np.concatenate(features_batch)).to(device)
             cluster_labels = torch.from_numpy(np.concatenate(cluster_labels)).long().to(device)
 
