@@ -160,8 +160,8 @@ def train():
         for i in tqdm(range(start_iter, max_iter), ncols=100):      # every iter, load one task from all loaders
             print(f"\n>> {return_time()} Iter: {i}, collect training samples: ")
 
-            '''init pool and retain invalid classes by re-calculating similarities'''
-            if i % 2 == 0:      # init pool every 2 iters
+            '''init pool and retain invalid classes by re-calculating similarities after 200 iters'''
+            if i >= 200 and i % 2 == 0:      # init pool every 2 iters
                 print(f"\n>> {return_time()} Iter: {i}, re-init pool and retain invalid classes: ")
                 invalid_samples = pool.current_invalid_classes()
                 pool.clear_clusters()
@@ -205,28 +205,34 @@ def train():
                     similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
                 # similarities = np.array([0] * len(gt_labels))  # no use
 
-                pool.put(
-                    task_images, {'cat_labels': cat_labels,
-                                  'similarities': similarities, 'features': task_features.cpu().numpy()})
-                # not_full = pool.put_buffer(
-                #     task_images, {'cat_labels': cat_labels
-                #                   'similarities': similarities, 'features': task_features.cpu().numpy()},
-                #     maintain_size=False)
+                if i >= 200:
+                    pool.put(
+                        task_images, {'cat_labels': cat_labels,
+                                      'similarities': similarities, 'features': task_features.cpu().numpy()})
+                else:
+                    not_full = pool.put_buffer(
+                        task_images, {'cat_labels': cat_labels,
+                                      'similarities': similarities, 'features': task_features.cpu().numpy()},
+                        maintain_size=False)
             # print(f'Buffer contains {len(pool.buffer)} classes.')
             # # pool.buffer_backup = copy.deepcopy(pool.buffer)
             # # pool.buffer = copy.deepcopy(pool.buffer_backup)
             #
-            # '''buffer -> clusters'''
-            # pool.clear_clusters()
-            # pool.buffer2cluster()
-            # pool.clear_buffer()
+
+            if i < 200:
+                '''buffer -> clusters'''
+                pool.clear_clusters()
+                pool.buffer2cluster()
+                pool.clear_buffer()
 
             '''selection CE loss on all clusters'''
             print(f"\n>> {return_time()} Iter: {i}, clustering ce loss calculation: ")
             features_batch, cluster_labels = [], []
             for cluster_idx, cluster in enumerate(pool.clusters):
                 if len(cluster) > 0:
-                    features = np.concatenate([cls['features'] for cls in cluster])
+                    features = np.concatenate([
+                        cls['features'] for cls in cluster if len(cls['images']) >= pool.thres_num_images])
+                    # only for valid classes
                     features_batch.append(features)
                     cluster_labels.append([cluster_idx] * features.shape[0])
             features_batch = torch.from_numpy(np.concatenate(features_batch)).to(device)
