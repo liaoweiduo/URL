@@ -33,8 +33,8 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=20, max_num_images=30,
-                 thres_num_images=11,
+    def __init__(self, capacity=8, max_num_classes=100, max_num_valid_classes=20,
+                 thres_num_images=11, max_num_images=30,
                  mode='hierarchical', buffer_size=200):
         """
         :param capacity: Number of clusters. Typically, 8 columns of classes.
@@ -48,6 +48,7 @@ class Pool(nn.Module):
         self.max_num_classes = max_num_classes
         self.max_num_images = max_num_images
         self.thres_num_images = thres_num_images
+        self.max_num_valid_classes = max_num_valid_classes
         self.mode = mode
         self.emb_dim = 512
         self.load_path = os.path.join(args['model.dir'], 'weights', 'pool')
@@ -253,7 +254,7 @@ class Pool(nn.Module):
                 key=lambda x: x['class_similarity'][cluster_idx], reverse=True)   # descending order
 
             '''put cls to cluster and modify cls'''
-            for cls in self.buffer[:self.max_num_classes]:      # other clses in the buffer are not considered
+            for cls in self.buffer[:self.max_num_valid_classes]:      # other clses in the buffer are not considered
                 self.clusters[cluster_idx].append({
                     'images': cls['chosen_images'], 'label': cls['label'],
                     'similarities': cls['chosen_similarities'],
@@ -319,7 +320,7 @@ class Pool(nn.Module):
                 })
 
                 '''maintain num valid cls'''
-                while self.num_valid_class(cluster_idx) > self.max_num_classes:
+                while len(cluster) > self.max_num_classes or self.num_valid_class(cluster_idx) > self.max_num_valid_classes:
                     '''remove one image with smallest similarity and maintain class_similarity'''
                     min_idx = np.argmin([cls['similarities'][-1, cluster_idx] for cls in cluster])
 

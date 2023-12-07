@@ -543,11 +543,11 @@ def train():
                 debugger.write_hv(epoch_log['mo_df'], i, ref=0, writer=writer, target='acc')  # 0
                 debugger.write_hv(epoch_log['mo_df'], i, ref=args['train.ref'], writer=writer, target='loss')
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
-                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='acc')
-                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='loss')
+                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='acc', norm=False)
+                debugger.write_avg_span(epoch_log['mo_df'], i, writer=writer, target='loss', norm=False)
                 '''write min crowding distance'''
-                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='acc')
-                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='loss')
+                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='acc', norm=False)
+                debugger.write_min_crowding_distance(epoch_log['mo_df'], i, writer=writer, target='loss', norm=False)
 
                 debugger.write_scaler(epoch_log['scaler_df'], key='loss/ce_loss', i=i, writer=writer)
                 debugger.write_scaler(epoch_log['scaler_df'], key='loss/hv_loss', i=i, writer=writer)
@@ -750,14 +750,14 @@ def train():
                                   prefix='val_hv')
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
                 val_avg_span_acc = debugger.write_avg_span(
-                    val_log['mo_df'], i, writer=writer, target='acc', prefix=f'val_avg_span')
+                    val_log['mo_df'], i, writer=writer, target='acc', norm=True, prefix=f'val_avg_span')
                 val_avg_span_loss = debugger.write_avg_span(
-                    val_log['mo_df'], i, writer=writer, target='loss', prefix=f'val_avg_span')
+                    val_log['mo_df'], i, writer=writer, target='loss', norm=True, prefix=f'val_avg_span')
                 '''write min crowding distance'''
                 val_min_cd_acc = debugger.write_min_crowding_distance(
-                    val_log['mo_df'], i, writer=writer, target='acc', prefix=f'val_min_cd')
+                    val_log['mo_df'], i, writer=writer, target='acc', norm=True, prefix=f'val_min_cd')
                 val_min_cd_loss = debugger.write_min_crowding_distance(
-                    val_log['mo_df'], i, writer=writer, target='loss', prefix=f'val_min_cd')
+                    val_log['mo_df'], i, writer=writer, target='loss', norm=True, prefix=f'val_min_cd')
 
                 '''task/loss'''
                 avg_log = {'loss': [], 'acc': []}

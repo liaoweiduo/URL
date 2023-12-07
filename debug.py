@@ -171,7 +171,7 @@ class Debugger:
 
         writer.add_figure(f"{prefix}{key}", fig, i + 1)
 
-    def write_hv(self, mo_dict, i, ref=0, writer: Optional[SummaryWriter] = None, target='acc',
+    def write_hv(self, mo_dict, i, ref=0, writer: Optional[SummaryWriter] = None, target='acc', norm=False,
                  prefix='hv'):
         """
 
@@ -180,46 +180,7 @@ class Debugger:
             ref: ref for cal hv
             writer:
             target: also for mo_dict's Tag selector.
-            prefix:
-            i: indicate x axis
-
-        Returns:
-
-        """
-        level = self.levels.index('INFO')
-        if level < self.level:
-            return
-
-        t_df = mo_dict[mo_dict.Tag == target]
-        n_pop = len(set(t_df.Pop_id))
-        n_inner = len(set(t_df.Inner_id))
-        n_obj = len(set(t_df.Obj_id))
-        objs = np.array([[[
-            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
-                        t_df.Inner_id == inner_idx)].Value.mean()
-            for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
-        ])  # [n_inner, n_obj, n_pop]
-        objs = np.nan_to_num(objs)
-
-        '''cal hv for each inner mo'''
-        hv = -1
-        if ref == 'relative':
-            ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
-        for inner_step in range(n_inner):
-            hv = cal_hv(objs[inner_step], ref, target=target)
-            writer.add_scalar(f'{prefix}_details/{target}/{i+1}', hv, inner_step + 1)
-        writer.add_scalar(f'{prefix}/{target}', hv, i + 1)
-
-        print(f"==>> {prefix}: {target} {hv:.3f}.")
-
-    def write_avg_span(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc',
-                       prefix='avg_span'):
-        """
-        E_i(max(f_i) - min(f_i))
-        Args:
-            mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
-            writer:
-            target: also for mo_dict's Tag selector.
+            norm: either to do normalization for n_inner > 1
             prefix:
             i: indicate x axis
 
@@ -242,9 +203,57 @@ class Debugger:
         objs = np.nan_to_num(objs)
 
         '''for normalization'''
-        min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
-        max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
-        objs = (objs - min_objs) / (max_objs - min_objs)
+        if norm:
+            min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
+            max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
+            objs = (objs - min_objs) / (max_objs - min_objs)
+
+        '''cal hv for each inner mo'''
+        hv = -1
+        if ref == 'relative':
+            ref = np.mean(objs[0], axis=-1).tolist()  # [n_obj]   to be list
+        for inner_step in range(n_inner):
+            hv = cal_hv(objs[inner_step], ref, target=target)
+            writer.add_scalar(f'{prefix}_details/{target}/{i+1}', hv, inner_step + 1)
+        writer.add_scalar(f'{prefix}/{target}', hv, i + 1)
+
+        print(f"==>> {prefix}: {target} {hv:.3f}.")
+
+    def write_avg_span(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc', norm=False,
+                       prefix='avg_span'):
+        """
+        E_i(max(f_i) - min(f_i))
+        Args:
+            mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
+            writer:
+            target: also for mo_dict's Tag selector.
+            norm: either to norm obj space (use for n_inner > 1)
+            prefix:
+            i: indicate x axis
+
+        Returns:
+
+        """
+        level = self.levels.index('INFO')
+        if level < self.level:
+            return
+
+        t_df = mo_dict[mo_dict.Tag == target]
+        n_pop = len(set(t_df.Pop_id))
+        n_inner = len(set(t_df.Inner_id))
+        n_obj = len(set(t_df.Obj_id))
+        objs = np.array([[[
+            t_df[(t_df.Pop_id == pop_idx) & (t_df.Obj_id == obj_idx) & (
+                        t_df.Inner_id == inner_idx)].Value.mean()
+            for pop_idx in range(n_pop)] for obj_idx in range(n_obj)] for inner_idx in range(n_inner)
+        ])  # [n_inner, n_obj, n_pop]
+        objs = np.nan_to_num(objs)
+
+        '''for normalization'''
+        if norm:
+            min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
+            max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
+            objs = (objs - min_objs) / (max_objs - min_objs)
 
         '''cal avg span for each inner mo'''
         avg_span = -1
@@ -259,7 +268,7 @@ class Debugger:
 
         return avg_span
 
-    def write_min_crowding_distance(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc',
+    def write_min_crowding_distance(self, mo_dict, i, writer: Optional[SummaryWriter] = None, target='acc', norm=False,
                                     prefix='min_cd'):
         """
         only for nd solutions. if min cd is inf, use avg_span instead.
@@ -267,6 +276,7 @@ class Debugger:
             mo_dict: dataframe ['Tag', 'Pop_id', 'Obj_id', 'Inner_id', 'Value']
             writer:
             target: also for mo_dict's Tag selector.
+            norm: either to norm obj space (use for n_inner > 1)
             prefix:
             i: indicate x axis
 
@@ -289,9 +299,10 @@ class Debugger:
         objs = np.nan_to_num(objs)
 
         '''for normalization'''
-        min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
-        max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
-        objs = (objs - min_objs) / (max_objs - min_objs)
+        if norm:
+            min_objs = np.min(np.min(objs, axis=2, keepdims=True), axis=0, keepdims=True) - 1e-10
+            max_objs = np.max(np.max(objs, axis=2, keepdims=True), axis=0, keepdims=True)
+            objs = (objs - min_objs) / (max_objs - min_objs)
 
         '''cal min crowding distance for each inner mo (after nd sort)'''
         cd = -1
