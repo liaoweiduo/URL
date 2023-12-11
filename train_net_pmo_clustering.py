@@ -160,8 +160,8 @@ def train():
         for i in tqdm(range(start_iter, max_iter), ncols=100):      # every iter, load one task from all loaders
             print(f"\n>> {return_time()} Iter: {i}, collect training samples: ")
 
-            '''init pool and retain invalid classes by re-calculating similarities after 200 iters'''
-            if i >= 200 and i % 2 == 0:      # init pool every 2 iters
+            '''init pool and retain invalid classes by re-calculating similarities after 400 iters'''
+            if i >= 400 and i % 2 == 0:      # init pool every 2 iters
                 print(f"\n>> {return_time()} Iter: {i}, re-init pool and retain invalid classes: ")
                 invalid_samples = pool.current_invalid_classes()
                 pool.clear_clusters()
@@ -205,7 +205,7 @@ def train():
                     similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
                 # similarities = np.array([0] * len(gt_labels))  # no use
 
-                if i >= 200:
+                if i >= 400:
                     pool.put(
                         task_images, {'cat_labels': cat_labels,
                                       'similarities': similarities, 'features': task_features.cpu().numpy()})
@@ -219,7 +219,7 @@ def train():
             # # pool.buffer = copy.deepcopy(pool.buffer_backup)
             #
 
-            if i < 200:
+            if i < 400:
                 '''buffer -> clusters'''
                 pool.clear_clusters()
                 pool.buffer2cluster()
@@ -346,15 +346,17 @@ def train():
                                  'Value': stats_dict['acc']}])])
 
             '''calculate HV loss for n_mo matrix'''
-            ref = args['train.ref']
-            ncc_losses_multi_obj = torch.stack([torch.stack([
-                torch.mean(torch.stack(ncc_losses_mo[f'p{task_idx}_o{obj_idx}']))
-                for task_idx in range(args['train.n_obj'] + args['train.n_mix'])
-            ]) for obj_idx in range(args['train.n_obj'])])      # [2, 4]
-            hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
-            epoch_log['scaler_df'] = pd.concat([
-                epoch_log['scaler_df'], pd.DataFrame.from_records([{
-                    'Tag': 'loss/hv_loss', 'Idx': 0, 'Value': hv_loss.item()}])])
+            hv_loss = 0
+            if len(ncc_losses_mo) > 0:
+                ref = args['train.ref']
+                ncc_losses_multi_obj = torch.stack([torch.stack([
+                    torch.mean(torch.stack(ncc_losses_mo[f'p{task_idx}_o{obj_idx}']))
+                    for task_idx in range(args['train.n_obj'] + args['train.n_mix'])
+                ]) for obj_idx in range(args['train.n_obj'])])      # [2, 4]
+                hv_loss = cal_hv_loss(ncc_losses_multi_obj, ref)
+                epoch_log['scaler_df'] = pd.concat([
+                    epoch_log['scaler_df'], pd.DataFrame.from_records([{
+                        'Tag': 'loss/hv_loss', 'Idx': 0, 'Value': hv_loss.item()}])])
 
             # '''hv loss to average'''
             # hv_loss = hv_loss / args['train.n_mo']
