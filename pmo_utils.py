@@ -33,7 +33,7 @@ class Pool(nn.Module):
 
     A class instance contains (a set of image samples, class_label, class_label_str).
     """
-    def __init__(self, capacity=8, max_num_classes=100, max_num_valid_classes=20,
+    def __init__(self, capacity=8, max_num_classes=20, max_num_valid_classes=20,
                  thres_num_images=11, max_num_images=30,
                  mode='hierarchical', buffer_size=200):
         """
@@ -228,7 +228,7 @@ class Pool(nn.Module):
 
     def buffer2cluster(self):
         """
-        For each cluster, find max_num_classes.
+        For each cluster, find max_num_valid_classes.
         And for each class, find max_num_images with corresponding average sim.
         """
         for cluster_idx in range(self.capacity):

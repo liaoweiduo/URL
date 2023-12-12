@@ -160,25 +160,25 @@ def train():
         for i in tqdm(range(start_iter, max_iter), ncols=100):      # every iter, load one task from all loaders
             print(f"\n>> {return_time()} Iter: {i}, collect training samples: ")
 
-            '''init pool and retain invalid classes by re-calculating similarities after 400 iters'''
-            if i >= 400 and i % 2 == 0:      # init pool every 2 iters
-                print(f"\n>> {return_time()} Iter: {i}, re-init pool and retain invalid classes: ")
-                invalid_samples = pool.current_invalid_classes()
-                pool.clear_clusters()
-
-                if len(invalid_samples) > 0:
-                    task_images = np.concatenate([sample['images'] for sample in invalid_samples])
-                    cat_labels = np.concatenate([sample['labels'] for sample in invalid_samples])
-                    task_features = torch.from_numpy(np.concatenate(
-                        [sample['features'] for sample in invalid_samples])).to(device)
-                    with torch.no_grad():
-                        _, selection_info = pmo.selector(
-                            task_features, gumbel=False, hard=False, average=False)  # [bs, n_clusters]
-                        similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
-
-                    pool.put(
-                        task_images, {'cat_labels': cat_labels,
-                                      'similarities': similarities, 'features': task_features.cpu().numpy()})
+            # '''init pool and retain invalid classes by re-calculating similarities after 400 iters'''
+            # if i >= 400 and i % 2 == 0:      # init pool every 2 iters
+            #     print(f"\n>> {return_time()} Iter: {i}, re-init pool and retain invalid classes: ")
+            #     invalid_samples = pool.current_invalid_classes()
+            #     pool.clear_clusters()
+            #
+            #     if len(invalid_samples) > 0:
+            #         task_images = np.concatenate([sample['images'] for sample in invalid_samples])
+            #         cat_labels = np.concatenate([sample['labels'] for sample in invalid_samples])
+            #         task_features = torch.from_numpy(np.concatenate(
+            #             [sample['features'] for sample in invalid_samples])).to(device)
+            #         with torch.no_grad():
+            #             _, selection_info = pmo.selector(
+            #                 task_features, gumbel=False, hard=False, average=False)  # [bs, n_clusters]
+            #             similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
+            #
+            #         pool.put(
+            #             task_images, {'cat_labels': cat_labels,
+            #                           'similarities': similarities, 'features': task_features.cpu().numpy()})
 
             '''obtain tasks from train_loaders and put to buffer/clusters'''
             # loading images and labels
@@ -205,25 +205,25 @@ def train():
                     similarities = selection_info['y_soft'].cpu().numpy()  # [bs, n_clusters]
                 # similarities = np.array([0] * len(gt_labels))  # no use
 
-                if i >= 400:
-                    pool.put(
-                        task_images, {'cat_labels': cat_labels,
-                                      'similarities': similarities, 'features': task_features.cpu().numpy()})
-                else:
-                    not_full = pool.put_buffer(
-                        task_images, {'cat_labels': cat_labels,
-                                      'similarities': similarities, 'features': task_features.cpu().numpy()},
-                        maintain_size=False)
+                # if i >= 400:
+                #     pool.put(
+                #         task_images, {'cat_labels': cat_labels,
+                #                       'similarities': similarities, 'features': task_features.cpu().numpy()})
+                # else:
+                not_full = pool.put_buffer(
+                    task_images, {'cat_labels': cat_labels,
+                                  'similarities': similarities, 'features': task_features.cpu().numpy()},
+                    maintain_size=False)
             # print(f'Buffer contains {len(pool.buffer)} classes.')
             # # pool.buffer_backup = copy.deepcopy(pool.buffer)
             # # pool.buffer = copy.deepcopy(pool.buffer_backup)
             #
 
-            if i < 400:
-                '''buffer -> clusters'''
-                pool.clear_clusters()
-                pool.buffer2cluster()
-                pool.clear_buffer()
+            # if i < 400:
+            '''buffer -> clusters'''
+            pool.clear_clusters()
+            pool.buffer2cluster()
+            pool.clear_buffer()
 
             '''selection CE loss on all clusters'''
             print(f"\n>> {return_time()} Iter: {i}, clustering ce loss calculation: ")
@@ -561,7 +561,7 @@ def train():
 
                 epoch_log = init_train_log()
 
-            if (i + 1) % args['train.eval_freq'] == 0:    # eval at init        or i == 0
+            if (i + 1) % args['train.eval_freq'] == 0 or i == 0:    # eval at init
                 print(f"\n>> {return_time()} Iter: {i + 1}, evaluation:")
 
                 # eval mode
@@ -571,7 +571,8 @@ def train():
                 '''nvidia-smi'''
                 print(os.system('nvidia-smi'))
 
-                val_pool = Pool(capacity=args['model.num_clusters'], mode=args['train.cluster_center_mode'])
+                val_pool = Pool(capacity=args['model.num_clusters'], mode=args['train.cluster_center_mode'],
+                                max_num_valid_classes=10)
                 val_pool.centers = pool.centers     # same centers and device as train_pool; no use
                 val_pool.eval()
                 val_pool.clear_clusters()
@@ -619,124 +620,124 @@ def train():
                             similarities = selection_info[
                                 'y_soft'].cpu().numpy()  # [bs, n_clusters]
 
-                        val_pool.put(
-                            task_images, {'cat_labels': cat_labels,
-                                          'similarities': similarities, 'features': task_features.cpu().numpy()})
-                        # not_full = val_pool.put_buffer(
+                        # val_pool.put(
                         #     task_images, {'cat_labels': cat_labels,
-                        #                   'similarities': similarities, 'features': task_features.cpu().numpy()},
-                        #     maintain_size=False)
+                        #                   'similarities': similarities, 'features': task_features.cpu().numpy()})
+                        not_full = val_pool.put_buffer(
+                            task_images, {'cat_labels': cat_labels,
+                                          'similarities': similarities, 'features': task_features.cpu().numpy()},
+                            maintain_size=False)
 
-                    # if (j + 1) % 5 == 0:
-                '''collect pool clusters and do mo'''
-                # verbose = False
-                # if verbose:
-                #     print(f'Buffer contains {len(val_pool.buffer)} classes.')
-                #
-                # '''buffer -> clusters'''
-                # val_pool.clear_clusters()
-                # val_pool.buffer2cluster()
-                # val_pool.clear_buffer()
+                    '''collect pool clusters and do mo'''
+                    if (j + 1) % 5 == 0:
+                        verbose = False
+                        if verbose:
+                            print(f'Val buffer contains {len(val_pool.buffer)} classes.')
 
-                '''repeat collecting MO acc on val pool'''
-                num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
-                                     val_pool.current_classes()]
-                ncc_losses_mo = dict()  # f'p{task_idx}_o{obj_idx}'
-                for mo_train_idx in range(args['train.n_mo']):
-                    '''check pool has enough samples and generate 1 setting'''
-                    n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'],
-                                                               min_available_clusters=args['train.n_obj'])
-                    if n_way == -1:  # not enough samples
-                        print(f"==>> val_pool has not enough samples. skip MO evaluation this iter.")
-                        break
+                        '''buffer -> clusters'''
+                        val_pool.clear_clusters()
+                        val_pool.buffer2cluster()
+                        val_pool.clear_buffer()
 
-                    available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
+                        '''repeat collecting MO acc on val pool'''
+                        num_imgs_clusters = [np.array([cls[1] for cls in classes]) for classes in
+                                             val_pool.current_classes()]
+                        ncc_losses_mo = dict()  # f'p{task_idx}_o{obj_idx}'
+                        for mo_train_idx in range(args['train.n_mo']):
+                            '''check pool has enough samples and generate 1 setting'''
+                            n_way, n_shot, n_query = available_setting(num_imgs_clusters, args['train.mo_task_type'],
+                                                                       min_available_clusters=args['train.n_obj'])
+                            if n_way == -1:  # not enough samples
+                                print(f"==>> val_pool has not enough samples. skip MO evaluation this iter.")
+                                break
 
-                    selected_cluster_idxs = sorted(np.random.choice(
-                        available_cluster_idxs, args['train.n_obj'], replace=False))
+                            available_cluster_idxs = check_available(num_imgs_clusters, n_way, n_shot, n_query)
 
-                    torch_tasks = []
-                    '''sample pure tasks from clusters in selected_cluster_idxs'''
-                    for cluster_idx in selected_cluster_idxs:
-                        pure_task = val_pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
-                        torch_tasks.append(pure_task)
+                            selected_cluster_idxs = sorted(np.random.choice(
+                                available_cluster_idxs, args['train.n_obj'], replace=False))
 
-                    '''sample mix tasks by mixer'''
-                    for mix_id in range(args['train.n_mix']):
-                        numpy_mix_task, _ = mixer.mix(
-                            task_list=[val_pool.episodic_sample(idx, n_way, n_shot, n_query)
-                                       for idx in selected_cluster_idxs],
-                            mix_id=mix_id
-                        )
-                        torch_tasks.append(task_to_device(numpy_mix_task, device))
+                            torch_tasks = []
+                            '''sample pure tasks from clusters in selected_cluster_idxs'''
+                            for cluster_idx in selected_cluster_idxs:
+                                pure_task = val_pool.episodic_sample(cluster_idx, n_way, n_shot, n_query, d=device)
+                                torch_tasks.append(pure_task)
 
-                    '''obtain ncc loss multi-obj matrix'''
-                    for task_idx, task in enumerate(torch_tasks):
+                            '''sample mix tasks by mixer'''
+                            for mix_id in range(args['train.n_mix']):
+                                numpy_mix_task, _ = mixer.mix(
+                                    task_list=[val_pool.episodic_sample(idx, n_way, n_shot, n_query)
+                                               for idx in selected_cluster_idxs],
+                                    mix_id=mix_id
+                                )
+                                torch_tasks.append(task_to_device(numpy_mix_task, device))
 
-                        '''use url with pa'''
-                        model = url
-                        with torch.no_grad():
-                            task_features = pmo.embed(
-                                torch.cat([task['context_images'], task['target_images']]))
-                            context_features = model.embed(task['context_images'])
-                            context_labels = task['context_labels']
+                            '''obtain ncc loss multi-obj matrix'''
+                            for task_idx, task in enumerate(torch_tasks):
 
-                        # selection, selection_info = pmo.selector(
-                        #     task_features, gumbel=False, hard=False)
-                        # vartheta = [
-                        #     torch.mm(
-                        #         selection.detach(), pmo.pas.detach().flatten(1)
-                        #     ).view(512, 512, 1, 1).requires_grad_(True)]
-                        # # detach from the learned one
-                        '''use a pa from scratch'''
-                        vartheta = [torch.eye(512, 512).unsqueeze(-1).unsqueeze(-1).to(device).requires_grad_(True)]
-
-                        inner_lr = 1
-                        for inner_idx, selection_params in enumerate(
-                                pa_iterator(
-                                    context_features, context_labels, max_iter=10, lr=inner_lr,
-                                    distance=args['test.distance'],
-                                    vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)])):
-                            '''inner acc/loss'''
-                            with torch.no_grad():
-                                selected_context = apply_selection(context_features, selection_params)
-                            _, stats_dict, _ = prototype_loss(
-                                selected_context, context_labels,
-                                selected_context, context_labels, distance=args['test.distance'])
-
-                            '''log'''
-                            val_log['scaler_df'] = pd.concat([
-                                val_log['scaler_df'], pd.DataFrame.from_records([
-                                    {'Tag': f'inner/loss/{task_idx}', 'Idx': inner_idx, 'Value': stats_dict['loss']},
-                                    {'Tag': f'inner/acc/{task_idx}', 'Idx': inner_idx, 'Value': stats_dict['acc']}])])
-
-                            '''forward to get mo'''
-                            for obj_idx in range(len(selected_cluster_idxs)):  # 2
-                                obj_context_images = torch_tasks[obj_idx]['context_images']
-                                obj_target_images = torch_tasks[obj_idx]['target_images']
-                                obj_context_labels = torch_tasks[obj_idx]['context_labels']
-                                obj_target_labels = torch_tasks[obj_idx]['target_labels']
+                                '''use url with pa'''
+                                model = url
                                 with torch.no_grad():
-                                    obj_context_features = apply_selection(model.embed(obj_context_images),
-                                                                           selection_params)
-                                    obj_target_features = apply_selection(model.embed(obj_target_images),
-                                                                          selection_params)
+                                    task_features = pmo.embed(
+                                        torch.cat([task['context_images'], task['target_images']]))
+                                    context_features = model.embed(task['context_images'])
+                                    context_labels = task['context_labels']
 
-                                obj_loss, stats_dict, _ = prototype_loss(
-                                    obj_context_features, obj_context_labels,
-                                    obj_target_features, obj_target_labels,
-                                    distance=args['test.distance'])
-                                if f'p{task_idx}_o{obj_idx}' in ncc_losses_mo.keys():  # collect n_mo data
-                                    ncc_losses_mo[f'p{task_idx}_o{obj_idx}'].append(obj_loss)
-                                else:
-                                    ncc_losses_mo[f'p{task_idx}_o{obj_idx}'] = [obj_loss]
+                                # selection, selection_info = pmo.selector(
+                                #     task_features, gumbel=False, hard=False)
+                                # vartheta = [
+                                #     torch.mm(
+                                #         selection.detach(), pmo.pas.detach().flatten(1)
+                                #     ).view(512, 512, 1, 1).requires_grad_(True)]
+                                # # detach from the learned one
+                                '''use a pa from scratch'''
+                                vartheta = [torch.eye(512, 512).unsqueeze(-1).unsqueeze(-1).to(device).requires_grad_(True)]
 
-                                val_log['mo_df'] = pd.concat([
-                                    val_log['mo_df'], pd.DataFrame.from_records([
-                                        {'Tag': 'loss', 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
-                                         'Value': stats_dict['loss']},
-                                        {'Tag': 'acc', 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
-                                         'Value': stats_dict['acc']}])])
+                                inner_lr = 1
+                                for inner_idx, selection_params in enumerate(
+                                        pa_iterator(
+                                            context_features, context_labels, max_iter=10, lr=inner_lr,
+                                            distance=args['test.distance'],
+                                            vartheta_init=[vartheta, torch.optim.Adadelta(vartheta, lr=inner_lr)])):
+                                    '''inner acc/loss'''
+                                    with torch.no_grad():
+                                        selected_context = apply_selection(context_features, selection_params)
+                                    _, stats_dict, _ = prototype_loss(
+                                        selected_context, context_labels,
+                                        selected_context, context_labels, distance=args['test.distance'])
+
+                                    '''log'''
+                                    val_log['scaler_df'] = pd.concat([
+                                        val_log['scaler_df'], pd.DataFrame.from_records([
+                                            {'Tag': f'inner/loss/{task_idx}', 'Idx': inner_idx, 'Value': stats_dict['loss']},
+                                            {'Tag': f'inner/acc/{task_idx}', 'Idx': inner_idx, 'Value': stats_dict['acc']}])])
+
+                                    '''forward to get mo'''
+                                    for obj_idx in range(len(selected_cluster_idxs)):  # 2
+                                        obj_context_images = torch_tasks[obj_idx]['context_images']
+                                        obj_target_images = torch_tasks[obj_idx]['target_images']
+                                        obj_context_labels = torch_tasks[obj_idx]['context_labels']
+                                        obj_target_labels = torch_tasks[obj_idx]['target_labels']
+                                        with torch.no_grad():
+                                            obj_context_features = apply_selection(model.embed(obj_context_images),
+                                                                                   selection_params)
+                                            obj_target_features = apply_selection(model.embed(obj_target_images),
+                                                                                  selection_params)
+
+                                        obj_loss, stats_dict, _ = prototype_loss(
+                                            obj_context_features, obj_context_labels,
+                                            obj_target_features, obj_target_labels,
+                                            distance=args['test.distance'])
+                                        if f'p{task_idx}_o{obj_idx}' in ncc_losses_mo.keys():  # collect n_mo data
+                                            ncc_losses_mo[f'p{task_idx}_o{obj_idx}'].append(obj_loss)
+                                        else:
+                                            ncc_losses_mo[f'p{task_idx}_o{obj_idx}'] = [obj_loss]
+
+                                        val_log['mo_df'] = pd.concat([
+                                            val_log['mo_df'], pd.DataFrame.from_records([
+                                                {'Tag': 'loss', 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
+                                                 'Value': stats_dict['loss']},
+                                                {'Tag': 'acc', 'Pop_id': task_idx, 'Obj_id': obj_idx, 'Inner_id': inner_idx,
+                                                 'Value': stats_dict['acc']}])])
 
                 '''write val pool'''
                 debugger.write_pool(val_pool, i=i, writer=writer, prefix=f'val_pool')
@@ -746,9 +747,9 @@ def train():
                 debugger.write_mo(val_log['mo_df'], pop_labels, i=i, writer=writer, target='loss', prefix='val_image')
 
                 '''write hv acc/loss'''
-                debugger.write_hv(val_log['mo_df'], i, ref=0, writer=writer, target='acc',
+                debugger.write_hv(val_log['mo_df'], i, ref=0, writer=writer, target='acc', norm=True,
                                   prefix='val_hv')  # 0
-                debugger.write_hv(val_log['mo_df'], i, ref=args['train.ref'], writer=writer, target='loss',
+                debugger.write_hv(val_log['mo_df'], i, ref=args['train.ref'], writer=writer, target='loss', norm=True,
                                   prefix='val_hv')
                 '''write avg_span acc/loss: E_i(max(f_i) - min(f_i))'''
                 val_avg_span_acc = debugger.write_avg_span(
