@@ -263,7 +263,8 @@ for p in params_temp:
     p['train.weight_decay'] = p['train.learning_rate'] / 50
     # p['train.selector_learning_rate'] = p['train.learning_rate']
     p['out.dir'] = p['model.dir']
-    p['model.dir'] = '../URL-experiments/saved_results/pmo-domain_selector-lr0_0001'
+    # p['model.dir'] = '../URL-experiments/saved_results/pmo-domain_selector-lr0_0001'
+    p['model.dir'] = '../URL-experiments/saved_results/pmo-pa-inner-et-kl-6-lr0_0002-slr0_0002'
 params.extend(params_temp)
 
 
