@@ -227,7 +227,7 @@ exp: try 1 iter = 1 tasks
 target = 'train_net_pmo_learn_pas.py'
 num_runs_1sh = 1        # num of runs in 1 sh file
 common_args.update({
-    'tag': 'pmo-domain_selector-lr0_0001-learned_pa',
+    'tag': 'pmo-pa-inner-et-kl-6-lr0_0002-slr0_0002-learned_pa',
     'train.max_iter': 100, 'train.summary_freq': 10,
     'train.pool_freq': 10, 'train.mo_freq': 10,
     'train.n_mo': 10, 'train.n_obj': 2, 'train.n_mix': 2,
