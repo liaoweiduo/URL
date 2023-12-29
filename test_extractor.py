@@ -29,23 +29,30 @@ from utils import check_dir
 
 from models.losses import prototype_loss, knn_loss, lr_loss, scm_loss, svm_loss
 from models.model_utils import CheckPointer
-from models.model_helpers import get_model
+from models.model_helpers import get_model, get_model_moe
+from models.pa import apply_selection
 from data.meta_dataset_reader import (MetaDatasetEpisodeReader, MetaDatasetBatchReader, TRAIN_METADATASET_NAMES,
                                       ALL_METADATASET_NAMES)
 from config import args
 
 
-def main():
+def main(test_model='best'):
     TEST_SIZE = 600
 
     # Setting up datasets
     trainsets, valsets, testsets = args['data.train'], args['data.val'], args['data.test']
     testsets = ALL_METADATASET_NAMES # comment this line to test the model on args['data.test']
     trainsets = TRAIN_METADATASET_NAMES
-    test_loader = MetaDatasetEpisodeReader('test', trainsets, trainsets, testsets, test_type=args['test.type'])
-    model = get_model(None, args)
+
+    if args['model.name'] == 'pmo':
+        # pmo model, fe load from url
+        model = get_model_moe(None, args, base_network_name='url')  # resnet18_moe
+    else:
+        model = get_model(None, args, base_network_name='url')
     checkpointer = CheckPointer(args, model, optimizer=None)
-    checkpointer.restore_model(ckpt='best', strict=False)
+    if test_model is not None:
+        checkpointer.restore_out_model(ckpt=test_model, strict=False)
+        # ckpt='best'  'last'     1999 or mute to not restore
     model.eval()
     accs_names = [args['test.loss_opt']]
     var_accs = dict()
@@ -55,6 +62,8 @@ def main():
     config.gpu_options.allow_growth = False
     with tf.compat.v1.Session(config=config) as session:
         # go over each test domain
+        test_loader = MetaDatasetEpisodeReader('test', trainsets, trainsets, testsets, test_type=args['test.type'])
+
         for dataset in testsets:
             print(dataset)
             var_accs[dataset] = {name: [] for name in accs_names}
@@ -62,8 +71,27 @@ def main():
             for i in tqdm(range(TEST_SIZE)):
                 with torch.no_grad():
                     sample = test_loader.get_test_task(session, dataset)
-                    context_features = model.embed(sample['context_images'])
-                    target_features = model.embed(sample['target_images'])
+                    if args['model.name'] == 'pmo' and 'film' in args['train.cond_mode']:
+                        task_features = model.embed(torch.cat([sample['context_images'], sample['target_images']]))
+                        [context_features, target_features], selection_info = model(
+                            [sample['context_images'], sample['target_images']], task_features,
+                            gumbel=False, hard=args['train.sim_gumbel'])
+
+                    elif args['model.name'] == 'pmo' and 'pa' in args['train.cond_mode']:
+                        context_features = model._embed(sample['context_images'])
+                        target_features = model._embed(sample['target_images'])
+                        task_features = model.embed(
+                            torch.cat([sample['context_images'], sample['target_images']]))
+                        selection, selection_info = model.selector(
+                            task_features, gumbel=False, hard=False)
+                        selection_params = [torch.mm(selection, model.pas.flatten(1)).view(512, 512, 1, 1)]
+                        context_features = apply_selection(context_features, selection_params)
+                        target_features = apply_selection(target_features, selection_params)
+
+                    else:
+                        context_features = model.embed(sample['context_images'])
+                        target_features = model.embed(sample['target_images'])
+
                     context_labels = sample['context_labels']
                     target_labels = sample['target_labels']
                     if args['test.loss_opt'] == 'ncc':
@@ -92,14 +120,34 @@ def main():
     # Print nice results table
     print('results of {}'.format(args['model.name']))
     rows = []
-    for dataset_name in testsets:
+    id_accs = {n: [] for n in accs_names}
+    ood_accs = {n: [] for n in accs_names}
+    for dataset_idx, dataset_name in enumerate(testsets):
         row = [dataset_name]
         for model_name in accs_names:
             acc = np.array(var_accs[dataset_name][model_name]) * 100
             mean_acc = acc.mean()
             conf = (1.96 * acc.std()) / np.sqrt(len(acc))
             row.append(f"{mean_acc:0.2f} +- {conf:0.2f}")
+            if dataset_idx < 8:
+                id_accs[model_name].append(mean_acc)
+            else:
+                ood_accs[model_name].append(mean_acc)
         rows.append(row)
+        if dataset_idx == 7:
+            row = ['ID']
+            for model_name in accs_names:
+                acc = np.array(id_accs[model_name])
+                mean_acc = acc.mean()
+                row.append(f"{mean_acc:0.2f}")
+            rows.append(row)
+        elif dataset_idx == 12:
+            row = ['OOD']
+            for model_name in accs_names:
+                acc = np.array(ood_accs[model_name])
+                mean_acc = acc.mean()
+                row.append(f"{mean_acc:0.2f}")
+            rows.append(row)
     out_path = os.path.join(args['out.dir'], 'weights')
     out_path = check_dir(out_path, True)
     out_path = os.path.join(out_path, '{}-{}-{}-{}-{}-test-results.npy'.format(args['model.name'], args['test.type'], args['test.loss_opt'], args['test.feature_norm'], args['test.distance']))

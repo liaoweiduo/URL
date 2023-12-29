@@ -52,7 +52,7 @@ def main(test_model='best', no_selection=False):
         model = get_model(None, args)
     checkpointer = CheckPointer(args, model, optimizer=None)
     if test_model is not None:
-        checkpointer.restore_model(ckpt=test_model, strict=False)
+        checkpointer.restore_out_model(ckpt=test_model, strict=False)
         # ckpt='best'  'last'     1999 or mute to not restore
     model.eval()
 
